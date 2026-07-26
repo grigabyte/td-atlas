@@ -175,6 +175,33 @@ def html_to_text(html: str) -> str:
     return _tidy(parser.text())
 
 
+_CATLINKS = re.compile(
+    r'id="catlinks".*?(?=<div id="mw-navigation")', re.S | re.I
+)
+_CATEGORY = re.compile(r'title="Category:([^"]+)"')
+# MediaWiki appends this to the title of a link whose target is missing.
+_REDLINK = re.compile(r"\s*\(page does not exist\)\s*$")
+
+
+def page_categories(html: str) -> list[str]:
+    """The wiki categories a page belongs to.
+
+    This is the only reliable classification of the 2000-odd mirrored pages:
+    'Touch Glossary', 'Palette', 'TouchDesigner Tips', 'Python Reference' and
+    so on. It has to be read before the article body is extracted, because the
+    category block is part of the navigation chrome that gets stripped.
+    """
+    block = _CATLINKS.search(html)
+    if not block:
+        return []
+    seen: list[str] = []
+    for raw in _CATEGORY.findall(block.group(0)):
+        name = _REDLINK.sub("", raw.replace("_", " ")).strip()
+        if name and not name.startswith("Special") and name not in seen:
+            seen.append(name)
+    return seen
+
+
 _TITLE = re.compile(r"<title>(.*?)</title>", re.I | re.S)
 
 

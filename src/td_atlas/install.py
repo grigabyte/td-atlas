@@ -18,6 +18,7 @@ _PARAM_HELP = "Config/TDParameterHelp.json"
 _PARAM_HELP_EXPERIMENTAL = "Config/TDParameterHelpExperimental.json"
 _OFFLINE_HELP = "Samples/Learn/OfflineHelp"
 _SNIPPETS = "Samples/Learn/OPSnippets/Snippets"
+_PALETTE = "Samples/Palette"
 _COMMAND_HELP = "Config/Help/command.help"
 _EXPR_HELP = "Config/Help/exprhelp"
 
@@ -60,6 +61,11 @@ class TDInstall:
     @property
     def snippets(self) -> Path:
         return self.tfs / _SNIPPETS
+
+    @property
+    def palette(self) -> Path:
+        """Ready-made components shipped in the palette browser."""
+        return self.tfs / _PALETTE
 
     @property
     def command_help(self) -> Path:

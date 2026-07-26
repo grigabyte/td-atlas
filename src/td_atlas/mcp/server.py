@@ -468,6 +468,97 @@ def td_render(path: str, width: int = 512, height: int = 0):
 
 
 @mcp.tool()
+def td_health(path: str = "/project1", interval: float = 1.0) -> str:
+    """Find what is quietly broken — the failures nothing reports.
+
+    Run this after building anything, and whenever a composition "looks fine
+    but does nothing". td_errors only covers what TouchDesigner calls an
+    error; this additionally catches:
+
+    - operators that never cook, because a branch nothing displays or records
+      is never pulled and therefore is not running at all
+    - output operators switched off (audio device, movie recorder, MIDI, OSC)
+      which produce nothing and report nothing
+    - operators costing more than half a frame to cook, and the resulting
+      frame rate collapse
+    - bypassed operators, and the current licence
+    """
+    from ..bridge.health import check
+
+    try:
+        return check(bridge(), path=path, interval=interval).render()
+    except (BridgeUnavailable, BridgeError) as exc:
+        return f"error: {exc}"
+
+
+@mcp.tool()
+def td_palette(query: str = "", category: str = "", limit: int = 20) -> str:
+    """Search the ready-made components TouchDesigner ships in its palette.
+
+    277 finished tools — projection mappers, corner-pinners, colour pickers,
+    audio analysers, UI widgets. Check here before building something from
+    scratch. Load one with `op(parent).loadTox(path)` or the Palette browser.
+    """
+    db = store()
+    sql = "SELECT name, category, path, summary FROM palette"
+    params: list[Any] = []
+    order = " ORDER BY category, name"
+    if query:
+        # Weight the component's own name and its palette folder far above the
+        # summary: searching "projection mapping" should surface the Mapping
+        # folder, not an article that happens to describe a fractal as "a
+        # mapping of the Julia set".
+        sql = (
+            "SELECT p.name, p.category, p.path, p.summary FROM palette_fts f "
+            "JOIN palette p ON p.name = f.name AND p.category = f.category "
+            "WHERE palette_fts MATCH ?"
+        )
+        params.append(db.match(query))
+        order = " ORDER BY bm25(palette_fts, 12.0, 8.0, 1.0)"
+    if category:
+        sql += " AND" if query else " WHERE"
+        sql += " category LIKE ?"
+        params.append(f"%{category}%")
+    sql += order + " LIMIT ?"
+    params.append(limit)
+
+    try:
+        rows = db.conn.execute(sql, params).fetchall()
+    except Exception as exc:
+        return f"error: {exc}"
+    if not rows:
+        return f"No palette component matches {query or category!r}."
+    lines = []
+    for row in rows:
+        lines.append(f"{row['name']} [{row['category']}]  {row['path']}")
+        if row["summary"]:
+            lines.append(f"    {row['summary'][:220]}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def td_glossary(term: str, limit: int = 5) -> str:
+    """Look up TouchDesigner terminology.
+
+    185 glossary entries defining the vocabulary the rest of the docs assume:
+    Cook, Time Slice, Par, CHOP, Clone, Tox, Perform Mode, Sample.
+    """
+    db = store()
+    rows = db.conn.execute(
+        "SELECT a.page, a.title, a.text FROM articles_fts f "
+        "JOIN articles a ON a.page = f.page "
+        "WHERE articles_fts MATCH ? AND a.categories LIKE '%Touch Glossary%' "
+        "ORDER BY bm25(articles_fts, 4.0, 10.0, 1.0) LIMIT ?",
+        (db.match(term), limit),
+    ).fetchall()
+    if not rows:
+        return f"No glossary entry matches {term!r}."
+    return "\n\n".join(
+        f"## {r['title']}\n{(r['text'] or '')[:900]}" for r in rows
+    )
+
+
+@mcp.tool()
 def td_errors() -> str:
     """Every operator in the project currently reporting an error or warning.
 

@@ -104,10 +104,22 @@ CREATE TABLE py_members (
 );
 
 CREATE TABLE articles (
-    page     TEXT PRIMARY KEY,  -- 'Write_a_GLSL_Material'
-    title    TEXT,
-    category TEXT,              -- 'operator' | 'class' | 'article'
-    text     TEXT
+    page       TEXT PRIMARY KEY,  -- 'Write_a_GLSL_Material'
+    title      TEXT,
+    category   TEXT,              -- 'operator' | 'class' | 'article'
+    categories TEXT,              -- JSON array of wiki categories
+    text       TEXT
+);
+
+-- Ready-made components TouchDesigner ships in its palette. An agent that
+-- does not know these exist rebuilds them by hand.
+CREATE TABLE palette (
+    name     TEXT NOT NULL,
+    category TEXT NOT NULL,       -- palette folder: Tools, Mapping, UI, ...
+    path     TEXT NOT NULL,
+    doc_page TEXT,                -- 'Palette-kantanMapper', when documented
+    summary  TEXT,
+    PRIMARY KEY (category, name)
 );
 
 CREATE TABLE snippets (
@@ -143,6 +155,9 @@ CREATE VIRTUAL TABLE articles_fts USING fts5(
 );
 CREATE VIRTUAL TABLE py_fts USING fts5(
     class_name, name, signature, doc, tokenize='porter unicode61'
+);
+CREATE VIRTUAL TABLE palette_fts USING fts5(
+    name, category, summary, tokenize='porter unicode61'
 );
 """
 
@@ -284,12 +299,31 @@ class AtomStore:
 
     def insert_articles(self, rows: Iterable[dict[str, Any]]) -> int:
         payload = [
-            (r["page"], r.get("title"), r.get("category"), r.get("text"))
+            (
+                r["page"],
+                r.get("title"),
+                r.get("category"),
+                json.dumps(r.get("categories") or []),
+                r.get("text"),
+            )
             for r in rows
         ]
         self.conn.executemany(
-            "INSERT OR REPLACE INTO articles(page, title, category, text) "
-            "VALUES(?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO articles"
+            "(page, title, category, categories, text) VALUES(?, ?, ?, ?, ?)",
+            payload,
+        )
+        return len(payload)
+
+    def insert_palette(self, rows: Iterable[dict[str, Any]]) -> int:
+        payload = [
+            (r["name"], r["category"], r["path"], r.get("doc_page"),
+             r.get("summary"))
+            for r in rows
+        ]
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO palette(name, category, path, doc_page, "
+            "summary) VALUES(?, ?, ?, ?, ?)",
             payload,
         )
         return len(payload)
@@ -489,6 +523,12 @@ class AtomStore:
             "SELECT class_name, name, COALESCE(signature,''), "
             "COALESCE(doc,'') FROM py_members"
         )
+        c.execute("DELETE FROM palette_fts")
+        c.execute(
+            "INSERT INTO palette_fts(name, category, summary) "
+            "SELECT name, category, COALESCE(summary,'') FROM palette"
+        )
+        c.execute("INSERT INTO palette_fts(palette_fts) VALUES('optimize')")
         c.execute("INSERT INTO ops_fts(ops_fts) VALUES('optimize')")
         c.execute("INSERT INTO params_fts(params_fts) VALUES('optimize')")
         c.execute("INSERT INTO articles_fts(articles_fts) VALUES('optimize')")
@@ -607,7 +647,7 @@ class AtomStore:
     def stats(self) -> dict[str, int]:
         tables = (
             "ops", "params", "articles", "snippets", "expressions",
-            "py_classes", "py_members",
+            "py_classes", "py_members", "palette", "type_aliases",
         )
         out = {
             t: self.conn.execute(f"SELECT COUNT(*) c FROM {t}").fetchone()["c"]

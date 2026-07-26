@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..install import TDInstall
-from .htmltext import html_to_text, page_title
+from .htmltext import html_to_text, page_categories, page_title
 from .store import AtomStore
 
 Progress = Callable[[str], None]
@@ -44,6 +44,7 @@ class StaticStats:
     py_members: int = 0
     snippets: int = 0
     expressions: int = 0
+    palette: int = 0
     ops_without_doc: list[str] = field(default_factory=list)
     ops_without_class: list[str] = field(default_factory=list)
 
@@ -52,6 +53,7 @@ class StaticStats:
             f"{self.ops} operators, {self.params} parameters, "
             f"{self.articles} articles, {self.py_classes} Python classes "
             f"({self.py_members} members), {self.snippets} snippets, "
+            f"{self.palette} palette components, "
             f"{self.expressions} expression/command entries"
         )
 
@@ -82,6 +84,15 @@ def _doc_page_candidates(op_type: str, label: str, family: str) -> list[str]:
         out.append(f"{label.replace(' ', '')}_{family}")
     seen: set[str] = set()
     return [c for c in out if c and not (c in seen or seen.add(c))]
+
+
+def _first_sentences(text: str, limit: int = 320) -> str | None:
+    """A short summary lifted from the start of an article body."""
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and len(line) > 30:
+            return line[:limit]
+    return None
 
 
 def _normalize(name: str) -> str:
@@ -337,6 +348,7 @@ def extract(
                     "page": page_id,
                     "title": page_title(html) or page_id.replace("_", " "),
                     "category": category,
+                    "categories": page_categories(html),
                     "text": text,
                 }
             )
@@ -456,7 +468,26 @@ def extract(
             [(r["path"], r["op_type"]) for r in snippet_rows],
         )
 
-    # 5. Expression and command help.
+    # 5. Palette components. These are finished tools — a projection mapper,
+    # a corner-pinner, a colour picker — that an agent unaware of them would
+    # rebuild by hand.
+    palette_rows: list[dict] = []
+    if install.palette.exists():
+        for tox in sorted(install.palette.rglob("*.tox")):
+            doc_page = f"Palette-{tox.stem}"
+            article = articles.get(doc_page)
+            palette_rows.append(
+                {
+                    "name": tox.stem,
+                    "category": tox.parent.name,
+                    "path": str(tox),
+                    "doc_page": doc_page if article is not None else None,
+                    "summary": _first_sentences(article) if article else None,
+                }
+            )
+    stats.palette = store.insert_palette(palette_rows)
+
+    # 6. Expression and command help.
     expr_rows = _parse_command_help(install.command_help)
     expr_rows += _parse_expr_help(install.expr_help)
     stats.expressions = store.insert_expressions(expr_rows)

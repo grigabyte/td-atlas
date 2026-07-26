@@ -493,6 +493,61 @@ def m_save_tox(params):
     return {"saved": target.save(params.get("file"), createFolders=True)}
 
 
+def m_health_sample(params):
+    """One snapshot of the state a silent failure shows up in.
+
+    Nothing here is an error as far as TouchDesigner is concerned, which is
+    exactly the problem: a network that never cooks, an output device switched
+    off, or a CPU-bound operator dragging the frame rate all look fine to
+    `errors`. Two samples taken a moment apart are enough to tell a live node
+    from a dormant one.
+    """
+    root_path = params.get("path") or "/project1"
+    target = _resolve(root_path)
+
+    nodes = []
+    for child in target.findChildren(depth=None):
+        try:
+            entry = {
+                "path": child.path,
+                "type": child.OPType,
+                "family": child.family,
+                "cooks": child.totalCooks,
+                "cookTime": round(child.cookTime, 3),
+                "bypass": bool(child.bypass),
+                "errors": child.errors(recurse=False) or None,
+                "warnings": child.warnings(recurse=False) or None,
+            }
+            # Output-ish operators that quietly do nothing when switched off.
+            for flag in ("active", "record", "play"):
+                par = getattr(child.par, flag, None)
+                if par is not None:
+                    entry[flag] = bool(par.eval())
+            nodes.append(entry)
+        except Exception:
+            continue
+
+    licence = {}
+    try:
+        licence = {
+            "type": str(getattr(licenses, "type", "")),
+            "commercial": bool(getattr(licenses, "commercial", False)),
+        }
+    except Exception:
+        pass
+
+    return {
+        "frame": absTime.frame,
+        "fpsTarget": me.time.rate,
+        "playing": bool(me.time.play),
+        "realTime": bool(project.realTime),
+        "rootCookTime": round(root.cookTime, 3),
+        "license": licence,
+        "product": app.product,
+        "nodes": nodes,
+    }
+
+
 def m_perf(_params):
     return {
         "fps": me.time.rate,
@@ -525,6 +580,7 @@ METHODS = {
     "save_tox": m_save_tox,
     "op_types": m_op_types,
     "perf": m_perf,
+    "health_sample": m_health_sample,
 }
 
 
