@@ -10,6 +10,7 @@ TouchDesigner traceback.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP, Image
@@ -381,15 +382,33 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
         pass  # validation is a convenience; proceed without an index
 
     if db is not None:
+        # par_set targets an existing node, so its type has to be looked up.
+        # One call resolves every such path at once, which is worth it: a bad
+        # name caught here costs nothing, while one caught by TouchDesigner
+        # costs the whole batch.
+        unknown = [
+            (step.get("params") or {}).get("path")
+            for step in operations
+            if step.get("method") == "par_set"
+            and (step.get("params") or {}).get("pars")
+            and not (step.get("params") or {}).get("type")
+        ]
+        resolved: dict[str, str | None] = {}
+        if [p for p in unknown if p]:
+            try:
+                resolved = bridge().call(
+                    "op_types", paths=[p for p in unknown if p]
+                )
+            except (BridgeUnavailable, BridgeError):
+                resolved = {}
+
         problems: list[str] = []
         for i, step in enumerate(operations):
             params = step.get("params") or {}
             pars = params.get("pars")
             if not pars:
                 continue
-            op_type = params.get("type")
-            if step.get("method") == "par_set" and not op_type:
-                continue  # target type unknown without a round trip
+            op_type = params.get("type") or resolved.get(params.get("path", ""))
             if not op_type:
                 continue
             check = validate_params(db, op_type, pars)
@@ -505,6 +524,132 @@ def td_exec(code: str) -> str:
     if result.get("result") is not None:
         parts.append(json.dumps(result["result"], indent=2, default=str))
     return "\n".join(parts) or "(no output)"
+
+
+# -- project file tools -----------------------------------------------------
+
+@mcp.tool()
+def td_project_read(
+    file: str, path: str = "", depth: int = 2, params: bool = False
+) -> str:
+    """Read a .toe or .tox from disk, without TouchDesigner running.
+
+    Returns the operator tree with wiring. `path` narrows to a subtree such as
+    '/project1', `depth` is how many levels of children to show, and `params`
+    adds the parameter values that differ from the defaults — which is all a
+    saved project records, so it is exactly what someone chose deliberately.
+    """
+    from ..project import ExpandError, load_file
+    from ..project.render import describe
+
+    try:
+        project = load_file(file)
+    except ExpandError as exc:
+        return f"error: {exc}"
+    return describe(project, path=path or None, depth=depth, params=params)
+
+
+@mcp.tool()
+def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
+    """Search the Python and GLSL held inside a project's DATs.
+
+    Ordinary file search cannot reach this code: it lives inside the .toe
+    container, not on disk. `pattern` is a regular expression.
+    """
+    from ..project import ExpandError, load_file
+    from ..project.render import grep, render_matches
+
+    try:
+        project = load_file(file)
+        matches = grep(project, pattern, limit=limit)
+    except ExpandError as exc:
+        return f"error: {exc}"
+    except ValueError as exc:
+        return f"error: {exc}"
+    return render_matches(matches, pattern)
+
+
+@mcp.tool()
+def td_project_diff(
+    before: str, after: str, show_moves: bool = False, include_text: bool = True
+) -> str:
+    """Compare two .toe/.tox files and report what actually changed.
+
+    Reports added, removed, retyped, rewired and re-parameterised operators,
+    plus a line diff of any changed DAT code. Nodes that were only dragged to
+    a new position are counted separately so they cannot bury a real change.
+    """
+    from ..project import ExpandError, load_file
+    from ..project.diff import diff
+
+    try:
+        result = diff(
+            load_file(before), load_file(after), include_text=include_text
+        )
+    except ExpandError as exc:
+        return f"error: {exc}"
+    return f"{result.summary()}\n\n{result.render(show_moves=show_moves)}"
+
+
+@mcp.tool()
+def td_snapshot(label: str = "snapshot") -> str:
+    """Save the running project to a file so it can be diffed later.
+
+    Take one before a round of edits and another after, then pass both to
+    td_project_diff to see exactly what changed. Snapshots are written under
+    ~/.td-atlas/snapshots and never touch the artist's own file.
+    """
+    if not re.fullmatch(r"[\w.-]+", label):
+        return "error: label may contain only letters, digits, dot, dash, underscore"
+    target = cfg.home() / "snapshots"
+    target.mkdir(parents=True, exist_ok=True)
+
+    # TouchDesigner appends '.1', '.2' rather than overwriting, so old files
+    # under this label are cleared first to keep the path predictable.
+    for stale in target.glob(f"{label}.toe") :
+        stale.unlink()
+    for stale in target.glob(f"{label}.[0-9]*.toe"):
+        stale.unlink()
+
+    destination = target / f"{label}.toe"
+    try:
+        bridge().call("save", path=str(destination))
+    except (BridgeUnavailable, BridgeError) as exc:
+        return f"error: {exc}"
+
+    written = sorted(
+        target.glob(f"{label}*.toe"), key=lambda p: p.stat().st_mtime
+    )
+    if not written:
+        return f"error: TouchDesigner reported no file at {destination}"
+    return f"saved to {written[-1]}"
+
+
+@mcp.tool()
+def td_example(op_type: str, depth: int = 3) -> str:
+    """Show a working example network for an operator.
+
+    TouchDesigner ships an example .tox for most operators. This reads one
+    offline and describes how it is wired and configured — a real usage
+    reference rather than a parameter list.
+    """
+    db = store()
+    row = db.conn.execute(
+        "SELECT type, snippet_path FROM ops WHERE type = ?", (op_type,)
+    ).fetchone()
+    if row is None:
+        return f"No operator type '{op_type}'."
+    if not row["snippet_path"]:
+        return f"TouchDesigner ships no example network for {op_type}."
+
+    from ..project import ExpandError, load_file
+    from ..project.render import describe
+
+    try:
+        project = load_file(row["snippet_path"])
+    except ExpandError as exc:
+        return f"error: {exc}"
+    return describe(project, depth=depth, params=True)
 
 
 @mcp.tool()

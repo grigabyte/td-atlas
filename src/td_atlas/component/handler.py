@@ -400,9 +400,20 @@ def m_redo(_params):
 
 
 def m_save(params):
+    """Save the session. project.save() returns only a bool, so the path the
+    caller asked for is echoed back to save them guessing."""
     path = params.get("path")
     saved = project.save(path) if path else project.save()
-    return {"saved": saved}
+    return {"saved": bool(saved), "path": path, "name": project.name}
+
+
+def m_op_types(params):
+    """Resolve operator paths to their types in a single round trip."""
+    out = {}
+    for path in params.get("paths") or []:
+        target = op(path)
+        out[path] = target.OPType if target is not None else None
+    return out
 
 
 def m_save_tox(params):
@@ -438,6 +449,7 @@ METHODS = {
     "redo": m_redo,
     "save": m_save,
     "save_tox": m_save_tox,
+    "op_types": m_op_types,
     "perf": m_perf,
 }
 

@@ -311,6 +311,70 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_project(args: argparse.Namespace) -> int:
+    """Read, search, diff and repack .toe/.tox files without TouchDesigner."""
+    from .project import ExpandError, collapse, expand, load, load_file
+    from .project.diff import diff as diff_projects
+    from .project.render import describe, grep, render_matches
+
+    try:
+        if args.action == "read":
+            project = load_file(args.file, refresh=args.refresh)
+            print(
+                describe(
+                    project,
+                    path=args.path,
+                    depth=args.depth,
+                    params=args.params,
+                )
+            )
+        elif args.action == "grep":
+            project = load_file(args.file)
+            matches = grep(project, args.pattern, regex=not args.fixed)
+            print(render_matches(matches, args.pattern))
+        elif args.action == "diff":
+            before = load_file(args.file)
+            after = load_file(args.other)
+            result = diff_projects(before, after, include_text=not args.no_text)
+            print(result.render(show_moves=args.moves))
+            _say("\n" + result.summary())
+        elif args.action == "expand":
+            expansion = expand(args.file, refresh=args.refresh)
+            print(expansion.root)
+        elif args.action == "collapse":
+            print(collapse(args.file, args.output))
+        elif args.action == "scripts":
+            project = load_file(args.file)
+            target = Path(args.output)
+            written = 0
+            for node in project.scripts():
+                # Mirror the node hierarchy so paths stay meaningful on disk.
+                destination = target / node.path.lstrip("/")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.with_suffix(_script_suffix(node)).write_text(
+                    node.text or ""
+                )
+                written += 1
+            print(f"wrote {written} script(s) to {target}")
+    except ExpandError as exc:
+        _say(f"error: {exc}")
+        return 1
+    except ValueError as exc:
+        _say(f"error: {exc}")
+        return 1
+    return 0
+
+
+def _script_suffix(node) -> str:
+    """Guess a file extension so extracted DAT contents are syntax-highlighted."""
+    text = node.text or ""
+    if node.op_type == "glslmultiTOP" or "void main()" in text:
+        return ".glsl"
+    if "import " in text or "def " in text or "op(" in text:
+        return ".py"
+    return ".txt"
+
+
 def cmd_mcp(_args: argparse.Namespace) -> int:
     from .mcp.server import main as mcp_main
 
@@ -374,6 +438,42 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--width", type=int)
     p.add_argument("--height", type=int)
     p.set_defaults(func=cmd_render)
+
+    p = sub.add_parser(
+        "project", help="read, search and diff .toe/.tox files offline"
+    )
+    p.set_defaults(func=cmd_project)
+    actions = p.add_subparsers(dest="action", required=True)
+
+    a = actions.add_parser("read", help="show a project's operator tree")
+    a.add_argument("file")
+    a.add_argument("--path", help="only this subtree, e.g. /project1")
+    a.add_argument("--depth", type=int, default=2)
+    a.add_argument("--params", action="store_true", help="include parameters")
+    a.add_argument("--refresh", action="store_true", help="ignore the cache")
+
+    a = actions.add_parser("grep", help="search the code inside a project's DATs")
+    a.add_argument("file")
+    a.add_argument("pattern")
+    a.add_argument("--fixed", action="store_true", help="literal, not regex")
+
+    a = actions.add_parser("diff", help="compare two projects semantically")
+    a.add_argument("file")
+    a.add_argument("other")
+    a.add_argument("--moves", action="store_true", help="list moved-only nodes")
+    a.add_argument("--no-text", action="store_true", help="skip DAT text diffs")
+
+    a = actions.add_parser("expand", help="unpack to a directory and print its path")
+    a.add_argument("file")
+    a.add_argument("--refresh", action="store_true")
+
+    a = actions.add_parser("collapse", help="repack an expanded directory")
+    a.add_argument("file", help="the '<name>.tox.dir' directory")
+    a.add_argument("-o", "--output", required=True)
+
+    a = actions.add_parser("scripts", help="extract every DAT's contents to disk")
+    a.add_argument("file")
+    a.add_argument("-o", "--output", required=True)
 
     p = sub.add_parser("mcp", help="run the MCP server on stdio")
     p.set_defaults(func=cmd_mcp)

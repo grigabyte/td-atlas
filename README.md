@@ -55,6 +55,50 @@ Beyond `exec`, it provides what an agent actually needs:
 Requests are authenticated with a token by default, generated on install and
 read from the same file by both sides.
 
+## Reading projects offline
+
+TouchDesigner ships `toeexpand`, which unpacks a `.toe` or `.tox` into a tree
+of small text files. td-atlas reads that tree, so a project can be inspected,
+searched and compared **without TouchDesigner running at all** — and without
+touching the original, since everything happens on a copy in a cache.
+
+```bash
+td-atlas project read  myproject.toe --path /project1 --params
+td-atlas project grep  myproject.toe "def onValueChange"
+td-atlas project diff  before.toe after.toe
+td-atlas project scripts myproject.toe -o ./extracted
+```
+
+`grep` reaches code that no file search can: the Python and GLSL inside DATs
+lives in the container, not on disk.
+
+`diff` compares meaning rather than bytes — added, removed, retyped, rewired
+and re-parameterised operators, plus a line diff of changed DAT code. Nodes
+that were only dragged are counted separately so they cannot bury a real
+change:
+
+```
+2 added, 0 removed, 1 changed, 0 moved
+
++ /project1/agentblur (blurTOP)  <- /project1/agentnoise
+    size = 8
++ /project1/agentnoise (noiseTOP)
+    period = 4.25
+    tx = absTime.seconds * 0.15  [expression]
+    type = perlin3d
+~ /project1/displace1 (displaceTOP)
+    displaceweightx: '0' -> '0.42'
+```
+
+Paired with `td_snapshot`, that becomes an audit trail: snapshot, let the agent
+work, snapshot again, diff.
+
+The file formats are undocumented, so the readers were derived by measurement
+against the shipped example libraries — the payload prologue is a fixed 27
+bytes with a length field (scanning for a newline instead corrupts about a
+third of the shaders), and bit 4 of a parameter's flags word marks expression
+mode.
+
 ## Install
 
 ```bash
@@ -104,12 +148,18 @@ Or in a client's config file:
 }
 ```
 
-Fifteen tools, in two groups. The index tools cost nothing and need no running
-TouchDesigner — `td_search_operators`, `td_operator_schema`,
-`td_search_parameters`, `td_python_api`, `td_docs`, `td_expression_help`. The
-bridge tools act on the live application — `td_status`, `td_network`,
+Twenty tools, in three groups.
+
+**Index** — offline, no running TouchDesigner: `td_search_operators`,
+`td_operator_schema`, `td_search_parameters`, `td_python_api`, `td_docs`,
+`td_expression_help`, `td_example` (a real network shipped with TouchDesigner).
+
+**Live** — acting on the running application: `td_status`, `td_network`,
 `td_op_info`, `td_build`, `td_set_params`, `td_render`, `td_errors`,
-`td_exec`, `td_undo`.
+`td_exec`, `td_undo`, `td_snapshot`.
+
+**Project files** — reading `.toe`/`.tox` from disk: `td_project_read`,
+`td_project_grep`, `td_project_diff`.
 
 `td_build` and `td_set_params` check parameter names against the index before
 sending anything, so the usual failure modes come back as corrections rather
@@ -126,7 +176,7 @@ than as tracebacks:
 
 ```bash
 uv pip install -e . pytest
-pytest                  # 34 tests, none need TouchDesigner
+pytest                  # 56 tests; only one needs TouchDesigner
 td-atlas reload         # re-stage the bridge and reload it through itself
 ```
 
@@ -145,5 +195,11 @@ src/td_atlas/
   component/          code that runs *inside* TouchDesigner
     bootstrap.py      builds the bridge network in place
     handler.py        the RPC handler
-  mcp/server.py       MCP tools over both layers
+  project/            reading .toe/.tox without TouchDesigner
+    expand.py         driving toeexpand/toecollapse on a copy
+    formats.py        the undocumented file formats
+    model.py          the operator tree
+    diff.py           semantic comparison
+    render.py         tree description and code search
+  mcp/server.py       MCP tools over all three layers
 ```
