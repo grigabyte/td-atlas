@@ -496,6 +496,50 @@ class AtomStore:
                 continue
         return '""'
 
+    def search_ops(
+        self, query: str, family: str = "", limit: int = 12
+    ) -> list[sqlite3.Row]:
+        """Rank operators for a plain-language query.
+
+        Terms are ORed for recall, which on its own lets an operator matching
+        one common word out of five ("images") outrank the one that actually
+        fits. Searching name, label and summary first keeps the answer in the
+        fields that describe what an operator *is*; the full article text is
+        only consulted when that leaves the result set thin.
+        """
+        expression = self.match(query)
+        # Column filters apply to a parenthesised sub-expression in FTS5.
+        focused = f"{{type family label summary}} : ({expression})"
+
+        def run(match: str, count: int) -> list[sqlite3.Row]:
+            sql = (
+                "SELECT type, family, label, summary FROM ops_fts "
+                "WHERE ops_fts MATCH ?"
+            )
+            params: list[Any] = [match]
+            if family:
+                sql += " AND family = ?"
+                params.append(family.upper())
+            sql += (
+                " ORDER BY bm25(ops_fts, 12.0, 1.0, 10.0, 4.0, 1.0) LIMIT ?"
+            )
+            params.append(count)
+            try:
+                return self.conn.execute(sql, params).fetchall()
+            except sqlite3.OperationalError:
+                return []
+
+        rows = run(focused, limit)
+        if len(rows) < limit:
+            seen = {row["type"] for row in rows}
+            for row in run(expression, limit * 2):
+                if row["type"] not in seen:
+                    rows.append(row)
+                    seen.add(row["type"])
+                if len(rows) >= limit:
+                    break
+        return rows[:limit]
+
     def parameters(self, op_type: str) -> list[dict[str, Any]]:
         """An operator's parameters, with group prose resolved onto members.
 

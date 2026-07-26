@@ -78,20 +78,7 @@ def td_search_operators(query: str, family: str = "", limit: int = 12) -> str:
     geometry"). `family` optionally narrows to TOP, CHOP, SOP, DAT, MAT, COMP
     or POP.
     """
-    # Weight the columns so a name or label hit outranks a passing mention
-    # buried in an article body. Columns: type, family, label, summary, doc_text.
-    sql = (
-        "SELECT type, family, label, summary FROM ops_fts "
-        "WHERE ops_fts MATCH ?"
-    )
-    params: list[Any] = [store().match(query)]
-    if family:
-        sql += " AND family = ?"
-        params.append(family.upper())
-    sql += " ORDER BY bm25(ops_fts, 12.0, 1.0, 10.0, 4.0, 1.0) LIMIT ?"
-    params.append(limit)
-
-    rows = store().conn.execute(sql, params).fetchall()
+    rows = store().search_ops(query, family=family, limit=limit)
     if not rows:
         return f"No operators match {query!r}."
     lines = []
@@ -592,37 +579,31 @@ def td_project_diff(
 
 
 @mcp.tool()
-def td_snapshot(label: str = "snapshot") -> str:
-    """Save the running project to a file so it can be diffed later.
+def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
+    """Save a component to a file so it can be diffed later.
 
     Take one before a round of edits and another after, then pass both to
-    td_project_diff to see exactly what changed. Snapshots are written under
-    ~/.td-atlas/snapshots and never touch the artist's own file.
+    td_project_diff to see exactly what changed. Snapshots go to
+    ~/.td-atlas/snapshots.
+
+    A component is written rather than the whole session because saving the
+    session is a Save As: it repoints TouchDesigner at the snapshot file and
+    leaves the artist working in ~/.td-atlas instead of their own project.
     """
     if not re.fullmatch(r"[\w.-]+", label):
         return "error: label may contain only letters, digits, dot, dash, underscore"
     target = cfg.home() / "snapshots"
     target.mkdir(parents=True, exist_ok=True)
+    destination = target / f"{label}.tox"
+    if destination.exists():
+        destination.unlink()
 
-    # TouchDesigner appends '.1', '.2' rather than overwriting, so old files
-    # under this label are cleared first to keep the path predictable.
-    for stale in target.glob(f"{label}.toe") :
-        stale.unlink()
-    for stale in target.glob(f"{label}.[0-9]*.toe"):
-        stale.unlink()
-
-    destination = target / f"{label}.toe"
     try:
-        bridge().call("save", path=str(destination))
+        result = bridge().call("save_tox", path=path, file=str(destination))
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
-
-    written = sorted(
-        target.glob(f"{label}*.toe"), key=lambda p: p.stat().st_mtime
-    )
-    if not written:
-        return f"error: TouchDesigner reported no file at {destination}"
-    return f"saved to {written[-1]}"
+    saved = result.get("saved") or destination
+    return f"saved {path} to {saved}"
 
 
 @mcp.tool()

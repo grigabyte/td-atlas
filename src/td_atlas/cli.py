@@ -199,12 +199,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     if not store.exists():
         _say("error: no index. Run 'td-atlas build' first.")
         return 1
-    rows = store.conn.execute(
-        "SELECT type, family, label, summary FROM ops_fts "
-        "WHERE ops_fts MATCH ? "
-        "ORDER BY bm25(ops_fts, 12.0, 1.0, 10.0, 4.0, 1.0) LIMIT ?",
-        (store.match(args.query), args.limit),
-    ).fetchall()
+    rows = store.search_ops(args.query, limit=args.limit)
     if not rows:
         print("no matches")
         return 0
@@ -238,6 +233,8 @@ def cmd_op(args: argparse.Namespace) -> int:
         print("\n(runtime pass not run: no defaults, ranges or menu options)")
 
     pars = store.parameters(args.type)
+    if args.page:
+        pars = [p for p in pars if (p["page"] or "").lower() == args.page.lower()]
     settable = [p for p in pars if p["settable"] and not p["hidden"]]
     groups = [p for p in pars if not p["settable"]]
 
@@ -426,6 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also list documented parameter groups and their members",
     )
+    p.add_argument("--page", help="only parameters on this page")
     p.set_defaults(func=cmd_op)
 
     p = sub.add_parser("exec", help="run Python inside TouchDesigner")

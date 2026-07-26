@@ -338,6 +338,78 @@ def m_render(params):
             scratch.destroy()
 
 
+_CAPTURE_KEY = "tdatlas_capture"
+
+
+def m_capture(params):
+    """Grab one frame of a TOP into a buffer for later tiling.
+
+    A single request runs inside one cook, so time cannot advance while it
+    executes — a strip of frames has to be collected by the host calling this
+    repeatedly, letting TouchDesigner run in between. Frames are kept as numpy
+    arrays in component storage because that is where numpy lives.
+    """
+    target = _resolve(params.get("path"))
+    if target.family != "TOP":
+        raise TypeError("capture needs a TOP, got a %s" % target.family)
+
+    holder = me.parent()
+    frames = holder.fetch(_CAPTURE_KEY, None)
+    if frames is None or params.get("reset"):
+        frames = []
+        holder.store(_CAPTURE_KEY, frames)
+
+    target.cook(force=True)
+    frames.append(target.numpyArray())
+    return {"frames": len(frames), "path": target.path, "frame": absTime.frame}
+
+
+def m_contact_sheet(params):
+    """Tile the captured frames into one image and clear the buffer."""
+    import numpy
+
+    holder = me.parent()
+    frames = holder.fetch(_CAPTURE_KEY, None) or []
+    if not frames:
+        raise ValueError("no frames captured; call capture first")
+
+    columns = max(1, int(params.get("columns", 3)))
+    width = int(params.get("width", 320))
+    rows = (len(frames) + columns - 1) // columns
+
+    # numpyArray() hands back float RGBA indexed [h, w]; downsample by
+    # striding rather than interpolating, which is enough for a proof sheet
+    # and avoids pulling in a resampler.
+    tiles = []
+    for frame in frames:
+        h, w = frame.shape[0], frame.shape[1]
+        step = max(1, w // width)
+        tiles.append(frame[::step, ::step, :3])
+    th = min(t.shape[0] for t in tiles)
+    tw = min(t.shape[1] for t in tiles)
+    tiles = [t[:th, :tw] for t in tiles]
+
+    sheet = numpy.zeros((rows * th, columns * tw, 3), dtype=tiles[0].dtype)
+    for index, tile in enumerate(tiles):
+        r, c = divmod(index, columns)
+        sheet[r * th : (r + 1) * th, c * tw : (c + 1) * tw] = tile
+
+    # numpyArray() is bottom-up relative to how images are normally read.
+    sheet = numpy.flipud(sheet)
+    eight_bit = (numpy.clip(sheet, 0.0, 1.0) * 255).astype(numpy.uint8)
+
+    holder.unstore(_CAPTURE_KEY)
+    return {
+        "count": len(tiles),
+        "columns": columns,
+        "rows": rows,
+        "width": int(eight_bit.shape[1]),
+        "height": int(eight_bit.shape[0]),
+        "encoding": "raw-rgb8-base64",
+        "data": base64.b64encode(eight_bit.tobytes()).decode("ascii"),
+    }
+
+
 def m_errors(_params):
     """Every operator currently reporting an error or warning."""
     found = []
@@ -444,6 +516,8 @@ METHODS = {
     "par_set": m_par_set,
     "render": m_render,
     "errors": m_errors,
+    "capture": m_capture,
+    "contact_sheet": m_contact_sheet,
     "batch": m_batch,
     "undo": m_undo,
     "redo": m_redo,
