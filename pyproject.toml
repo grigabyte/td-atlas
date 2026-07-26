@@ -1,0 +1,23 @@
+[project]
+name = "td-atlas"
+version = "0.1.0"
+description = "An atomised index of TouchDesigner plus a live bridge, exposed to AI agents over MCP."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2.0",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+td-atlas = "td_atlas.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/td_atlas"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
