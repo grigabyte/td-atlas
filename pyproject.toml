@@ -3,11 +3,24 @@ name = "td-atlas"
 version = "0.1.0"
 description = "An atomised index of TouchDesigner plus a live bridge, exposed to AI agents over MCP."
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "grigabyte" }]
 requires-python = ">=3.11"
+keywords = ["touchdesigner", "mcp", "agents", "creative-coding"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Multimedia :: Graphics",
+]
 dependencies = [
     "mcp>=1.2.0",
-    "httpx>=0.27",
 ]
+
+[project.urls]
+Repository = "https://github.com/grigabyte/td-atlas"
+Issues = "https://github.com/grigabyte/td-atlas/issues"
 
 [project.scripts]
 td-atlas = "td_atlas.cli:main"
