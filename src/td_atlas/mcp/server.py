@@ -526,11 +526,11 @@ def td_project_read(
     adds the parameter values that differ from the defaults — which is all a
     saved project records, so it is exactly what someone chose deliberately.
     """
-    from ..project import ExpandError, load_file
+    from ..project import ExpandError, index_resolver, load_file
     from ..project.render import describe
 
     try:
-        project = load_file(file)
+        project = load_file(file, resolver=index_resolver())
     except ExpandError as exc:
         return f"error: {exc}"
     return describe(project, path=path or None, depth=depth, params=params)
@@ -543,11 +543,11 @@ def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
     Ordinary file search cannot reach this code: it lives inside the .toe
     container, not on disk. `pattern` is a regular expression.
     """
-    from ..project import ExpandError, load_file
+    from ..project import ExpandError, index_resolver, load_file
     from ..project.render import grep, render_matches
 
     try:
-        project = load_file(file)
+        project = load_file(file, resolver=index_resolver())
         matches = grep(project, pattern, limit=limit)
     except ExpandError as exc:
         return f"error: {exc}"
@@ -566,12 +566,14 @@ def td_project_diff(
     plus a line diff of any changed DAT code. Nodes that were only dragged to
     a new position are counted separately so they cannot bury a real change.
     """
-    from ..project import ExpandError, load_file
+    from ..project import ExpandError, index_resolver, load_file
     from ..project.diff import diff
 
     try:
         result = diff(
-            load_file(before), load_file(after), include_text=include_text
+            load_file(before, resolver=index_resolver()),
+            load_file(after, resolver=index_resolver()),
+            include_text=include_text,
         )
     except ExpandError as exc:
         return f"error: {exc}"
@@ -623,11 +625,11 @@ def td_example(op_type: str, depth: int = 3) -> str:
     if not row["snippet_path"]:
         return f"TouchDesigner ships no example network for {op_type}."
 
-    from ..project import ExpandError, load_file
+    from ..project import ExpandError, index_resolver, load_file
     from ..project.render import describe
 
     try:
-        project = load_file(row["snippet_path"])
+        project = load_file(row["snippet_path"], resolver=index_resolver())
     except ExpandError as exc:
         return f"error: {exc}"
     return describe(project, depth=depth, params=True)

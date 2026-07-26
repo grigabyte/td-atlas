@@ -39,9 +39,12 @@ class Node:
     table: list[list[str]] | None = None
     children: list[Node] = field(default_factory=list)
 
+    resolved_type: str | None = None
+
     @property
     def op_type(self) -> str:
-        return self.node.op_type
+        """Canonical type, with the saved abbreviation expanded when known."""
+        return self.resolved_type or self.node.op_type
 
     @property
     def family(self) -> str:
@@ -111,7 +114,35 @@ def _read(path: Path) -> str | None:
         return None
 
 
-def load(expansion: Expansion) -> Project:
+class TypeResolver:
+    """Map the abbreviated type names in .n files onto canonical ones.
+
+    A saved node records a contraction rather than the operator's real type:
+    'geoCOMP' for geometryCOMP, 'evalDAT' for evaluateDAT, 'audiodevoutCHOP'
+    for audiodeviceoutCHOP. Roughly one node in six is affected, and every one
+    of those cannot be joined to the index without this.
+
+    The map is measured, not guessed. Guessing looks tempting — a contraction
+    is always a subsequence of the full name — but 'parexecDAT' is a
+    subsequence of both parameterexecuteDAT and pargroupexecuteDAT, and
+    picking by length silently chooses the wrong one. An unresolved type is
+    better than a confidently wrong one, so anything absent from the map is
+    left as it was found.
+    """
+
+    def __init__(self, aliases: dict[str, str], known: set[str] | None = None):
+        self.aliases = aliases
+        self.known = known or set()
+
+    def resolve(self, op_type: str) -> str:
+        return self.aliases.get(op_type, op_type)
+
+    @property
+    def size(self) -> int:
+        return len(self.aliases)
+
+
+def load(expansion: Expansion, resolver: TypeResolver | None = None) -> Project:
     """Build a Project from an expanded directory."""
     root = expansion.root
     build_file = root / ".build"
@@ -124,6 +155,8 @@ def load(expansion: Expansion) -> Project:
 
         node_data = read_node(_read(n_file) or "")
         entry = Node(path=path, name=stem.name, node=node_data)
+        if resolver is not None:
+            entry.resolved_type = resolver.resolve(node_data.op_type)
 
         parm_file = stem.with_suffix(".parm")
         if parm_file.exists():
@@ -163,8 +196,30 @@ def load(expansion: Expansion) -> Project:
     return Project(source=expansion.source, build=build, roots=roots)
 
 
-def load_file(source: str | Path, refresh: bool = False) -> Project:
+def load_file(
+    source: str | Path,
+    refresh: bool = False,
+    resolver: TypeResolver | None = None,
+) -> Project:
     """Expand and load a .toe/.tox in one step."""
     from .expand import expand
 
-    return load(expand(source, refresh=refresh))
+    return load(expand(source, refresh=refresh), resolver=resolver)
+
+
+def index_resolver(db_path=None) -> TypeResolver | None:
+    """A resolver backed by the atom index, when one has been built."""
+    from ..atoms.store import AtomStore
+    from ..config import db_path as default_db
+
+    store = AtomStore(db_path or default_db())
+    if not store.exists():
+        return None
+    try:
+        aliases = store.type_aliases()
+        known = {row[0] for row in store.conn.execute("SELECT type FROM ops")}
+    except Exception:
+        return None
+    finally:
+        store.close()
+    return TypeResolver(aliases, known)

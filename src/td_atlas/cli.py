@@ -310,13 +310,15 @@ def cmd_render(args: argparse.Namespace) -> int:
 
 def cmd_project(args: argparse.Namespace) -> int:
     """Read, search, diff and repack .toe/.tox files without TouchDesigner."""
-    from .project import ExpandError, collapse, expand, load, load_file
+    from .project import ExpandError, collapse, expand, index_resolver, load_file
     from .project.diff import diff as diff_projects
     from .project.render import describe, grep, render_matches
 
+    resolver = index_resolver()
+
     try:
         if args.action == "read":
-            project = load_file(args.file, refresh=args.refresh)
+            project = load_file(args.file, refresh=args.refresh, resolver=resolver)
             print(
                 describe(
                     project,
@@ -326,12 +328,12 @@ def cmd_project(args: argparse.Namespace) -> int:
                 )
             )
         elif args.action == "grep":
-            project = load_file(args.file)
+            project = load_file(args.file, resolver=resolver)
             matches = grep(project, args.pattern, regex=not args.fixed)
             print(render_matches(matches, args.pattern))
         elif args.action == "diff":
-            before = load_file(args.file)
-            after = load_file(args.other)
+            before = load_file(args.file, resolver=resolver)
+            after = load_file(args.other, resolver=resolver)
             result = diff_projects(before, after, include_text=not args.no_text)
             print(result.render(show_moves=args.moves))
             _say("\n" + result.summary())
@@ -341,7 +343,7 @@ def cmd_project(args: argparse.Namespace) -> int:
         elif args.action == "collapse":
             print(collapse(args.file, args.output))
         elif args.action == "scripts":
-            project = load_file(args.file)
+            project = load_file(args.file, resolver=resolver)
             target = Path(args.output)
             written = 0
             for node in project.scripts():

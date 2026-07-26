@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 
 from ..bridge.client import BridgeClient, BridgeError
 from .store import AtomStore
@@ -158,6 +159,70 @@ class ProbeStats:
         return text
 
 
+_ALIAS_PROBE = """
+box = op('/tdatlas/alias_probe')
+if box: box.destroy()
+box = op('/tdatlas').create(baseCOMP, 'alias_probe')
+box.allowCooking = False
+made = 0
+for fam, types in families.items():
+    for cls in types:
+        try:
+            box.create(cls, 'n%%d' %% made, initialize=False)
+            made += 1
+        except Exception:
+            pass
+box.save(%(dest)r)
+result = {ch.name: ch.OPType for ch in box.children}
+"""
+
+
+def derive_type_aliases(
+    client: BridgeClient, progress: Progress | None = None
+) -> dict[str, str]:
+    """Measure how TouchDesigner spells each operator type when it saves.
+
+    A saved .toe records a contraction — 'geoCOMP' for geometryCOMP — so a
+    project read from disk cannot be joined to the index without this map.
+    Deriving it takes one save and one expansion: every type is instantiated
+    in a sandbox, the sandbox is written out, and each node's saved spelling
+    is compared with what TouchDesigner says its type really is.
+    """
+    say = progress or (lambda _m: None)
+    import tempfile
+
+    from ..project.expand import ExpandError, expand
+    from ..project.formats import read_node
+
+    dest = str(Path(tempfile.gettempdir()) / "td_atlas_alias_probe.tox")
+    try:
+        real_types = client.exec(
+            _ALIAS_PROBE % {"dest": dest}, timeout=180.0
+        )["result"]
+    except BridgeError as exc:
+        say(f"could not derive saved-name aliases: {exc.message}")
+        return {}
+
+    try:
+        expansion = expand(dest, refresh=True)
+    except ExpandError as exc:
+        say(f"could not expand the alias probe: {exc}")
+        return {}
+
+    aliases: dict[str, str] = {}
+    for n_file in expansion.root.rglob("*.n"):
+        node = read_node(n_file.read_text(errors="replace"))
+        canonical = real_types.get(n_file.stem)
+        if canonical and node.op_type and node.op_type != canonical:
+            aliases[node.op_type] = canonical
+
+    try:
+        client.exec("op('/tdatlas/alias_probe').destroy()\nresult=1")
+    except BridgeError:
+        pass
+    return aliases
+
+
 def list_types(client: BridgeClient) -> dict[str, list[str]]:
     """Every operator type TouchDesigner knows, grouped by family."""
     return client.exec(_LIST_TYPES)["result"]
@@ -247,6 +312,12 @@ def run(
         client.exec(_CLEANUP)
     except BridgeError:
         pass
+
+    aliases = derive_type_aliases(client, say)
+    if aliases:
+        store.insert_type_aliases(aliases)
+        store.conn.commit()
+        say(f"recorded {len(aliases)} saved-name alias(es)")
 
     store.set_meta("runtime_pass", "complete")
     store.set_meta("runtime_types_probed", str(stats.types_probed))

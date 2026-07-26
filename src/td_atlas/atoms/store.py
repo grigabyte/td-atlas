@@ -117,6 +117,13 @@ CREATE TABLE snippets (
     PRIMARY KEY (op_type, path)
 );
 
+-- Saved .toe/.tox files record a contracted type name ('geoCOMP') rather
+-- than the canonical one ('geometryCOMP'). Measured during the runtime pass.
+CREATE TABLE type_aliases (
+    alias     TEXT PRIMARY KEY,
+    canonical TEXT NOT NULL
+);
+
 CREATE TABLE expressions (
     kind  TEXT NOT NULL,        -- 'command' | 'expression'
     name  TEXT NOT NULL,
@@ -295,6 +302,21 @@ class AtomStore:
             payload,
         )
         return len(payload)
+
+    def insert_type_aliases(self, mapping: dict[str, str]) -> int:
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO type_aliases(alias, canonical) VALUES(?, ?)",
+            list(mapping.items()),
+        )
+        return len(mapping)
+
+    def type_aliases(self) -> dict[str, str]:
+        return {
+            row["alias"]: row["canonical"]
+            for row in self.conn.execute(
+                "SELECT alias, canonical FROM type_aliases"
+            )
+        }
 
     def insert_expressions(self, rows: Iterable[dict[str, Any]]) -> int:
         payload = [
