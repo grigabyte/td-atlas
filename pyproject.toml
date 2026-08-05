@@ -15,7 +15,10 @@ classifiers = [
     "Topic :: Multimedia :: Graphics",
 ]
 dependencies = [
-    "mcp>=1.2.0",
+    # Pinned below 2.0: that release removed mcp.server.fastmcp, which
+    # mcp/server.py is written against. Moving to the 2.x server API is a
+    # separate piece of work, not a version bump.
+    "mcp>=1.2,<2",
 ]
 
 [project.urls]
