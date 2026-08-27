@@ -3,12 +3,12 @@
 An atomised index of TouchDesigner, a live bridge into a running instance, and
 an offline reader for saved projects — exposed to AI agents over MCP.
 
-Existing agent connectors for TouchDesigner are thin RPC layers: a Web Server
-DAT, an `exec(python)` endpoint, and a handful of CRUD calls. That is enough to
-*poke* TouchDesigner and not enough to *build* in it. An agent driving those
-tools guesses parameter names, cannot see what it made, leaves half-applied
-networks behind when a step fails, and — worst of all — has no way to notice
-that what it built is not running.
+An agent building in TouchDesigner needs three things at once: exact knowledge
+of the operators and parameters on *this* machine, control of a running
+instance that can be undone in one step, and a way to read a saved project
+without opening it. Miss the first and it guesses parameter names. Miss the
+second and a failed step leaves half a network behind. Miss the third and every
+question about an existing project needs the application running.
 
 td-atlas is built on two observations:
 
@@ -57,7 +57,7 @@ Beyond `exec`:
 
 Requests are authenticated with a token by default.
 
-## What nothing else catches
+## What TouchDesigner does not report
 
 `errors` covers what TouchDesigner calls an error. `td_health` covers what it
 does not:
@@ -131,7 +131,7 @@ td-atlas probe
 claude mcp add td-atlas -- /path/to/td-atlas/.venv/bin/td-atlas mcp
 ```
 
-23 tools in three groups — see `skill/touchdesigner/references/tools.md`.
+23 tools in three groups — see `skills/touchdesigner/references/tools.md`.
 
 **Index** (offline): `td_search_operators`, `td_operator_schema`,
 `td_search_parameters`, `td_python_api`, `td_docs`, `td_glossary`,
