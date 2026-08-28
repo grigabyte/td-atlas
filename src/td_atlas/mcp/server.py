@@ -58,12 +58,26 @@ def bridge() -> BridgeClient:
 
 
 def _warn(client: BridgeClient) -> str:
-    """A 'warning: ...' line to prefix onto a tool's text result, or ''.
+    """The 'warning: ...' lines to prefix onto a tool's text result, or ''.
 
     Plain text, not part of any structured field, so it cannot break a
     caller's parsing of the rest of the response.
+
+    Two warnings can be raised by the same call and both belong here. The
+    ambiguity one is the reason the instance registry exists: with two
+    TouchDesigners open, every tool below goes to whichever bridge the
+    session file names, and without this line the agent would have no way to
+    learn that its edits landed in the other project.
     """
-    return f"warning: {client.version_warning}\n" if client.version_warning else ""
+    lines = []
+    if client.ambiguity_warning:
+        lines.append(
+            f"{client.ambiguity_warning} From here, td_instances lists them; "
+            f"selecting one is a host-side flag."
+        )
+    if client.version_warning:
+        lines.append(client.version_warning)
+    return "".join(f"warning: {line}\n" for line in lines)
 
 
 def _fmt_param(row: dict[str, Any]) -> str:
@@ -306,6 +320,94 @@ def td_status() -> str:
         f"{info['build']}, project '{info['project']}' in "
         f"{info['projectFolder']}, {info['fps']} fps, frame {info['frame']}"
     )
+
+
+@mcp.tool()
+def td_instances() -> str:
+    """Which TouchDesigner instances are running, and which one these tools reach.
+
+    Reach for this whenever the artist may have more than one project open —
+    and always before believing that an edit went where you meant. Every
+    other bridge tool here dials a single bridge chosen on this host (the
+    session file, or a `--port`/`--project` flag given to the td-atlas CLI);
+    with two TouchDesigners running, the one it picks may not be the one the
+    conversation is about, and nothing in a successful result would say so.
+    This lists all of them — project, port, build, pid and when each was last
+    seen — and marks the one the other tools are talking to. Aiming at a
+    different one is not possible from here (the CLI's `--port`/`--project`
+    have no MCP equivalent yet): name the port to the user and let them
+    decide, rather than assuming the edit landed where they meant.
+    """
+    records = cfg.read_instances()
+    live = [record for record in records if record.alive]
+    removed = [record for record in records if not record.alive]
+
+    session = cfg.load_session() or {}
+    default_port = int(
+        session.get("port") or cfg.load_config().get("port") or cfg.DEFAULT_PORT
+    )
+    try:
+        default_port = BridgeClient.discover().port
+    except (cfg.InstanceSelectionError, OSError, ValueError):
+        # Falls back to the session/config port worked out above: failing to
+        # resolve the default is not a reason to withhold the listing.
+        pass
+
+    lines = []
+    if not live:
+        lines.append(
+            "No running TouchDesigner has registered a bridge. Either none is "
+            "open, or the one that is predates the instance registry — the "
+            "other tools will still reach it on port "
+            f"{default_port} if it is there."
+        )
+    else:
+        word = "instance" if len(live) == 1 else "instances"
+        lines.append(f"{len(live)} running {word}:")
+        for record in live:
+            mark = "  <- these tools talk to this one" if record.port == default_port else ""
+            lines.append(
+                f"  port {record.port}  {record.label}  build "
+                f"{record.build or '?'}  pid {record.pid}  protocol "
+                f"{record.protocol}  last seen {int(record.age)}s ago{mark}"
+            )
+            lines.append(f"      {record.project_path or '(unsaved project)'}")
+    for record in removed:
+        lines.append(
+            f"({record.dead_reason}, so the stale record for {record.label} "
+            f"was removed)"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def td_doctor() -> str:
+    """Check the whole chain — install, index, probe pass, bridge, this server.
+
+    Run this when something is wrong and it is not obvious which link broke,
+    or before trusting a long build session. The trap it exists for is the
+    one that raises nothing: an index built from a different TouchDesigner
+    build still answers every question, with defaults and menu options that
+    describe the other build, so an agent configures parameters that may not
+    exist and the only symptom is a network that quietly does not work. It
+    also separates 'not running' (a state) from 'registered but silent' and
+    'answering but refusing the token', which need different repairs. Each
+    line names the command that fixes it.
+    """
+    import argparse
+
+    from ..cli import doctor_checks, render_checks
+
+    args = argparse.Namespace(install_path=None, db=None, port=None, project=None)
+    try:
+        checks = doctor_checks(args)
+    except Exception as exc:  # never an opaque ToolError; see AGENTS.md
+        return f"error: could not run the checks ({type(exc).__name__}: {exc})"
+    report = render_checks(checks)
+    broken = [check.link for check in checks if check.broken]
+    if broken:
+        return f"{report}\n\nbroken: {', '.join(broken)}"
+    return f"{report}\n\nevery link checked out."
 
 
 @mcp.tool()

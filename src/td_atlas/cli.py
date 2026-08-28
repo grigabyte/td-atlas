@@ -240,14 +240,12 @@ def broken_editable_install_diagnosis(
 
 def cmd_install(args: argparse.Namespace) -> int:
     """Stage the bridge sources in ~/.td-atlas and print the bootstrap line."""
-    home = cfg.home()
-    home.mkdir(parents=True, exist_ok=True)
-    home.chmod(0o700)
+    home = cfg.ensure_home()
 
     for name in ("bootstrap.py", "handler.py"):
         shutil.copyfile(COMPONENT_DIR / name, home / name)
 
-    config = cfg.ensure_config(port=args.port, auth=not args.no_auth)
+    config = cfg.ensure_config(port=args.install_port, auth=not args.no_auth)
     line = f"exec(open('{cfg.bootstrap_path()}').read())"
 
     print("td-atlas bridge staged in", home)
@@ -1217,14 +1215,28 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("install", help="stage the bridge and print the bootstrap line")
-    p.add_argument("--port", type=int, default=None)
+    # Same spelling as the global flag, deliberately different meaning and
+    # therefore a different dest: this one is the port to *configure*, the
+    # global one selects a bridge that is already running. Sharing `dest`
+    # made the subparser's default overwrite whatever the global flag had
+    # already parsed, so `td-atlas --port 1234 install` silently arrived with
+    # port=None — a flag the user typed, dropped without a word. Splitting
+    # the dest keeps both values, and `stray_selection` below turns the
+    # combination that cannot mean anything into an error instead.
+    p.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        dest="install_port",
+        help="the port the bridge should bind (default 9977)",
+    )
     p.add_argument("--no-auth", action="store_true", help="disable token auth")
     p.add_argument(
         "--write-mcp-json",
         metavar="DIR",
         help="also add the td-atlas server to DIR/.mcp.json (merged, not overwritten)",
     )
-    p.set_defaults(func=cmd_install)
+    p.set_defaults(func=cmd_install, uses_selector=False)
 
     p = sub.add_parser(
         "release-tox", help="build the bridge as a drag-and-drop .tox"
@@ -1233,41 +1245,41 @@ def build_parser() -> argparse.ArgumentParser:
         "-o", "--output", default=None,
         help="where to write the component (default release/TdAtlas.tox)",
     )
-    p.set_defaults(func=cmd_release_tox)
+    p.set_defaults(func=cmd_release_tox, uses_selector=False)
 
     p = sub.add_parser("build", help="build the offline index from a TD install")
     p.add_argument("--install-path", help="TouchDesigner application directory")
     p.add_argument("--no-probe", action="store_true", help="suppress the probe hint")
-    p.set_defaults(func=cmd_build)
+    p.set_defaults(func=cmd_build, uses_selector=False)
 
     p = sub.add_parser("probe", help="add runtime facts from a running TD")
     p.add_argument("--chunk", type=int, default=40)
-    p.set_defaults(func=cmd_probe)
+    p.set_defaults(func=cmd_probe, uses_selector=True)
 
     p = sub.add_parser(
         "reload", help="re-stage and reload the bridge through itself"
     )
-    p.set_defaults(func=cmd_reload)
+    p.set_defaults(func=cmd_reload, uses_selector=True)
 
     p = sub.add_parser(
         "instances", help="list the running TouchDesigner instances and how to target them"
     )
-    p.set_defaults(func=cmd_instances)
+    p.set_defaults(func=cmd_instances, uses_selector=False)
 
     p = sub.add_parser("status", help="show install, index and bridge state")
-    p.set_defaults(func=cmd_status)
+    p.set_defaults(func=cmd_status, uses_selector=True)
 
     p = sub.add_parser(
         "doctor",
         help="check the whole chain link by link and say what to run to fix it",
     )
     p.add_argument("--install-path", help="TouchDesigner application directory")
-    p.set_defaults(func=cmd_doctor)
+    p.set_defaults(func=cmd_doctor, uses_selector=True)
 
     p = sub.add_parser("search", help="full-text search over operators")
     p.add_argument("query")
     p.add_argument("--limit", type=int, default=15)
-    p.set_defaults(func=cmd_search)
+    p.set_defaults(func=cmd_search, uses_selector=False)
 
     p = sub.add_parser("op", help="show an operator's full schema")
     p.add_argument("type")
@@ -1277,23 +1289,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="also list documented parameter groups and their members",
     )
     p.add_argument("--page", help="only parameters on this page")
-    p.set_defaults(func=cmd_op)
+    p.set_defaults(func=cmd_op, uses_selector=False)
 
     p = sub.add_parser("exec", help="run Python inside TouchDesigner")
     p.add_argument("code", help="source, or - to read stdin")
-    p.set_defaults(func=cmd_exec)
+    p.set_defaults(func=cmd_exec, uses_selector=True)
 
     p = sub.add_parser("render", help="save a TOP's image")
     p.add_argument("path")
     p.add_argument("-o", "--output", default="render.png")
     p.add_argument("--width", type=int)
     p.add_argument("--height", type=int)
-    p.set_defaults(func=cmd_render)
+    p.set_defaults(func=cmd_render, uses_selector=True)
 
     p = sub.add_parser(
         "project", help="read, search and diff .toe/.tox files offline"
     )
-    p.set_defaults(func=cmd_project)
+    p.set_defaults(func=cmd_project, uses_selector=False)
     actions = p.add_subparsers(dest="action", required=True)
 
     a = actions.add_parser("read", help="show a project's operator tree")
@@ -1327,13 +1339,56 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("-o", "--output", required=True)
 
     p = sub.add_parser("mcp", help="run the MCP server on stdio")
-    p.set_defaults(func=cmd_mcp)
+    p.set_defaults(func=cmd_mcp, uses_selector=False)
     return parser
+
+
+def stray_selection(args: argparse.Namespace) -> str | None:
+    """Complain about `--port`/`--project` given to a command that ignores them.
+
+    The global flags mean "aim at this running bridge", and only the
+    bridge-facing commands read them (they carry `uses_selector=True`). Given
+    to any other subcommand they used to be parsed, stored and never looked
+    at, which is the silent kind of wrong this project refuses: the user
+    stated an intention and the tool neither honoured it nor said anything.
+    Returns the message to print, or None when there is nothing to complain
+    about.
+    """
+    if getattr(args, "uses_selector", False):
+        return None
+    given = [
+        flag
+        for flag, value in (("--port", getattr(args, "port", None)),
+                            ("--project", getattr(args, "project", None)))
+        if value is not None
+    ]
+    if not given:
+        return None
+    command = getattr(args, "command", "this command")
+    message = (
+        f"{' and '.join(given)} before the subcommand selects which running "
+        f"TouchDesigner to talk to, and "
+        f"'{command}' does not talk to one — so the flag would be ignored. "
+        f"Run 'td-atlas instances' to see the running bridges, and put the "
+        f"flag on a command that reaches one (probe, reload, status, exec, "
+        f"render, doctor)."
+    )
+    if command == "install" and "--port" in given:
+        message += (
+            "\nTo set the port the bridge should bind, put the flag after "
+            "the subcommand: td-atlas install --port "
+            f"{getattr(args, 'port', cfg.DEFAULT_PORT)}"
+        )
+    return message
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    complaint = stray_selection(args)
+    if complaint:
+        _say(f"error: {complaint}")
+        return 2
     return args.func(args)
 
 

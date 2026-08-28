@@ -127,6 +127,28 @@ REGISTRY_INTERVAL = 30.0
 _registry_last = 0.0
 
 
+def _ensure_home():
+    """Create ~/.td-atlas (and the registry directory) with 0700 on the home.
+
+    The host's `td-atlas install` narrows the same directory the same way (see
+    config.py's `ensure_home`). Both sides do it because neither is guaranteed
+    to be first: a TouchDesigner that started before any install creates the
+    directory here, and with only `makedirs` its permissions came from
+    whatever umask that TouchDesigner happened to inherit. The chmod is
+    re-applied every time rather than passed as a mode, since `makedirs` will
+    not touch an existing directory.
+    """
+    home = _home()
+    os.makedirs(os.path.join(home, "instances"), exist_ok=True)
+    try:
+        os.chmod(home, 0o700)
+    except Exception:
+        # Its own try: failing to narrow the directory must not abort — or be
+        # reported as — a failure to write the record.
+        pass
+    return home
+
+
 def _instance_path(port):
     return os.path.join(_home(), "instances", "%d.json" % int(port))
 
@@ -175,7 +197,7 @@ def _write_instance(dat, now=None):
     try:
         port = int(dat.par.port.eval())
         path = _instance_path(port)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        _ensure_home()
         record = _instance_record(port, _component_path(dat))
         tmp = path + ".tmp"
         with open(tmp, "w") as handle:

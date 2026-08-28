@@ -17,6 +17,18 @@ Three layers, deliberately separable:
 humans. Keep that parity — a capability added to one should appear in the
 other, or the omission should be deliberate and noted.
 
+One omission is deliberate: **the MCP surface cannot aim at a chosen
+instance.** The CLI's global `--port`/`--project` have no MCP equivalent;
+every bridge tool dials whatever `BridgeClient.discover()` picks. The reason
+is the failure mode, not the plumbing: `discover()` raises
+`InstanceSelectionError` when a flag names no bridge or several, and an MCP
+tool must return that as text rather than an exception, which would mean a
+guard at every one of the twelve `bridge()` call sites. What the registry
+was built to prevent is covered without it — `td_instances` lists every
+running bridge and marks the one these tools reach, and `_warn` prefixes the
+ambiguity warning onto every bridge result whenever more than one is running,
+so an agent cannot edit the wrong project in silence.
+
 ## The rule that matters most here
 
 **Measure, do not guess.** Almost none of what this project depends on is

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -9,8 +10,11 @@ from pathlib import Path
 from td_atlas.cli import (
     broken_editable_install_diagnosis,
     broken_env_diagnosis,
+    build_parser,
+    main,
     mcp_command,
     mcp_connection_line,
+    stray_selection,
     write_mcp_json,
 )
 
@@ -245,3 +249,93 @@ def test_release_tox_names_the_open_bridge_when_there_is_no_token(
     assert "holds no token yet" in out
     assert "accept any caller on this machine" in out
     assert "td-atlas install" in out
+
+
+# -- global flags versus subcommand flags ------------------------------------
+#
+# `--port` is spelled the same in two places and means two different things:
+# before the subcommand it selects a running TouchDesigner, after `install` it
+# is the port the bridge should bind. Sharing one `dest` let the subparser's
+# default overwrite the already-parsed global value, so a flag the user typed
+# vanished with no message at all. These assert the parsed namespace, not the
+# printed output — the bug was in parsing.
+
+def test_global_port_survives_the_install_subparsers_own_port():
+    args = build_parser().parse_args(["--port", "1234", "install"])
+
+    assert args.port == 1234, "the subparser's default overwrote a parsed flag"
+    assert args.install_port is None
+
+
+def test_installs_own_port_lands_on_its_own_dest():
+    args = build_parser().parse_args(["install", "--port", "9978"])
+
+    assert args.install_port == 9978
+    assert args.port is None
+
+
+def test_both_ports_can_be_given_and_are_told_apart():
+    args = build_parser().parse_args(["--port", "1234", "install", "--port", "9978"])
+
+    assert (args.port, args.install_port) == (1234, 9978)
+
+
+def test_a_selection_flag_on_a_command_that_ignores_it_is_an_error(capsys):
+    """Silently dropping it is the failure; acting on it would be a lie."""
+    assert main(["--port", "1234", "install"]) == 2
+
+    err = capsys.readouterr().err
+    assert "--port" in err and "'install'" in err
+    assert "td-atlas install --port 1234" in err, "the working form is not named"
+
+
+def test_project_before_a_command_that_never_reads_it_is_an_error(capsys):
+    assert main(["--project", "Vessel", "search", "blur"]) == 2
+
+    assert "--project" in capsys.readouterr().err
+
+
+def test_a_selection_flag_on_a_bridge_command_is_not_rejected():
+    """The flags must still reach the commands that do read them."""
+    parser = build_parser()
+    for command in ("status", "reload", "probe", "doctor"):
+        args = parser.parse_args(["--port", "9978", command])
+        assert stray_selection(args) is None, command
+        assert args.port == 9978
+
+
+def _subparser_actions(parser):
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for name, sub in action.choices.items():
+                yield name, sub
+                yield from (
+                    (f"{name} {inner_name}", inner)
+                    for inner_name, inner in _subparser_actions(sub)
+                )
+
+
+def test_no_subcommand_shadows_a_global_dest():
+    """The same collision, swept for across every subcommand at once.
+
+    A subparser sharing a `dest` with the root parser does not merely shadow
+    it: argparse writes its own default over whatever the root already
+    parsed, which is how `--port` before `install` came back as None.
+    """
+    parser = build_parser()
+    globals_ = {
+        action.dest
+        for action in parser._actions
+        if action.dest not in ("help", argparse.SUPPRESS)
+        and not isinstance(action, argparse._SubParsersAction)
+    }
+    assert {"db", "port", "project"} <= globals_
+
+    for name, sub in _subparser_actions(parser):
+        collisions = {
+            action.dest
+            for action in sub._actions
+            if action.dest in globals_
+            and not isinstance(action, argparse._SubParsersAction)
+        }
+        assert not collisions, f"'{name}' shadows the global {sorted(collisions)}"

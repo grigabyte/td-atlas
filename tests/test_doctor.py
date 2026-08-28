@@ -454,3 +454,48 @@ def test_unresolved_links_are_summarised_without_failing(world, capsys):
 
     assert code == 0
     assert "unresolved: probe (warn)" in out
+
+
+# -- the same command as an MCP tool -----------------------------------------
+#
+# `doctor` existed only for humans: an agent driving TouchDesigner over MCP
+# had no way to ask which link was broken. The tool reuses `doctor_checks`
+# and `render_checks` unchanged, so the two surfaces cannot drift.
+
+def _td_doctor(world, monkeypatch):
+    from td_atlas.mcp import server
+
+    monkeypatch.setattr(cfg, "db_path", lambda: world.db)
+    return server.td_doctor()
+
+
+def test_the_mcp_doctor_tool_reports_every_link(world, monkeypatch):
+    text = _td_doctor(world, monkeypatch)
+
+    for link in LINKS:
+        assert link in text
+    assert "every link checked out." in text
+
+
+def test_the_mcp_doctor_tool_names_the_broken_link(world, monkeypatch):
+    make_index(world.db, build="2023.11600", install_root="/old/TouchDesigner.app")
+
+    text = _td_doctor(world, monkeypatch)
+
+    assert "broken: index build" in text
+    assert "2023.11600" in text and "2025.32460" in text
+
+
+def test_the_mcp_doctor_tool_returns_a_failure_as_text_not_an_exception(monkeypatch):
+    """An exception surfaces to the agent as an opaque ToolError; see AGENTS.md."""
+    from td_atlas.mcp import server
+
+    def explode(_args, run=None):
+        raise RuntimeError("nothing works")
+
+    monkeypatch.setattr(cli, "doctor_checks", explode)
+
+    text = server.td_doctor()
+
+    assert text.startswith("error: ")
+    assert "nothing works" in text

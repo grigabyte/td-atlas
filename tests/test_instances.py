@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import time
 from pathlib import Path
 
@@ -570,3 +571,178 @@ def test_install_calls_the_registration():
     install = source[source.index("def install():"):]
     assert "_register(server, handler, port)" in install
     assert install.index("server.par.active = True") < install.index("_register(")
+
+
+# -- the writer and the reader agree about every field ----------------------
+
+# The contract between `handler._instance_record` (inside TouchDesigner) and
+# `config.Instance.from_dict` (on the host): the key one writes, the attribute
+# the other reads it back as. Asserted through a real record on disk, so a
+# rename on either side breaks the test — the writer's keys are compared
+# against this map, and every value is checked to arrive intact rather than as
+# the reader's empty default.
+RECORD_FIELDS = {
+    "port": "port",
+    "project": "project",
+    "projectPath": "project_path",
+    "build": "build",
+    "pid": "pid",
+    "component": "component",
+    "protocol": "protocol",
+    "updated": "updated",
+}
+
+
+def test_every_field_the_bridge_writes_is_read_back_under_the_same_name(bridge):
+    """Nothing here is a dictionary the test wrote: writer to disk to reader.
+
+    The earlier version of this file asserted three fields of eight through
+    the real chain and the rest against its own `write_record` fixture, so a
+    key renamed on one side alone still passed.
+    """
+    handler.onServerStart(_Dat(9977))
+
+    raw = _record_on_disk(bridge)
+    (found,) = cfg.read_instances(prune=False)
+
+    assert set(raw) == set(RECORD_FIELDS), "the bridge's field set moved"
+    for key, attribute in RECORD_FIELDS.items():
+        assert raw[key], f"{key} is empty, so a rename could not be detected"
+        assert getattr(found, attribute) == raw[key], f"{key} did not survive"
+
+
+# -- the path taken when there is no registry and no session file -----------
+
+def test_without_a_registry_or_a_session_the_port_comes_from_the_config(registry):
+    """The oldest path of all, and the last one still uncovered.
+
+    9983, not the default: a client that ignored config.json and fell back to
+    DEFAULT_PORT would pass this test if the config named 9977.
+    """
+    (registry / "config.json").write_text(
+        json.dumps({"port": 9983, "token": "from-config"})
+    )
+    assert not (registry / "session.json").exists()
+    assert list((registry / "instances").iterdir()) == []
+
+    client = BridgeClient.discover()
+
+    assert client.port == 9983
+    assert client.token == "from-config"
+    assert client.instance is None
+    assert client.ambiguity_warning is None
+
+
+# -- the state directory's permissions do not depend on who arrives first ---
+
+def test_the_bridge_creates_the_state_directory_narrowed(bridge, tmp_path, monkeypatch):
+    """TouchDesigner starting before any install must not widen ~/.td-atlas."""
+    fresh = tmp_path / "never-installed"
+    monkeypatch.setenv("TD_ATLAS_HOME", str(fresh))
+
+    handler.onServerStart(_Dat(9977))
+
+    assert (fresh / "instances" / "9977.json").exists()
+    assert stat.S_IMODE(fresh.stat().st_mode) == 0o700
+
+
+def test_a_state_directory_that_already_exists_is_narrowed_too(bridge, tmp_path, monkeypatch):
+    """The chmod is re-applied, because mkdir does nothing to an existing one."""
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    loose.chmod(0o755)
+    monkeypatch.setenv("TD_ATLAS_HOME", str(loose))
+
+    handler.onServerStart(_Dat(9977))
+
+    assert stat.S_IMODE(loose.stat().st_mode) == 0o700
+
+
+def test_the_host_narrows_the_state_directory_as_well(tmp_path, monkeypatch):
+    """Both sides do it, so the answer does not depend on arrival order."""
+    home = tmp_path / "host-first"
+    monkeypatch.setenv("TD_ATLAS_HOME", str(home))
+
+    assert cfg.ensure_home() == home
+    assert stat.S_IMODE(home.stat().st_mode) == 0o700
+
+    home.chmod(0o755)
+    cfg.save_config({"port": 9977, "token": "s3cret"})
+    assert stat.S_IMODE(home.stat().st_mode) == 0o700
+
+
+# -- the same facts on the MCP surface --------------------------------------
+#
+# The registry was built because two open projects made every command go to
+# one of them in silence. Over MCP the silence was still complete: no listing,
+# and the ambiguity warning the CLI prints never reached the agent.
+
+def _server():
+    from td_atlas.mcp import server
+
+    return server
+
+
+def test_the_mcp_tool_lists_both_instances_and_marks_the_one_in_use(registry):
+    two_instances(registry)
+    (registry / "session.json").write_text(json.dumps({"port": 9977, "token": "s3cret"}))
+
+    text = _server().td_instances()
+
+    assert "2 running instances" in text
+    assert "Vessel.toe" in text and "Rehearsal.toe" in text
+    assert "port 9977" in text and "port 9978" in text
+    assert "2023.11600" in text
+    lines = [line for line in text.splitlines() if "talk to this one" in line]
+    assert len(lines) == 1 and "9977" in lines[0]
+
+
+def test_the_mcp_tool_reports_an_empty_registry_without_pretending(registry):
+    text = _server().td_instances()
+
+    assert "No running TouchDesigner has registered a bridge" in text
+
+
+def test_the_mcp_tool_says_a_stale_record_was_removed(registry):
+    write_record(registry, 9977, "Vessel.toe", pid=LIVE_PID)
+    write_record(registry, 9979, "Abandoned.toe", pid=DEAD_PID)
+
+    text = _server().td_instances()
+
+    assert "Abandoned.toe" in text and "was removed" in text
+    assert not (registry / "instances" / "9979.json").exists()
+
+
+def test_the_ambiguity_warning_reaches_the_agent(registry):
+    """The failure the registry exists to prevent, on the MCP surface."""
+    two_instances(registry)
+    (registry / "session.json").write_text(json.dumps({"port": 9977, "token": "s3cret"}))
+    server = _server()
+
+    client = BridgeClient.discover()
+    prefix = server._warn(client)
+
+    assert client.ambiguity_warning
+    assert prefix.startswith("warning: ")
+    assert "2 TouchDesigner instances are running" in prefix
+    assert "td_instances" in prefix, "the agent is not told how to look"
+
+
+def test_both_warnings_can_be_carried_at_once(registry):
+    two_instances(registry)
+    (registry / "session.json").write_text(json.dumps({"port": 9977, "token": "s3cret"}))
+    server = _server()
+
+    client = BridgeClient.discover()
+    client.version_warning = "bridge protocol 0 is older than this client's 1."
+
+    prefix = server._warn(client)
+
+    assert prefix.count("warning: ") == 2
+    assert "protocol 0" in prefix and "instances are running" in prefix
+
+
+def test_a_single_instance_raises_no_warning(registry):
+    write_record(registry, 9977, "Vessel.toe", pid=LIVE_PID)
+
+    assert _server()._warn(BridgeClient.discover()) == ""

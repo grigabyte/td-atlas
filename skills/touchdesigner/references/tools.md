@@ -1,6 +1,6 @@
 # Tool reference
 
-Twenty-three MCP tools in three groups.
+Twenty-five MCP tools in three groups.
 
 ## Index — offline, no running TouchDesigner
 
@@ -21,6 +21,8 @@ Twenty-three MCP tools in three groups.
 | Tool | Use it for |
 | --- | --- |
 | `td_status()` | Is the bridge up, what project is open. |
+| `td_instances()` | Every running TouchDesigner that registered a bridge, and which one these tools reach. Check it before believing an edit landed in the project you meant. |
+| `td_doctor()` | Every link — install, index, probe pass, bridge, this server — with the command that fixes each. Catches the index built from another TouchDesigner build, which raises nothing. |
 | `td_health(path, interval)` | **The silent-failure detector.** Run after building anything. |
 | `td_network(path, depth)` | What is inside a component and how it is wired. |
 | `td_op_info(path)` | One operator: type, wiring, live parameter values, errors. |

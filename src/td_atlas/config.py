@@ -56,6 +56,30 @@ def db_path() -> Path:
     return home() / "atlas.db"
 
 
+def ensure_home() -> Path:
+    """The state directory, created if missing and always narrowed to 0700.
+
+    The permissions are re-applied on every call rather than passed to
+    `mkdir`, because whoever gets here first is not decided by this process:
+    `td-atlas install` creates the directory on the host, and the bridge
+    inside TouchDesigner creates it (see `component/handler.py`) when it
+    registers before any install has run. A `mode=` on mkdir is masked by
+    umask and does nothing at all when the directory already exists, so the
+    directory's permissions would have depended on which side arrived first.
+    Nothing secret lives in the directory itself — the token is in its own
+    0600 file — but the answer must not vary with arrival order.
+    """
+    path = home()
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except OSError:
+        # A directory we cannot chmod (a mounted home, an odd filesystem) is
+        # not a reason to fail the write that called us.
+        pass
+    return path
+
+
 def load_config() -> dict:
     try:
         return json.loads(config_path().read_text())
@@ -64,7 +88,7 @@ def load_config() -> dict:
 
 
 def save_config(config: dict) -> None:
-    home().mkdir(parents=True, exist_ok=True)
+    ensure_home()
     config_path().write_text(json.dumps(config, indent=2) + "\n")
     config_path().chmod(0o600)
 
