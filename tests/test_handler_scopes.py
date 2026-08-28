@@ -530,3 +530,42 @@ def test_an_owner_with_a_tab_or_newline_is_refused():
         handler._normalise_owner("agent\ta")
     with pytest.raises(ValueError, match="tabs or newlines"):
         handler._normalise_owner("agent\nb")
+
+
+# -- the claim has to reach the tools that write ----------------------------
+
+def test_the_batch_tool_carries_the_owner_all_the_way_to_the_bridge(monkeypatch):
+    """A claim nobody can write under is worse than no claim.
+
+    The bridge already carried a batch-level owner into every step, but the
+    host side had no way to send one: an agent that claimed an area was
+    refused by its own claim on td_build, the very tool the server's
+    instructions recommend for multi-step edits.
+    """
+    from td_atlas.mcp import server
+
+    sent = {}
+
+    class Recorder:
+        ambiguity_warning = ""
+        version_warning = ""
+
+        def call(self, method, **params):
+            sent[method] = params
+            return {"applied": 1, "results": [{"path": "/project1/blur1"}]}
+
+        def batch(self, ops, undo_name="td-atlas batch", owner=""):
+            return self.call("batch", ops=ops, undo_name=undo_name, owner=owner)
+
+    monkeypatch.setattr(server, "bridge", Recorder)
+    # No index in this test: validation is a convenience and is skipped.
+    monkeypatch.setattr(
+        server, "store", lambda: (_ for _ in ()).throw(RuntimeError("no index"))
+    )
+
+    server.td_build(
+        [{"method": "op_create", "params": {"parent": "/project1"}}],
+        owner="agent-a",
+    )
+
+    assert sent["batch"]["owner"] == "agent-a"

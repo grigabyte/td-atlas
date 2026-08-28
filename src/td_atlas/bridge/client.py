@@ -296,5 +296,14 @@ class BridgeClient:
     def errors(self) -> dict:
         return self.call("errors")
 
-    def batch(self, ops: list[dict], undo_name: str = "td-atlas batch") -> dict:
-        return self.call("batch", ops=ops, undo_name=undo_name)
+    def batch(
+        self,
+        ops: list[dict],
+        undo_name: str = "td-atlas batch",
+        owner: str = "",
+    ) -> dict:
+        # `owner` names the scope claim this batch writes under, and the bridge
+        # carries it into every step. Without it an agent that claimed an area
+        # is refused by its own claim on the very tool meant for multi-step
+        # edits.
+        return self.call("batch", ops=ops, undo_name=undo_name, owner=owner)

@@ -486,7 +486,9 @@ def td_op_info(path: str) -> str:
 
 @mcp.tool()
 @guarded
-def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
+def td_build(
+    operations: list[dict], undo_name: str = "agent edit", owner: str = ""
+) -> str:
     """Apply several edits to the project as one atomic, undoable block.
 
     Prefer this over separate calls: if any step fails the whole batch is rolled
@@ -500,6 +502,9 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
     position [x, y], and optional connect [{"from": path, "index": 0}].
     Values may be a constant, {"expr": "..."} for an expression, {"bind": "..."}
     or {"pulse": true}. Parameter names are validated against the index first.
+
+    Pass the same `owner` you claimed the area with — it carries into every
+    step, and without it your own claim refuses the batch.
     """
     db = None
     try:
@@ -549,7 +554,7 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
 
     client = bridge()
     try:
-        result = client.batch(operations, undo_name=undo_name)
+        result = client.batch(operations, undo_name=undo_name, owner=owner)
     except BridgeError as exc:
         return failure(
             exc,
