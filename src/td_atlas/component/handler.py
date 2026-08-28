@@ -12,16 +12,72 @@ handler that blocks stalls the entire application. Keep work bounded.
 import base64
 import io
 import json
+import os
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 
 PROTOCOL_VERSION = 1
 
-# Populated by bootstrap.py; empty disables authentication.
+# The shared secret, read from ~/.td-atlas/config.json when the server starts —
+# see _load_token(). It is not baked into this text: a released .tox is one file
+# handed to every machine, and there is no install step to bake anything into.
+# Empty disables authentication, and _load_token() says so out loud.
 AUTH_TOKEN = ""
+_TOKEN_LOADED = False
 
 _MAX_REPR = 4000
 _MAX_CHILDREN = 2000
+
+
+# -- authentication ---------------------------------------------------------
+
+def _config_path():
+    """The config file the host also owns; see src/td_atlas/config.py."""
+    home = os.environ.get("TD_ATLAS_HOME") or os.path.expanduser("~/.td-atlas")
+    return os.path.join(home, "config.json")
+
+
+def _read_token():
+    """Return (token, complaint). Never raises.
+
+    A missing, malformed or unreadable config must not stop the bridge from
+    coming up — but it must never leave it quietly open either, so every path
+    that yields no token hands back a reason for the caller to print.
+    """
+    path = _config_path()
+    try:
+        with open(path, "r") as handle:
+            config = json.load(handle)
+    except IOError as exc:
+        return "", "cannot read %s (%s)" % (path, exc)
+    except ValueError as exc:
+        return "", "malformed JSON in %s (%s)" % (path, exc)
+    except Exception as exc:
+        return "", "cannot read %s (%s: %s)" % (path, type(exc).__name__, exc)
+    if not isinstance(config, dict):
+        return "", "%s does not hold a JSON object" % path
+    token = config.get("token")
+    if not isinstance(token, str) or not token:
+        return "", "no token in %s" % path
+    return token, None
+
+
+def _load_token():
+    """Populate AUTH_TOKEN once, announcing an unauthenticated bridge.
+
+    Called from onServerStart, and again defensively on the first request in
+    case the handler text was replaced without the server restarting. One file
+    read per module lifetime, none per request.
+    """
+    global AUTH_TOKEN, _TOKEN_LOADED
+    _TOKEN_LOADED = True
+    AUTH_TOKEN, complaint = _read_token()
+    if not AUTH_TOKEN:
+        print(
+            "[td-atlas] WARNING: no auth token (%s) - the bridge accepts "
+            "any caller on this machine" % complaint
+        )
+    return AUTH_TOKEN
 
 
 # -- serialisation ----------------------------------------------------------
@@ -611,6 +667,8 @@ def _reply(response, payload, status=200):
 
 def onHTTPRequest(dat, request, response):
     try:
+        if not _TOKEN_LOADED:
+            _load_token()
         if AUTH_TOKEN:
             supplied = _header(request, "X-TD-Atlas-Token") or ""
             if supplied != AUTH_TOKEN:
@@ -677,6 +735,7 @@ def onWebSocketReceiveBinary(dat, client, data):
 
 
 def onServerStart(dat):
+    _load_token()
     print("[td-atlas] bridge listening on port %s" % dat.par.port.eval())
 
 

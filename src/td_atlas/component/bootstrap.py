@@ -78,14 +78,9 @@ def install():
         handler = container.create(textDAT, HANDLER_DAT)
         handler.nodeX, handler.nodeY = 0, 0
 
-    source = _read_handler_source()
-    if token:
-        # Bake the shared secret into the module rather than reading it from
-        # disk on every request.
-        source = source.replace(
-            'AUTH_TOKEN = ""', 'AUTH_TOKEN = %r' % token, 1
-        )
-    handler.text = source
+    # Installed verbatim: the handler reads the token from config.json itself,
+    # so the text here is byte for byte the text a released .tox carries.
+    handler.text = _read_handler_source()
 
     server = container.op(SERVER_DAT)
     if server is None:
