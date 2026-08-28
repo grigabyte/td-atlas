@@ -352,11 +352,12 @@ def test_a_batch_carries_its_owner_into_every_step(monkeypatch):
     """Otherwise an agent's own batch bounces off its own claim."""
 
     class FakeUndo:
-        # The rollback in m_batch reads this to learn how many entries the
-        # batch actually committed; without it this test would silently take
-        # the "stack unreadable, undo nothing" branch instead of the one it
-        # is about. What the stack does on commit is measured in
-        # tests/test_notes_and_flags.py — here it only has to be readable.
+        # The live ui.undo carries this, so the fake carries it too: a fake
+        # that differs from the real object is how five defects in this wave
+        # stayed hidden behind green tests. It changes nothing here —
+        # measured: this test passes identically without it, because the
+        # batch below succeeds and the rollback never runs. What the stack
+        # does on commit is measured in tests/test_notes_and_flags.py.
         undoStack = []
 
         def startBlock(self, _name):
