@@ -67,7 +67,6 @@ class FakeOP:
         self.nodeHeight = height
         self.nodeX = 0
         self.nodeY = 0
-        self.valid = True
         self.children = []
         self.inputs = []
         self.parent_op = parent
@@ -120,6 +119,16 @@ class FakeOP:
         object.__setattr__(self, name, value)
 
     @property
+    def valid(self):
+        """False once destroyed, the way a real OP reports itself.
+
+        The rollback sweep in `m_batch` reads this before touching a note; a
+        fake that always said True made the sweep destroy an operator the undo
+        had already taken out, which pushed an entry of its own.
+        """
+        return not self.destroyed
+
+    @property
     def path(self):
         if self.parent_op is None:
             return "/" + self.name if self.name else "/"
@@ -131,8 +140,7 @@ class FakeOP:
 
     def create(self, op_type, name=None):
         if op_type == "annotateCOMP":
-            # Measured: the name is ignored, TouchDesigner numbers its own, and
-            # the create closes one undo level from under the caller.
+            # Measured: the name is ignored and TouchDesigner numbers its own.
             existing = len([c for c in self.children if c.OPType == "annotateCOMP"])
             child = FakeOP(
                 "annotate%d" % (existing + 1),
@@ -143,23 +151,32 @@ class FakeOP:
                 pars=dict(ANNOTATE_DEFAULTS),
             )
             child.nodeX, child.nodeY = -300, 100
-            handler.ui.undo.eat_one_level()
         else:
             child = FakeOP(name or op_type, op_type, parent=self)
         self.children.append(child)
+        handler.ui.undo.record(lambda: self._remove(child))
+        if op_type == "annotateCOMP":
+            # And measured: creating one commits the open block, note included.
+            # The work the caller did before this point is now a closed undo
+            # entry of its own, which is the whole reason m_batch counts them.
+            handler.ui.undo.commit_open_level()
         return child
 
+    def _remove(self, child):
+        child.destroyed = True
+        self.children = [c for c in self.children if c is not child]
+
+    def _restore(self, child):
+        child.destroyed = False
+        if child not in self.children:
+            self.children.append(child)
+
     def destroy(self):
+        parent = self.parent_op
         self.destroyed = True
-        if self.parent_op is not None:
-            self.parent_op.children = [
-                c for c in self.parent_op.children if c is not self
-            ]
-        # A destroy is itself an undoable entry, and it goes on top. That is
-        # what makes the order matter in `m_batch`: destroying a note before
-        # the rollback undo means the undo pops the destroy and the note comes
-        # back. Measured live, and modelled here by FakeUndo.undo().
-        handler.ui.undo.deleted.append(self)
+        if parent is not None:
+            parent.children = [c for c in parent.children if c is not self]
+            handler.ui.undo.record(lambda: parent._restore(self))
 
     def errors(self, recurse=False):
         return ""
@@ -172,41 +189,58 @@ class FakeOP:
 
 
 class FakeUndo:
-    """Blocks that nest and count, and can be closed from underneath.
+    """An undo stack of the shape measured on a live 2025.32460.
 
-    'Cannot end non existent undo operation.' is TouchDesigner's own message
-    for `endBlock` on a closed block; a handler that trips it turns a batch
-    which applied cleanly into a reported failure.
+    The three behaviours that decide whether a failed batch leaves half a
+    network behind, and that a fake without them cannot test:
+
+    - the entry appears when a block is *started*, and collects the work done
+      inside it; work inside an open block pushes nothing of its own;
+    - creating an annotateCOMP commits the open block — the entry stays on the
+      stack holding everything done so far, the note included — so the level
+      the caller thought it held is gone;
+    - `undo()` pops one entry and reverses only that entry's work.
+
+    An earlier version of this fake modelled none of it and let a batch that
+    left a node behind on the live instance pass green.
     """
 
     def __init__(self):
-        self.depth = 0
-        self.names = []
-        self.undos = 0
-        self.deleted = []
+        self.stack = []
+        self.open = []
 
     def startBlock(self, name, enable=True):
-        self.depth += 1
-        self.names.append(name)
+        self.open.append((name, []))
 
     def endBlock(self):
-        if self.depth == 0:
+        if not self.open:
             raise RuntimeError("Cannot end non existent undo operation.")
-        self.depth -= 1
+        self.stack.append(self.open.pop())
+
+    def commit_open_level(self):
+        if self.open:
+            self.stack.append(self.open.pop())
+
+    def record(self, action):
+        if self.open:
+            self.open[-1][1].append(action)
+        else:
+            self.stack.append(("unblocked", [action]))
 
     def undo(self):
-        self.undos += 1
-        self.depth = 0
-        # Pops the entry on top. When that entry is a destroy, the destroyed
-        # node comes back.
-        if self.deleted:
-            revived = self.deleted.pop()
-            revived.destroyed = False
-            if revived.parent_op is not None:
-                revived.parent_op.children.append(revived)
+        if not self.stack:
+            raise RuntimeError("nothing to undo")
+        _, actions = self.stack.pop()
+        for action in reversed(actions):
+            action()
 
-    def eat_one_level(self):
-        self.depth = max(0, self.depth - 1)
+    @property
+    def undoStack(self):
+        return [name for name, _ in self.stack]
+
+    @property
+    def depth(self):
+        return len(self.open)
 
 
 class FakeUI:
@@ -216,7 +250,12 @@ class FakeUI:
 
 @pytest.fixture
 def network(monkeypatch):
-    """'/project1' with one TOP in it, reachable through handler.op."""
+    """'/project1' with one TOP in it, reachable through handler.op.
+
+    `ui` goes in before the network is built: every create records how to undo
+    itself, the way a real one does.
+    """
+    monkeypatch.setattr(handler, "ui", FakeUI(), raising=False)
     root = FakeOP("", "baseCOMP")
     project = root.create("baseCOMP", "project1")
     node = project.create("noiseTOP", "noise1")
@@ -238,9 +277,9 @@ def network(monkeypatch):
         return current
 
     monkeypatch.setattr(handler, "op", lookup, raising=False)
-    monkeypatch.setattr(handler, "ui", FakeUI(), raising=False)
     monkeypatch.setattr(handler, "_guard_scopes", lambda params, *paths: None)
     handler._UNDO_HELD[0] = 0
+    handler._BATCH_LEVELS[0] = 0
     del handler._BATCH_NOTES[:]
     return project
 
@@ -358,6 +397,124 @@ def test_a_failed_batch_takes_its_note_back_out(network):
             }
         )
     assert handler.m_annotations({"path": "/project1"})["count"] == 0
+
+
+def test_a_failed_batch_leaves_nothing_behind_with_a_note_in_the_middle(network):
+    """The defect acceptance found, and the one order that used to survive.
+
+    A note commits the batch's undo entry and a new one is opened after it, so
+    the batch finishes as two entries. One `undo()` popped the later one only,
+    and the node created before the note stayed in the project — a half-built
+    network out of the call that promises never to leave one.
+    """
+    before = len(handler.ui.undo.undoStack)
+    with pytest.raises(ValueError):
+        handler.m_batch(
+            {
+                "ops": [
+                    {
+                        "method": "op_create",
+                        "params": {"parent": "/project1", "type": "noiseTOP", "name": "first"},
+                    },
+                    {
+                        "method": "annotate",
+                        "params": {"parent": "/project1", "text": "middle"},
+                    },
+                    {"method": "op_create", "params": {"parent": "/project1"}},
+                ]
+            }
+        )
+    assert [child.name for child in network.children] == ["noise1"]
+    assert handler.m_annotations({"path": "/project1"})["count"] == 0
+    assert len(handler.ui.undo.undoStack) == before
+
+
+@pytest.mark.parametrize("notes", [1, 2, 3])
+def test_a_failed_batch_rolls_back_however_many_notes_it_wrote(network, notes):
+    """One undo per level opened: the count has to follow the notes."""
+    ops = []
+    for index in range(notes):
+        ops.append(
+            {
+                "method": "op_create",
+                "params": {"parent": "/project1", "type": "noiseTOP", "name": "n%d" % index},
+            }
+        )
+        ops.append(
+            {"method": "annotate", "params": {"parent": "/project1", "text": "note %d" % index}}
+        )
+    ops.append({"method": "op_create", "params": {"parent": "/project1"}})
+
+    before = len(handler.ui.undo.undoStack)
+    with pytest.raises(ValueError):
+        handler.m_batch({"ops": ops})
+    assert [child.name for child in network.children] == ["noise1"]
+    assert len(handler.ui.undo.undoStack) == before
+
+
+def test_a_note_is_swept_up_when_an_undo_itself_fails(network):
+    """The sweep behind the counter, for the one case the counter cannot cover.
+
+    If `undo()` raises part way through the rollback, the levels below it stay
+    committed and the note the batch wrote is still in the network. Destroying
+    it afterwards is the last thing that can still be done honestly.
+    """
+    undo = handler.ui.undo
+    calls = []
+    original = undo.undo
+
+    def failing_undo():
+        calls.append(1)
+        raise RuntimeError("undo is unavailable")
+
+    with pytest.raises(ValueError):
+        undo.undo = failing_undo
+        try:
+            handler.m_batch(
+                {
+                    "ops": [
+                        {
+                            "method": "annotate",
+                            "params": {"parent": "/project1", "text": "swept"},
+                        },
+                        {"method": "op_create", "params": {"parent": "/project1"}},
+                    ]
+                }
+            )
+        finally:
+            undo.undo = original
+
+    assert calls, "the rollback did try to undo"
+    assert handler.m_annotations({"path": "/project1"})["count"] == 0
+
+
+def test_a_failed_batch_undoes_its_own_levels_and_no_more(network):
+    """One undo too many reaches into the artist's history.
+
+    Measured on the live instance: undoing past this batch's own entries began
+    resurrecting operators deleted before it started.
+    """
+    handler.ui.undo.startBlock("artist edit")
+    artist = network.create("noiseTOP", "artist_node")
+    handler.ui.undo.endBlock()
+    before = len(handler.ui.undo.undoStack)
+
+    with pytest.raises(ValueError):
+        handler.m_batch(
+            {
+                "ops": [
+                    {
+                        "method": "op_create",
+                        "params": {"parent": "/project1", "type": "noiseTOP", "name": "mine"},
+                    },
+                    {"method": "annotate", "params": {"parent": "/project1", "text": "note"}},
+                    {"method": "op_create", "params": {"parent": "/project1"}},
+                ]
+            }
+        )
+    assert artist in network.children
+    assert artist.destroyed is False
+    assert len(handler.ui.undo.undoStack) == before
 
 
 def test_a_note_that_fails_halfway_is_not_left_behind(network):
