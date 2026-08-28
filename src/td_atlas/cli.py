@@ -306,6 +306,84 @@ def cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+# -- picking which TouchDesigner to talk to ---------------------------------
+
+def _client(args: argparse.Namespace, timeout: float = 30.0) -> BridgeClient | None:
+    """The bridge this invocation is aimed at, or None after reporting why not.
+
+    `--port` and `--project` are global flags, so they sit before the
+    subcommand: `td-atlas --project Rehearsal exec "print(1)"`.
+    """
+    try:
+        client = BridgeClient.discover(
+            timeout=timeout,
+            port=getattr(args, "port", None),
+            project=getattr(args, "project", None),
+        )
+    except cfg.InstanceSelectionError as exc:
+        _say(f"error: {exc}")
+        return None
+    if client.ambiguity_warning:
+        _say(f"warning: {client.ambiguity_warning}")
+    return client
+
+
+def _age(seconds: float) -> str:
+    if seconds == float("inf"):
+        return "never"
+    if seconds < 60:
+        return f"{int(seconds)}s ago"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m ago"
+    return f"{int(seconds // 3600)}h ago"
+
+
+def cmd_instances(_args: argparse.Namespace) -> int:
+    """List the TouchDesigner instances that have declared a bridge."""
+    records = cfg.read_instances()
+    dead = [i for i in records if not i.alive]
+    live = [i for i in records if i.alive]
+
+    session = cfg.load_session() or {}
+    default_port = int(session.get("port") or cfg.load_config().get("port") or cfg.DEFAULT_PORT)
+
+    if not live:
+        print("No running TouchDesigner has registered a bridge.")
+        print("Start one and run 'td-atlas install' for the bootstrap line.")
+    else:
+        word = "instance" if len(live) == 1 else "instances"
+        print(f"{len(live)} running {word}:")
+        print()
+        width = max(len(i.label) for i in live)
+        for record in live:
+            default = "   (default)" if record.port == default_port else ""
+            head = f"  --port {record.port}   "
+            print(
+                f"{head}{record.label:<{width}}"
+                f"   build {record.build or '?'}"
+                f"   seen {_age(record.age)}{default}"
+            )
+            print(
+                f"{' ' * len(head)}{record.project_path or '(unsaved project)'}"
+                f"   pid {record.pid}"
+                f"   {record.component or '?'}"
+                f"   protocol {record.protocol}"
+            )
+        print()
+        print("Target one with a global flag, before the subcommand:")
+        example = live[-1]
+        stem = Path(example.project or "project").stem or str(example.port)
+        print(f"  td-atlas --project {stem} status")
+        print(f"  td-atlas --port {example.port} exec \"print(project.name)\"")
+
+    for record in dead:
+        # What was observed, not what it implies: this line used to announce
+        # "pid N is gone" about processes that were running perfectly well.
+        where = "" if f"port {record.port}" in record.dead_reason else f" (port {record.port})"
+        _say(f"{record.dead_reason}, so the record for {record.label}{where} was removed.")
+    return 0
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     """Run the runtime introspection pass against a live TouchDesigner."""
     store = AtomStore(args.db or cfg.db_path())
@@ -313,7 +391,9 @@ def cmd_probe(args: argparse.Namespace) -> int:
         _say("error: no index yet. Run 'td-atlas build' first.")
         return 1
 
-    client = BridgeClient.discover(timeout=120.0)
+    client = _client(args, timeout=120.0)
+    if client is None:
+        return 1
     try:
         info = client.ping()
     except BridgeUnavailable as exc:
@@ -340,7 +420,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_reload(_args: argparse.Namespace) -> int:
+def cmd_reload(args: argparse.Namespace) -> int:
     """Re-run the bootstrap through the bridge, upgrading it in place.
 
     The running bridge can replace its own handler, so upgrading does not send
@@ -350,7 +430,9 @@ def cmd_reload(_args: argparse.Namespace) -> int:
     for name in ("bootstrap.py", "handler.py"):
         shutil.copyfile(COMPONENT_DIR / name, home / name)
 
-    client = BridgeClient.discover()
+    client = _client(args)
+    if client is None:
+        return 1
     try:
         result = client.exec(
             f"exec(open({str(cfg.bootstrap_path())!r}).read())"
@@ -367,7 +449,7 @@ def cmd_reload(_args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_status(_args: argparse.Namespace) -> int:
+def cmd_status(args: argparse.Namespace) -> int:
     import sysconfig
 
     diagnosis = broken_env_diagnosis(Path(sys.prefix))
@@ -399,7 +481,9 @@ def cmd_status(_args: argparse.Namespace) -> int:
         print("index         : not built (run 'td-atlas build')")
 
     session = cfg.load_session()
-    client = BridgeClient.discover(timeout=3.0)
+    client = _client(args, timeout=3.0)
+    if client is None:
+        return 1
     try:
         info = client.ping()
         print(
@@ -507,7 +591,9 @@ def cmd_op(args: argparse.Namespace) -> int:
 
 
 def cmd_exec(args: argparse.Namespace) -> int:
-    client = BridgeClient.discover()
+    client = _client(args)
+    if client is None:
+        return 1
     code = args.code
     if code == "-":
         code = sys.stdin.read()
@@ -528,7 +614,9 @@ def cmd_exec(args: argparse.Namespace) -> int:
 
 
 def cmd_render(args: argparse.Namespace) -> int:
-    client = BridgeClient.discover()
+    client = _client(args)
+    if client is None:
+        return 1
     try:
         data, meta = client.render(
             args.path, width=args.width, height=args.height
@@ -559,8 +647,19 @@ def cmd_release_tox(args: argparse.Namespace) -> int:
     print()
     print(f"Drag it into a TouchDesigner network. The Web Server DAT binds "
           f"port {port}.")
-    print("The handler ships without a token, so the bridge accepts any local")
-    print("caller; run `td-atlas install` for the token-authenticated bridge.")
+    print()
+    if config.get("token"):
+        print("No token is baked into the .tox — there is nothing to bake it into,")
+        print("one file goes to every machine. The handler reads the token itself")
+        print("when the server starts, from")
+        print(f"  {cfg.config_path()}")
+        print("and refuses any request that does not carry it.")
+    else:
+        print("The config the handler reads at server start holds no token yet:")
+        print(f"  {cfg.config_path()}")
+        print("so the bridge will accept any caller on this machine, and says so")
+        print("in the textport when it starts. Run `td-atlas install` to mint one —")
+        print("the handler picks it up at the next server start, with no rebuild.")
     return 0
 
 
@@ -645,6 +744,19 @@ def build_parser() -> argparse.ArgumentParser:
         description="An atomised index of TouchDesigner plus a live bridge.",
     )
     parser.add_argument("--db", help="path to the atom index")
+    # Global, so they precede the subcommand: `td-atlas --port 9978 exec ...`.
+    # Every bridge-facing command reads them through `_client()`.
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help="talk to the bridge on this port (see 'td-atlas instances')",
+    )
+    parser.add_argument(
+        "--project",
+        default=None,
+        help="talk to the running project matching this piece of its name or path",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("install", help="stage the bridge and print the bootstrap line")
@@ -679,6 +791,11 @@ def build_parser() -> argparse.ArgumentParser:
         "reload", help="re-stage and reload the bridge through itself"
     )
     p.set_defaults(func=cmd_reload)
+
+    p = sub.add_parser(
+        "instances", help="list the running TouchDesigner instances and how to target them"
+    )
+    p.set_defaults(func=cmd_instances)
 
     p = sub.add_parser("status", help="show install, index and bridge state")
     p.set_defaults(func=cmd_status)

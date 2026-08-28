@@ -14,7 +14,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..component import handler as _handler
-from ..config import DEFAULT_PORT, load_config, load_session
+from ..config import (
+    DEFAULT_PORT,
+    Instance,
+    load_config,
+    load_session,
+    read_instances,
+    select_instance,
+)
 
 # Oldest bridge protocol this client still talks to (with a warning telling
 # the artist to update). Bump only when a client-side change actually needs
@@ -70,17 +77,67 @@ class BridgeClient:
     # `_ensure_protocol_checked`); never re-checked on later calls.
     version_warning: str | None = field(default=None, init=False, repr=False)
     _protocol_checked: bool = field(default=False, init=False, repr=False)
+    # The registry record this client was aimed at, when one picked it.
+    instance: Instance | None = field(default=None, init=False, repr=False)
+    # Set when several bridges are running and none was named; the CLI prints
+    # it so a two-project session cannot go to the wrong one in silence.
+    ambiguity_warning: str | None = field(default=None, init=False, repr=False)
 
     @classmethod
-    def discover(cls, timeout: float = 30.0) -> BridgeClient:
-        """Build a client from the session file, falling back to config."""
-        session = load_session() or {}
+    def discover(
+        cls,
+        timeout: float = 30.0,
+        port: int | None = None,
+        project: str | None = None,
+    ) -> BridgeClient:
+        """Aim a client at one bridge.
+
+        With `--port`/`--project` (or neither, and exactly one bridge running)
+        the registry decides. With neither flag the old path is kept exactly:
+        session.json first, config second — so a single-project setup, and any
+        bridge too old to register itself, behave as they always did. Raises
+        `InstanceSelectionError` when the flags name no bridge or more than one.
+        """
         config = load_config()
-        return cls(
+        instances = read_instances()
+        chosen = select_instance(port=port, project=project, instances=instances)
+
+        if chosen is not None:
+            client = cls(
+                port=chosen.port,
+                # Never from the record: the registry holds no credentials.
+                token=config.get("token") or "",
+                timeout=timeout,
+            )
+            client.instance = chosen
+            return client
+
+        if port is not None:
+            # A port nobody registered — dial it anyway; a pre-registry bridge
+            # is still a bridge.
+            return cls(port=port, token=config.get("token") or "", timeout=timeout)
+
+        session = load_session() or {}
+        client = cls(
             port=int(session.get("port") or config.get("port") or DEFAULT_PORT),
             token=session.get("token") or config.get("token") or "",
             timeout=timeout,
         )
+        live = [i for i in instances if i.alive]
+        for record in live:
+            if record.port == client.port:
+                client.instance = record
+        if len(live) > 1:
+            picked = client.instance.label if client.instance else f"port {client.port}"
+            others = ", ".join(
+                f"{i.label} (--port {i.port})" for i in live if i.port != client.port
+            )
+            client.ambiguity_warning = (
+                f"{len(live)} TouchDesigner instances are running; using "
+                f"{picked}. Target another with --project or --port: {others}. "
+                f"Run 'td-atlas instances' to see them all."
+            )
+        return client
 
     @property
     def url(self) -> str:

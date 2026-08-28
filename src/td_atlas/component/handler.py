@@ -13,6 +13,7 @@ import base64
 import io
 import json
 import os
+import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 
@@ -31,10 +32,13 @@ _MAX_CHILDREN = 2000
 
 # -- authentication ---------------------------------------------------------
 
+def _home():
+    return os.environ.get("TD_ATLAS_HOME") or os.path.expanduser("~/.td-atlas")
+
+
 def _config_path():
     """The config file the host also owns; see src/td_atlas/config.py."""
-    home = os.environ.get("TD_ATLAS_HOME") or os.path.expanduser("~/.td-atlas")
-    return os.path.join(home, "config.json")
+    return os.path.join(_home(), "config.json")
 
 
 def _read_token():
@@ -78,6 +82,164 @@ def _load_token():
             "any caller on this machine" % complaint
         )
     return AUTH_TOKEN
+
+
+# -- the instance registry --------------------------------------------------
+
+# How often the record may be rewritten from inside a request, in seconds.
+#
+# Everything here runs on TouchDesigner's main thread during a frame, so the
+# write is time taken away from the frame it lands in. Measured on this
+# machine — host CPython on macOS/APFS, warm cache, 2000 iterations of this
+# exact function, not TouchDesigner's embedded 3.11, which is the same class
+# of operation but was not benchmarked:
+# median 125 us, mean 132 us, p99 255 us, worst 1.6 ms. At 60 fps a frame is
+# 16.7 ms, so one write costs 0.75% of a frame typically and can eat 10% of
+# one in the tail — nothing as a one-off, a permanent 0.75% tax plus visible
+# jitter if it were done every frame. Hence: not every frame, and
+# not on a timer either. The record is written the moment the bridge is raised
+# (see below on why that is not left to onServerStart alone), then refreshed at
+# most once per REGISTRY_INTERVAL and only when a request has already
+# interrupted the frame anyway. An idle bridge writes nothing at all.
+#
+# The price of that choice is a timestamp that goes stale while nobody is
+# talking to the bridge. That is safe because the timestamp is not the
+# liveness test: the host decides live-or-dead from the port and the recorded
+# pid, and shows the age separately as "last seen".
+#
+# Three doors lead here, because one of them turned out not to be reliable:
+#
+#   1. bootstrap.py calls the writer itself, right after it raises the server.
+#      This is the door that matters for `td-atlas install` and `td-atlas
+#      reload`: measured in a running TouchDesigner, flipping the Web Server
+#      DAT's `active` parameter from a script did *not* produce an
+#      onServerStart callback, and an idle bridge that never registers is the
+#      whole failure this registry exists to prevent.
+#   2. onServerStart, for the paths that do fire it — a .tox dropped into a
+#      network raises its own server with no script involved. Whether that
+#      path calls back has not been measured here; the record is written
+#      either way because of door 3.
+#   3. the first authenticated request, and any request that finds the record
+#      missing (someone cleared ~/.td-atlas by hand). This is the net under
+#      the other two, and the only one that cannot register an idle bridge.
+REGISTRY_INTERVAL = 30.0
+
+_registry_last = 0.0
+
+
+def _instance_path(port):
+    return os.path.join(_home(), "instances", "%d.json" % int(port))
+
+
+def _instance_record(port, component_path):
+    """What this bridge claims about itself. Never the token.
+
+    The token lives in one 0600 file; copying it into a directory that exists
+    to be read by every tool on the machine would spread a bearer credential
+    for no gain — the host reads config.json itself.
+    """
+    return {
+        "port": int(port),
+        "project": project.name,
+        "projectPath": os.path.join(project.folder, project.name),
+        "build": app.build,
+        "pid": os.getpid(),
+        "component": component_path,
+        "protocol": PROTOCOL_VERSION,
+        # No process *name* here. Seen from inside, this process is the
+        # embedded interpreter ("python3.11"); seen from outside it is the
+        # application. The host establishes liveness from the port and the pid,
+        # which both sides see the same way — see config.py's `port_listening`.
+        "updated": time.time(),
+    }
+
+
+def _component_path(dat):
+    try:
+        return dat.parent().path
+    except Exception:
+        return ""
+
+
+def _write_instance(dat, now=None):
+    """Publish this bridge's record. Returns it, or None on failure.
+
+    Written to a sibling temporary file and renamed into place: a host reading
+    the directory at the wrong moment must see either the old record or the
+    new one, never half of either.
+    """
+    global _registry_last
+    # Both outcomes reset the clock: a failing write (a read-only home, say)
+    # must not be retried on every single request for the rest of the session.
+    _registry_last = time.monotonic() if now is None else now
+    try:
+        port = int(dat.par.port.eval())
+        path = _instance_path(port)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        record = _instance_record(port, _component_path(dat))
+        tmp = path + ".tmp"
+        with open(tmp, "w") as handle:
+            json.dump(record, handle, indent=2)
+        os.replace(tmp, path)
+    except Exception as exc:
+        print("[td-atlas] could not write the instance record: %s" % exc)
+        return None
+    return record
+
+
+def _remove_instance(dat):
+    """Withdraw the record on an orderly stop, so nothing outlives the bridge."""
+    try:
+        os.remove(_instance_path(int(dat.par.port.eval())))
+    except Exception:
+        pass
+
+
+def _drop_stale_ports(keep_port):
+    """Delete records this same process left on other ports.
+
+    Moving the bridge from one port to another leaves a record whose pid is
+    still very much alive — the host would have no way to see it is a ghost.
+    Only the writing process can settle this, and only when it rebinds, which
+    is rare enough to afford a directory scan outside the request path.
+    """
+    directory = os.path.join(_home(), "instances")
+    mine = os.getpid()
+    try:
+        names = os.listdir(directory)
+    except Exception:
+        return
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(directory, name)
+        try:
+            with open(path, "r") as handle:
+                record = json.load(handle)
+            if record.get("pid") == mine and int(record.get("port")) != int(keep_port):
+                os.remove(path)
+        except Exception:
+            continue
+
+
+def _refresh_instance(dat):
+    """Rewrite the record if it is due, or if it has gone missing.
+
+    The existence check is one `stat` per request (measured at 1.5 us, a
+    ten-thousandth of a frame) and buys the case where the file was deleted
+    under a running bridge — by a host that misjudged it dead, or by hand.
+    Without it the bridge stays invisible for up to REGISTRY_INTERVAL.
+    """
+    now = time.monotonic()
+    if now - _registry_last >= REGISTRY_INTERVAL:
+        _write_instance(dat, now)
+        return
+    try:
+        port = int(dat.par.port.eval())
+    except Exception:
+        return
+    if not os.path.exists(_instance_path(port)):
+        _write_instance(dat, now)
 
 
 # -- serialisation ----------------------------------------------------------
@@ -678,6 +840,9 @@ def onHTTPRequest(dat, request, response):
                                             "message": "bad or missing token"}},
                     401,
                 )
+        # Only authenticated callers keep the record warm: an unauthenticated
+        # stranger must not be able to drive writes to disk.
+        _refresh_instance(dat)
 
         raw = request.get("data") or "{}"
         if isinstance(raw, (bytes, bytearray)):
@@ -735,9 +900,17 @@ def onWebSocketReceiveBinary(dat, client, data):
 
 
 def onServerStart(dat):
+    """Called by the Web Server DAT when it starts listening — when it is.
+
+    Not the only registration path: see the note above REGISTRY_INTERVAL.
+    """
     _load_token()
+    record = _write_instance(dat)
+    if record:
+        _drop_stale_ports(record["port"])
     print("[td-atlas] bridge listening on port %s" % dat.par.port.eval())
 
 
 def onServerStop(dat):
+    _remove_instance(dat)
     print("[td-atlas] bridge stopped")

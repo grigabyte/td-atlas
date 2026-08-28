@@ -200,3 +200,48 @@ def test_broken_editable_install_diagnosis_none_without_pth(tmp_path):
         broken_editable_install_diagnosis(site_packages, sys_path=[], env={})
         is None
     )
+
+
+# -- what `release-tox` says about authentication ----------------------------
+
+def _release_epilogue(tmp_path, monkeypatch, capsys, config):
+    """Run cmd_release_tox with the .tox build stubbed out; return its output.
+
+    Only the closing advice is under test here — building the file itself is
+    test_release.py's job and needs a TouchDesigner install.
+    """
+    import argparse
+
+    from td_atlas import cli
+    from td_atlas.project import release as release_mod
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.json").write_text(json.dumps(config))
+    monkeypatch.setenv("TD_ATLAS_HOME", str(home))
+    monkeypatch.setattr(release_mod, "build_tox", lambda output: Path(output))
+
+    assert cli.cmd_release_tox(argparse.Namespace(output=str(tmp_path / "T.tox"))) == 0
+    return capsys.readouterr().out
+
+
+def test_release_tox_says_the_token_is_read_from_the_config(tmp_path, monkeypatch, capsys):
+    out = _release_epilogue(
+        tmp_path, monkeypatch, capsys, {"port": 9977, "token": "s3cret"}
+    )
+
+    assert "No token is baked into the .tox" in out
+    assert "reads the token itself" in out
+    assert str(tmp_path / "home" / "config.json") in out
+    assert "accepts any" not in out
+    assert "s3cret" not in out
+
+
+def test_release_tox_names_the_open_bridge_when_there_is_no_token(
+    tmp_path, monkeypatch, capsys
+):
+    out = _release_epilogue(tmp_path, monkeypatch, capsys, {"port": 9977, "token": ""})
+
+    assert "holds no token yet" in out
+    assert "accept any caller on this machine" in out
+    assert "td-atlas install" in out

@@ -62,6 +62,36 @@ def _write_session(port, token, component_path):
     return session
 
 
+def _register(server, handler, port):
+    """Publish this bridge's registry record, now, without waiting for a callback.
+
+    The handler owns the record's shape, and the Text DAT holding it can be
+    imported as a module — so this calls the same writer the running bridge
+    uses rather than keeping a second copy of the format here.
+
+    Why it is called at all: measured in a running TouchDesigner, flipping
+    `active` off and on from a script (exactly what this function's caller does
+    above) produced no onServerStart callback, so a bridge installed from the
+    textport stayed out of `~/.td-atlas/instances` until something sent it a
+    request. An instance nobody has talked to yet is precisely the one the
+    artist needs to find, so registration cannot depend on traffic.
+    """
+    try:
+        module = handler.module
+        record = module._write_instance(server)
+        if record is None:
+            return None
+        module._drop_stale_ports(port)
+        # Ask the writer where it put the file rather than rebuilding the path
+        # here: the two would disagree the moment TD_ATLAS_HOME is set.
+        where = module._instance_path(port)
+    except Exception as exc:
+        print("[td-atlas] could not register this instance: %s" % exc)
+        return None
+    print("[td-atlas] registered as %s" % where)
+    return record
+
+
 def install():
     config = _load_config()
     port = int(config.get("port", DEFAULT_PORT))
@@ -92,6 +122,7 @@ def install():
     server.par.active = False
     server.par.active = True
 
+    _register(server, handler, port)
     session = _write_session(port, token, container.path)
     print(
         "[td-atlas] bridge ready at %s on port %d (auth: %s)"
