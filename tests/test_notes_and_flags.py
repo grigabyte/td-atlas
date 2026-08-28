@@ -191,18 +191,24 @@ class FakeOP:
 class FakeUndo:
     """An undo stack of the shape measured on a live 2025.32460.
 
-    The three behaviours that decide whether a failed batch leaves half a
-    network behind, and that a fake without them cannot test:
+    Four behaviours decide whether a failed batch leaves half a network behind
+    or eats somebody else's work, and a fake without them cannot test either:
 
     - the entry appears when a block is *started*, and collects the work done
-      inside it; work inside an open block pushes nothing of its own;
+      inside it; work inside an open block pushes nothing of its own
+      (measured: 83 -> 84 on startBlock, no growth as nodes were created);
+    - a block that ends up **empty is thrown away** on `endBlock`, so a batch
+      that failed on its first step commits nothing at all (measured:
+      83 -> 84 -> 83). This is the one an earlier version of this fake left
+      out, and it hid a rollback that undid the artist's last edit;
     - creating an annotateCOMP commits the open block — the entry stays on the
       stack holding everything done so far, the note included — so the level
       the caller thought it held is gone;
     - `undo()` pops one entry and reverses only that entry's work.
 
-    An earlier version of this fake modelled none of it and let a batch that
-    left a node behind on the live instance pass green.
+    An earlier version modelled none of the first three and let a batch that
+    left a node behind on the live instance pass green; the version after it
+    modelled all but the second and let one that ate an unrelated entry pass.
     """
 
     def __init__(self):
@@ -215,11 +221,18 @@ class FakeUndo:
     def endBlock(self):
         if not self.open:
             raise RuntimeError("Cannot end non existent undo operation.")
-        self.stack.append(self.open.pop())
+        self._commit(self.open.pop())
 
     def commit_open_level(self):
         if self.open:
-            self.stack.append(self.open.pop())
+            self._commit(self.open.pop())
+
+    def _commit(self, frame):
+        # An empty block leaves no entry behind. Measured, and the reason a
+        # rollback cannot assume it always has at least one entry of its own
+        # to undo.
+        if frame[1]:
+            self.stack.append(frame)
 
     def record(self, action):
         if self.open:
@@ -279,7 +292,6 @@ def network(monkeypatch):
     monkeypatch.setattr(handler, "op", lookup, raising=False)
     monkeypatch.setattr(handler, "_guard_scopes", lambda params, *paths: None)
     handler._UNDO_HELD[0] = 0
-    handler._BATCH_LEVELS[0] = 0
     del handler._BATCH_NOTES[:]
     return project
 
@@ -486,6 +498,82 @@ def test_a_note_is_swept_up_when_an_undo_itself_fails(network):
 
     assert calls, "the rollback did try to undo"
     assert handler.m_annotations({"path": "/project1"})["count"] == 0
+
+
+def test_a_batch_that_fails_on_its_first_step_undoes_nothing_at_all(network):
+    """The rollback must not reach for an entry the batch never committed.
+
+    A block that ends up empty is thrown away, so a batch whose first step
+    fails has committed nothing — and an unconditional "undo at least once"
+    then pops whatever the artist did last. That is worse than the half-built
+    network the rollback exists to prevent: a half-built network is visible
+    junk, a silently reverted edit is somebody's work, gone unannounced.
+
+    Reachable without contriving anything: td_build validates parameter names
+    before sending, but an unknown operator type, a bad connect and a refused
+    scope claim all fail inside the bridge, on step zero.
+    """
+    handler.ui.undo.startBlock("artist edit")
+    artist = network.create("noiseTOP", "artist_node")
+    handler.ui.undo.endBlock()
+    before = list(handler.ui.undo.undoStack)
+
+    with pytest.raises(ValueError):
+        handler.m_batch({"ops": [{"method": "op_create", "params": {"parent": "/project1"}}]})
+
+    assert handler.ui.undo.undoStack == before
+    assert artist in network.children
+    assert artist.destroyed is False
+
+
+def test_a_rollback_that_cannot_read_the_stack_undoes_nothing(network):
+    """The two ways of guessing are not symmetric, so it does not guess.
+
+    Without the stack there is no way to tell what this batch committed. One
+    undo too few leaves junk in the network; one too many silently reverts an
+    edit made by hand. The rollback takes the first.
+    """
+    undo = handler.ui.undo
+    calls = []
+
+    class Blind:
+        """A stand-in `ui.undo` with no undoStack, the way a harness may hand
+        one over."""
+
+        def startBlock(self, name, enable=True):
+            undo.startBlock(name, enable)
+
+        def endBlock(self):
+            undo.endBlock()
+
+        def record(self, action):
+            undo.record(action)
+
+        def commit_open_level(self):
+            undo.commit_open_level()
+
+        def undo(self):
+            calls.append(1)
+            undo.undo()
+
+    handler.ui.undo = Blind()
+    try:
+        with pytest.raises(ValueError):
+            handler.m_batch(
+                {
+                    "ops": [
+                        {
+                            "method": "op_create",
+                            "params": {"parent": "/project1", "type": "noiseTOP", "name": "kept"},
+                        },
+                        {"method": "op_create", "params": {"parent": "/project1"}},
+                    ]
+                }
+            )
+    finally:
+        handler.ui.undo = undo
+
+    assert calls == [], "nothing may be undone when the stack cannot be read"
 
 
 def test_a_failed_batch_undoes_its_own_levels_and_no_more(network):

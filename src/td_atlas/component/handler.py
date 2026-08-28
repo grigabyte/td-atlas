@@ -1202,6 +1202,25 @@ def m_errors(_params):
     return {"count": len(found), "nodes": found}
 
 
+def _undo_depth():
+    """How many entries the undo stack holds, or None if it cannot be read.
+
+    None is not a number to fall back on. A rollback that cannot see the stack
+    cannot tell what it put there, and the two ways of guessing are not
+    symmetric: undoing one entry too few leaves visible junk in the network,
+    while one too many silently reverts an edit the artist made by hand. So the
+    caller does nothing rather than guess, and the note sweep is what is left.
+
+    `Undo.undoStack` is a documented member and has never been absent on a live
+    instance; this exists for the harness, where a stand-in `ui` may not carry
+    it.
+    """
+    try:
+        return len(ui.undo.undoStack)
+    except Exception:
+        return None
+
+
 def m_batch(params):
     """Run several operations as one undoable, all-or-nothing block.
 
@@ -1212,11 +1231,14 @@ def m_batch(params):
     steps = params.get("ops") or []
     name = params.get("undo_name") or "td-atlas batch"
     results = []
+    # The length of the stack before anything is opened. What this batch has
+    # actually committed is the difference — read, never assumed; see the
+    # rollback below.
+    baseline = _undo_depth()
     ui.undo.startBlock(name)
     # Counted so a step that closes the block from under this one can give the
     # level back rather than leave the endBlock below to fail; see _UNDO_HELD.
     _UNDO_HELD[0] += 1
-    _BATCH_LEVELS[0] = 1
     del _BATCH_NOTES[:]
     try:
         for index, step in enumerate(steps):
@@ -1234,13 +1256,17 @@ def m_batch(params):
             results.append(method(step_params))
     except Exception:
         _UNDO_HELD[0] -= 1
-        levels = _BATCH_LEVELS[0]
-        _BATCH_LEVELS[0] = 0
         ui.undo.endBlock()
-        # One undo per level this batch opened — see _BATCH_LEVELS. Fewer
-        # leaves the work done before a note standing in the project; more
-        # would undo an edit this batch never made.
-        for _ in range(max(1, levels)):
+        # Exactly the entries this batch put on the stack, counted by reading
+        # it rather than by predicting it: an empty block is thrown away on
+        # endBlock, so a batch that failed on its first step has committed
+        # nothing and must undo nothing. Undoing "at least once" instead was
+        # measured popping the artist's own last edit onto the redo stack —
+        # worse than the half-built network this rollback exists to prevent,
+        # because a half-built network is visible and a reverted edit is not.
+        depth = _undo_depth()
+        committed = 0 if (depth is None or baseline is None) else max(0, depth - baseline)
+        for _ in range(committed):
             try:
                 ui.undo.undo()
             except Exception:
@@ -1258,7 +1284,6 @@ def m_batch(params):
         del _BATCH_NOTES[:]
         raise
     _UNDO_HELD[0] -= 1
-    _BATCH_LEVELS[0] = 0
     del _BATCH_NOTES[:]
     ui.undo.endBlock()
     return {"applied": len(results), "results": results}
@@ -1927,34 +1952,35 @@ def _place_node(parent_comp, created, sources=()):
 # would report a batch that applied cleanly as a failure.
 #
 # Giving the level back is not the whole story: the committed one is a separate
-# undo entry that has to be rolled back too. That is _BATCH_LEVELS below.
+# undo entry that has to be rolled back too. m_batch does that by reading the
+# stack, not by counting levels here — see its rollback.
 #
 # Per-request state, and safe as such: a request runs to completion on the main
 # thread before the next one starts, and TouchDesigner re-executes this module
 # between requests, so it cannot leak across them either.
 _UNDO_HELD = [0]
 
-# How many undo entries the running batch has accumulated, and the notes it
-# created. Both exist because a batch's work does not always end up as one
-# entry, which is what `m_batch` promises to be able to roll back.
+# Notes the running batch created, swept up if the rollback below could not
+# reach them. Not the rollback mechanism: that is m_batch reading the stack.
 #
-# Measured on 2025.32460, with the stack read at every step. Inside an open
-# block, creating and wiring nodes pushes nothing: the entry appears when the
-# block is *started*, and collects the work. Creating an annotateCOMP closes
-# that block — the entry stays on the stack, holding everything done so far,
-# including the note itself — and the `startBlock` that gives the level back
-# pushes a second entry. So a batch with a note in the middle finishes as two
-# committed entries, and the single `undo()` this used to do popped only the
-# later one: the work before the note stayed in the project. That is the defect
-# this counter fixes.
+# What was measured on 2025.32460, stack length read at every step, since none
+# of it is documented and two of these were got wrong before they were read:
 #
-# The count is exact rather than a guess: entries added == levels this handler
-# opened (measured — a batch with two notes opened three levels, added three
-# entries, and three undos put the stack back to the length it had before it,
-# with the network empty). Undoing that many pops this batch and nothing older,
-# which matters: one undo too many digs into the artist's own history and was
-# measured resurrecting operators deleted before the batch began.
-_BATCH_LEVELS = [0]
+# - inside an open block, creating and wiring nodes pushes nothing; the entry
+#   appears when the block is *started* and collects the work (83 -> 84 on
+#   startBlock, no growth as nodes were created);
+# - a block that ends up empty is thrown away on endBlock (83 -> 84 -> 83), so
+#   a batch that failed on its first step has committed nothing at all;
+# - creating an annotateCOMP commits the open block — the entry stays, holding
+#   everything done so far including the note — and the startBlock that gives
+#   the level back pushes a second entry, so a batch with a note in the middle
+#   finishes as two committed entries;
+# - undo() pops one entry, and one pop too many reaches into the artist's own
+#   history: it was measured resurrecting operators deleted before the batch
+#   began, and popping an unrelated 'artist edit' onto the redo stack.
+#
+# Hence the rule the rollback follows: undo exactly the entries the stack grew
+# by while this batch ran, which is zero when nothing was committed.
 _BATCH_NOTES = []
 
 _ANNOTATE_TYPE = "annotateCOMP"
@@ -2091,10 +2117,10 @@ def m_annotate(params):
     # batch is holding one, and otherwise makes the writes below a single entry.
     own_block = not _UNDO_HELD[0]
     if not own_block:
-        # The create just closed the batch's level and committed everything the
-        # batch had done up to here as its own undo entry. The startBlock below
-        # gives the level back, and costs the batch one more entry to roll back.
-        _BATCH_LEVELS[0] += 1
+        # The create just committed the batch's level, with everything the
+        # batch had done up to here in it. The startBlock below gives the level
+        # back; the batch counts the committed entry by reading the stack, so
+        # nothing needs declaring here beyond the note itself, for the sweep.
         _BATCH_NOTES.append(created)
     ui.undo.startBlock("td-atlas annotate")
     try:
