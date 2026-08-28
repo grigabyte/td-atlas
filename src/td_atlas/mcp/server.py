@@ -603,6 +603,12 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
       is never pulled and therefore is not running at all
     - output operators switched off (audio device, movie recorder, MIDI, OSC)
       which produce nothing and report nothing
+    - GLSL operators whose shader failed to compile, quoting the compiler's own
+      line: TouchDesigner only warns that an Info DAT would show the details
+    - tracebacks raised inside callbacks and extensions (Execute DAT,
+      Replicator, component callbacks), which are kept apart from the error
+      list. A Script operator's onCook raising during a cook Python asked for
+      is not covered — that traceback goes back to the caller instead
     - operators costing more than half a frame to cook, and the resulting
       frame rate collapse
     - bypassed operators, and the current licence

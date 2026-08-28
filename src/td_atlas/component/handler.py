@@ -738,6 +738,20 @@ def m_save_tox(params):
     return {"saved": target.save(params.get("file"), createFolders=True)}
 
 
+# Operators holding a shader the GPU has to compile. Measured on build
+# 2025.32460 with a deliberately broken pixel shader on a glslTOP:
+# `errors(recurse=False)` was empty, `warnings()` said only "The GLSL Shader
+# has compile errors (Use Info DAT to see details)", and the compiler's actual
+# text — the DAT path and the line number — was in `compileResult` alone. A
+# successful compile also returns non-empty text ("Compiled Successfully"), so
+# the presence of text is not a verdict; the host reads it, see bridge/health.py.
+#
+# glslPOP is listed here too, but its class page (GlslPOP_Class) documents no
+# `compileResult` and the live read confirmed the attribute is absent, so the
+# read below stays silent rather than inventing a result.
+_GLSL_TYPES = ("glslTOP", "glslmultiTOP", "glslMAT", "glslPOP")
+
+
 def m_health_sample(params):
     """One snapshot of the state a silent failure shows up in.
 
@@ -746,10 +760,37 @@ def m_health_sample(params):
     off, or a CPU-bound operator dragging the frame rate all look fine to
     `errors`. Two samples taken a moment apart are enough to tell a live node
     from a dormant one.
+
+    A failed shader compile and a traceback from a script or callback are the
+    same kind of blind spot, and neither is visible through `errors()`: they
+    are read from `compileResult` and `scriptErrors` respectively.
     """
     root_path = params.get("path") or "/project1"
     target = _resolve(root_path)
 
+    # A traceback raised in a DAT callback, a Replicator callback or an
+    # extension is recorded per operator and never reaches errors(): measured
+    # on build 2025.32460, an Execute DAT whose onFrameStart raised showed up in
+    # scriptErrors while errors() stayed empty. The node path rides inside the
+    # message, in brackets at the end, and 'Error:' and 'Warning:' sections are
+    # mixed in one string — hence the per-operator attribution below.
+    #
+    # Known gap, same measurement: a Script CHOP whose onCook raises during a
+    # cook that Python asked for (op.cook(force=True)) hands the traceback back
+    # to the caller and writes nothing here, while totalCooks still advances.
+    # Script-operator onCook is therefore *not* covered.
+    #
+    # One recursive call answers whether the subtree holds any at all (0.02 ms
+    # on a 32-node project, and near-independent of node count), so a healthy
+    # project pays one call and only a broken one pays a walk.
+    script_errors_root = ""
+    try:
+        script_errors_root = target.scriptErrors(recurse=True) or ""
+    except Exception:
+        pass
+    walk_scripts = bool(script_errors_root)
+
+    script_errors = {}
     nodes = []
     for child in target.findChildren(depth=None):
         try:
@@ -768,9 +809,39 @@ def m_health_sample(params):
                 par = getattr(child.par, flag, None)
                 if par is not None:
                     entry[flag] = bool(par.eval())
+            # Read inside this walk rather than in a pass of its own: a
+            # separate getattr pass over the same 32 nodes cost 1.90 ms, and
+            # 0.84 ms with this type filter, against a getattr on the handful
+            # of GLSL nodes here. (Both measured on a 32-node project; a
+            # network of thousands of nodes was not available to time.)
+            if child.OPType in _GLSL_TYPES:
+                result = getattr(child, "compileResult", None)
+                if result:
+                    entry["compileResult"] = _clip(result)
+            if walk_scripts:
+                # Its own try: a read that fails on some operator class must
+                # cost the attribution, not the node — everything already in
+                # `entry` (errors, warnings, cook state) is a surface that
+                # worked before this one was added.
+                try:
+                    message = child.scriptErrors(recurse=False)
+                    if message:
+                        script_errors[child.path] = _clip(message)
+                except Exception:
+                    pass
             nodes.append(entry)
         except Exception:
             continue
+
+    # The root's own extensions and callbacks belong to nobody in the walk
+    # above, because findChildren excludes the subtree root.
+    if walk_scripts:
+        try:
+            message = target.scriptErrors(recurse=False)
+            if message:
+                script_errors[target.path] = _clip(message)
+        except Exception:
+            pass
 
     licence = {}
     try:
@@ -790,6 +861,12 @@ def m_health_sample(params):
         "license": licence,
         "product": app.product,
         "nodes": nodes,
+        # Attributed per node where the per-operator read agrees with the
+        # recursive one, and kept raw as well: if attribution comes back empty
+        # while the recursive read did not, the errors are still reported —
+        # unattributed beats unmentioned.
+        "scriptErrors": script_errors,
+        "scriptErrorsRaw": _clip(script_errors_root),
     }
 
 

@@ -2,9 +2,10 @@
 
 `errors` covers what TouchDesigner considers an error. It does not cover a
 network that never cooks, an audio device switched off, a CPU-bound operator
-holding the frame rate at 3, or a licence that forbids what you just asked
-for. Each of those looks completely healthy from every other angle, and each
-one silently produces nothing.
+holding the frame rate at 3, a shader that failed to compile, a traceback
+raised inside a script or a callback, or a licence that forbids what you just
+asked for. Each of those looks completely healthy from every other angle, and
+each one silently produces nothing.
 
 Two samples a moment apart separate live nodes from dormant ones; the rest is
 read off a single snapshot.
@@ -36,6 +37,54 @@ _OUTPUT_TYPES = {
 }
 
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "note": 2}
+
+# How much of a compiler log or a traceback is worth putting beside a path.
+_EXCERPT = 110
+
+# Measured on build 2025.32460: a shader that built returns
+# "Vertex Shader Compile Results:\n\nCompiled Successfully\n..." and a shader
+# that failed returns the same preamble with
+# "ERROR: /project1/probe/frag1:2: 'notAThing' : undeclared identifier".
+# So a non-empty compileResult is not a failure — the marker is.
+_COMPILE_FAILED = "ERROR"
+
+
+def _lines(text: str) -> list[str]:
+    return [line.strip() for line in str(text).splitlines() if line.strip()]
+
+
+def _clip_line(line: str) -> str:
+    return line if len(line) <= _EXCERPT else line[:_EXCERPT] + "..."
+
+
+def _compile_excerpt(text: str) -> str:
+    """The compiler's own line — it names the source DAT and the line number."""
+    for line in _lines(text):
+        if _COMPILE_FAILED in line:
+            return _clip_line(line)
+    return ""
+
+
+def _script_excerpt(text: str) -> str:
+    """The exception line out of a traceback TouchDesigner kept for an operator.
+
+    Measured shape (build 2025.32460): "  Error: Traceback (most recent call
+    last):", the File lines, the exception, then the operator path in brackets.
+    Neither the first nor the last line is the one worth showing, so the
+    exception line is picked out and the whole text falls back to its first
+    line when nothing matches.
+    """
+    lines = _lines(text)
+    for line in lines:
+        # The wrapper TouchDesigner puts in front ("Error: Traceback (most
+        # recent call last):") ends in 'Error' itself, so it is skipped along
+        # with the frame lines it introduces.
+        if "Traceback" in line or line.startswith("File "):
+            continue
+        head = line.split(":", 1)[0].strip()
+        if head.endswith(("Error", "Exception", "Interrupt", "Exit")):
+            return _clip_line(line)
+    return _clip_line(lines[0]) if lines else ""
 
 
 @dataclass
@@ -110,6 +159,7 @@ def check(
     warned: list[str] = []
     bypassed: list[str] = []
     inactive: list[str] = []
+    shaders: list[str] = []
 
     # Two innocent conditions freeze the frame clock: the timeline is paused,
     # or TouchDesigner's window is in the background, where it all but stops
@@ -122,6 +172,12 @@ def check(
     for node in live:
         previous = before.get(node["path"])
         delta = node["cooks"] - previous["cooks"] if previous else 0
+        # Read before the COMP guard below: the guard is about cooking, not
+        # about compiling. A compileResult that mentions no ERROR is a
+        # successful build's log, not a failure — see _compile_excerpt.
+        failure = _compile_excerpt(node.get("compileResult") or "")
+        if failure:
+            shaders.append(f"{node['path']} ({failure})")
         # A node is expected to keep up with the frame clock; COMPs and other
         # containers legitimately cook rarely, so only leaf operators count.
         if node["family"] == "COMP":
@@ -175,6 +231,45 @@ def check(
         health.findings.append(
             Finding("error", "node-errors",
                     f"{len(errored)} operator(s) reporting an error", errored))
+    if shaders:
+        health.findings.append(
+            Finding(
+                "error", "shader-compile",
+                f"{len(shaders)} GLSL operator(s) whose shader did not "
+                f"compile — the operator outputs a checkerboard or a black "
+                f"frame. TouchDesigner records this as a warning that says to "
+                f"open an Info DAT; the compiler's own line, with the source "
+                f"DAT and the line number, is below",
+                shaders,
+            )
+        )
+
+    # Attributed per operator where the bridge managed it; the raw recursive
+    # read is the fallback, because an unattributed traceback still beats an
+    # unreported one.
+    scripted = second.get("scriptErrors") or {}
+    raw = second.get("scriptErrorsRaw") or ""
+    if scripted:
+        health.findings.append(
+            Finding(
+                "error", "script-errors",
+                f"{len(scripted)} operator(s) raised a traceback in a script "
+                f"or a callback — the code stopped where it threw, and "
+                f"TouchDesigner keeps script errors apart from the error list, "
+                f"so nothing else reports them",
+                [f"{node_path} ({_script_excerpt(message)})"
+                 for node_path, message in sorted(scripted.items())],
+            )
+        )
+    elif raw:
+        health.findings.append(
+            Finding(
+                "error", "script-errors",
+                f"a script or callback raised a traceback somewhere under "
+                f"{path}, and which operator it belongs to could not be "
+                f"determined: {_script_excerpt(raw)}",
+            )
+        )
     if inactive:
         health.findings.append(
             Finding(
