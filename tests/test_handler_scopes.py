@@ -1,24 +1,59 @@
 """Cooperative scope claims: path containment, expiry, refusal, release.
 
 Two agents on one TouchDesigner overwrite each other in silence; a claim is
-what turns that into a refusal naming the other owner. None of this needs
-TouchDesigner running: the comparison and expiry logic is plain module-level
-code, and the three methods touch nothing but a dict, so they are called
-directly here the way the Web Server DAT would call them.
+what turns that into a refusal naming the other owner.
+
+The claims live in a Table DAT inside the bridge COMP because TouchDesigner
+re-executes this module's body between requests, which wiped the module-level
+dict they started in — see `test_claims_survive_the_module_being_re_executed`,
+which is that defect written down. None of this needs TouchDesigner running:
+the comparison, expiry and row parsing are plain module-level functions, and
+the table is reached through one accessor a fake stands in for here.
 """
 
 from __future__ import annotations
+
+import importlib
+import os
 
 import pytest
 
 from td_atlas.component import handler
 
 
+class FakeTableDAT:
+    """As much of a Table DAT as the handler touches.
+
+    Cells come back as `str` because that is what a real Cell yields through
+    `str()` — measured against a live 2025.32460, where `str(row[0])` gave
+    '/project1/audio' for a cell holding that path.
+    """
+
+    path = "/tdatlas/tdatlas_scopes"
+
+    def __init__(self, rows=None):
+        self._rows = [list(row) for row in (rows or [])]
+
+    def clear(self):
+        self._rows = []
+
+    def appendRow(self, cells):
+        self._rows.append([str(cell) for cell in cells])
+
+    def rows(self):
+        return [list(row) for row in self._rows]
+
+    @property
+    def numRows(self):
+        return len(self._rows)
+
+
 @pytest.fixture(autouse=True)
-def empty_scopes(monkeypatch):
-    """A clean claim table per test — the real one is module state."""
-    monkeypatch.setattr(handler, "_SCOPES", {})
-    return handler._SCOPES
+def claim_table(monkeypatch):
+    """An empty claim table, standing where the bridge COMP's DAT would be."""
+    table = FakeTableDAT()
+    monkeypatch.setattr(handler, "_scope_table", lambda create=False: table)
+    return table
 
 
 # -- path containment -------------------------------------------------------
@@ -353,12 +388,145 @@ def test_the_three_methods_are_registered():
     assert handler.METHODS["scopes"] is handler.m_scopes
 
 
-def test_the_claim_table_is_empty_at_import():
-    """The host imports this module for PROTOCOL_VERSION; claims are in memory.
+def test_importing_the_module_creates_no_claim_state():
+    """The host imports this module for PROTOCOL_VERSION; it must stay inert.
 
-    Nothing about them may touch disk or exist before the first claim.
+    No table, no dict, no disk: the claims are found in the network when a
+    request asks for them, and the accessor that finds them touches `me` only
+    inside its body.
     """
-    import importlib
+    reloaded = importlib.reload(handler)
+
+    assert not hasattr(reloaded, "_SCOPES")
+    assert reloaded.SCOPE_TABLE == "tdatlas_scopes"
+
+
+def test_claims_survive_the_module_being_re_executed(claim_table, monkeypatch):
+    """The defect this carrier exists to fix, at host scale.
+
+    Measured on a live 2025.32460: one health_sample request re-ran this
+    module's body — `id(globals())` went 5450312064 -> 5451093184 — and a
+    claim held in a module-level dict vanished with no expiry and nothing in
+    the `expired` list. `importlib.reload` is the same event here: the module
+    body runs again, and the claim must still be there, because the table it
+    lives in is not part of the module.
+    """
+    monkeypatch.setattr(handler.time, "time", lambda: 1000.0)
+    handler.m_claim_scope({"path": "/project1/audio", "owner": "agent-a", "ttl": 600})
 
     reloaded = importlib.reload(handler)
-    assert reloaded._SCOPES == {}
+    # Reload restores the real accessor, so point the fresh body back at the
+    # same table — which is what TouchDesigner does, the DAT being a child of
+    # the COMP rather than anything the module owns.
+    monkeypatch.setattr(reloaded, "_scope_table", lambda create=False: claim_table)
+    monkeypatch.setattr(reloaded.time, "time", lambda: 1001.0)
+
+    listing = reloaded.m_scopes({})
+
+    assert listing["count"] == 1
+    assert listing["scopes"][0]["owner"] == "agent-a"
+    assert listing["expired"] == []
+    # And the guard raised from the reloaded body still refuses a stranger.
+    with pytest.raises(reloaded.ScopeHeld, match="agent-a"):
+        reloaded._guard_scopes({"owner": "agent-b"}, "/project1/audio/eq1")
+
+
+# -- the table as a carrier -------------------------------------------------
+
+def test_a_claim_is_written_as_a_row_a_person_can_read(claim_table, monkeypatch):
+    monkeypatch.setattr(handler.time, "time", lambda: 1000.0)
+
+    view = handler.m_claim_scope(
+        {"path": "/project1/audio", "owner": "agent-a", "ttl": 60}
+    )
+
+    assert claim_table.rows()[0] == list(handler._SCOPE_HEADER)
+    assert claim_table.rows()[1] == [
+        "/project1/audio",
+        "agent-a",
+        repr(1000.0),
+        repr(1060.0),
+        str(os.getpid()),
+    ]
+    assert view["table"] == claim_table.path
+
+
+def test_rows_from_another_process_do_not_count(claim_table, monkeypatch):
+    """A table saved into a .toe must not come back as a claim held forever.
+
+    Nothing would ever clear it: its owner is a process that no longer exists,
+    so no release arrives and the expiry it carries may be days away.
+    """
+    monkeypatch.setattr(handler.time, "time", lambda: 1000.0)
+    claim_table.appendRow(list(handler._SCOPE_HEADER))
+    claim_table.appendRow(
+        ["/project1/audio", "agent-gone", repr(1.0), repr(1e18),
+         str(os.getpid() + 1)]
+    )
+
+    assert handler.m_scopes({})["count"] == 0
+    handler._guard_scopes({"owner": "agent-b"}, "/project1/audio/eq1")
+    # And the next write sweeps the row away, so the board stops lying.
+    handler.m_claim_scope({"path": "/project1/video", "owner": "agent-b", "ttl": 60})
+    assert [row[0] for row in claim_table.rows()[1:]] == ["/project1/video"]
+
+
+def test_a_hand_edited_row_is_skipped_not_raised(claim_table, monkeypatch):
+    """A raise here would refuse every edit in the project until it was found."""
+    monkeypatch.setattr(handler.time, "time", lambda: 1000.0)
+    pid = str(os.getpid())
+    claim_table.appendRow(list(handler._SCOPE_HEADER))
+    claim_table.appendRow(["oops"])
+    claim_table.appendRow(["relative/path", "agent-a", "1.0", "1e18", pid])
+    claim_table.appendRow(["/project1/audio", "", "1.0", "1e18", pid])
+    claim_table.appendRow(["/project1/video", "agent-a", "later", "1e18", pid])
+    claim_table.appendRow(["/project1/ctl", "agent-a", "1.0", "1e18", "not-a-pid"])
+    claim_table.appendRow(["/project1/good", "agent-a", "1.0", repr(1e18), pid])
+
+    listing = handler.m_scopes({})
+
+    assert [claim["path"] for claim in listing["scopes"]] == ["/project1/good"]
+    with pytest.raises(handler.ScopeHeld, match="agent-a"):
+        handler._guard_scopes({"owner": "agent-b"}, "/project1/good/eq1")
+
+
+def test_the_guard_never_writes_to_the_table(claim_table, monkeypatch):
+    """It runs on every network write; dirtying a DAT there is not affordable.
+
+    An expired row is filtered in memory, and swept by the next claim, release
+    or listing instead.
+    """
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(handler.time, "time", lambda: clock["now"])
+    handler.m_claim_scope({"path": "/project1/audio", "owner": "agent-a", "ttl": 60})
+    before = claim_table.rows()
+
+    clock["now"] = 2000.0
+    monkeypatch.setattr(
+        claim_table, "appendRow", lambda cells: pytest.fail("the guard wrote")
+    )
+    monkeypatch.setattr(
+        claim_table, "clear", lambda: pytest.fail("the guard wrote")
+    )
+    handler._guard_scopes({"owner": "agent-b"}, "/project1/audio/eq1")
+
+    assert claim_table.rows() == before
+
+
+def test_a_claim_that_is_not_kept_is_not_reported_as_held(claim_table, monkeypatch):
+    """Read back before promising. The defect was a claim accepted and lost."""
+    monkeypatch.setattr(handler.time, "time", lambda: 1000.0)
+    monkeypatch.setattr(claim_table, "appendRow", lambda cells: None)
+
+    with pytest.raises(RuntimeError, match="did not survive"):
+        handler.m_claim_scope(
+            {"path": "/project1/audio", "owner": "agent-a", "ttl": 60}
+        )
+
+
+def test_an_owner_with_a_tab_or_newline_is_refused():
+    """Those are the table's own separators; a name carrying one comes back split."""
+    with pytest.raises(ValueError, match="tabs or newlines"):
+        handler._normalise_owner("agent\ta")
+    with pytest.raises(ValueError, match="tabs or newlines"):
+        handler._normalise_owner("agent\nb")

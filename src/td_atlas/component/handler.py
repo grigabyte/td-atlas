@@ -274,17 +274,47 @@ def _refresh_instance(dat):
 # Cooperative claims on subtrees of the network, so two agents editing the same
 # project stop overwriting each other in silence.
 #
-# The claims live here, inside TouchDesigner, and not on the host: agents are
-# separate processes (often on separate MCP servers) and the bridge is the one
-# thing they demonstrably share. Held in memory only — a claim is about who is
-# working right now, so losing the lot when TouchDesigner quits is the correct
-# behaviour, and it keeps this module free of any state at import time, which
-# the host's import for PROTOCOL_VERSION depends on.
+# The claims live inside TouchDesigner and not on the host: agents are separate
+# processes (often separate MCP servers) and the bridge is the one thing they
+# demonstrably share.
+#
+# They live in a Table DAT inside the bridge COMP, and NOT in a module-level
+# dict, which is where they started and why they vanished. Measured on a live
+# 2025.32460: this module's body is re-executed while the module object is
+# reused — `id(globals())` before and after one health_sample request came back
+# 5450312064 then 5451093184 — so every module-level variable is rebuilt and a
+# claim held there disappears with no expiry and no trace. A claim that
+# silently evaporates is worse than no claims at all: its owner keeps writing
+# believing the area is guarded, and the next agent walks in too.
+#
+# Carrier chosen by measurement, not preference. Same live build, N=300 per
+# figure, three runs, cost of one read (the guard runs on every network write)
+# and one write (claim and release only):
+#
+#   Table DAT              read 2.2-3.0 us   write 3.2-3.7 us
+#   component storage      read 0.32-0.38 us write 0.29-0.34 us
+#   JSON file in ~/.td-atlas  read 16-24 us  write 124-200 us
+#   module dict (the bug)  read 0.035 us     - does not survive
+#
+# All three survive the re-execution (verified by the same probe). At 0.02% of
+# a 16.7 ms frame the Table DAT's cost is not a consideration, which leaves
+# what the carriers differ in: the table is visible in the network, so a claim
+# that misbehaves can be looked at instead of investigated through the bridge —
+# which is what this defect cost. Component storage is ten times cheaper and
+# invisible; the file is fifty times dearer to read, writes 124-200 us into the
+# frame, and would need the port and pid plumbed into method bodies that are
+# handed neither.
+#
+# Rows carry the writing process's pid and are ignored unless it matches: a
+# table saved into a .toe must not come back as a claim held by a process that
+# no longer exists, and the next claim, release or listing deletes those rows
+# so the board a human reads never shows a claim that does not count.
 #
 # This is an agreement between agents, not a permission system. Nothing here
 # constrains a human editing the same nodes by hand, and an agent that never
 # sends an owner is never stopped by its own claim — see _caller_owner.
-_SCOPES = {}
+SCOPE_TABLE = "tdatlas_scopes"
+_SCOPE_HEADER = ("path", "owner", "claimed", "expires", "pid")
 
 # Every claim expires. An agent that crashes between claim and release must not
 # park a subtree for the rest of the session, and there is nobody to notice that
@@ -333,7 +363,14 @@ def _normalise_owner(owner):
             "an owner name is required — any string that identifies this agent "
             "or session, so a second agent can be told who holds the scope"
         )
-    return owner.strip()
+    name = owner.strip()
+    # Tabs and newlines are the Table DAT's own cell and row separators; an
+    # owner carrying one would come back as a different name, or as two.
+    if any(character in name for character in "\t\r\n"):
+        raise ValueError(
+            "an owner name cannot contain tabs or newlines, got %r" % (owner,)
+        )
+    return name
 
 
 def _scope_ttl(ttl):
@@ -437,8 +474,16 @@ def _stamp(when):
     there. The cost is that a system clock stepped backwards extends live
     claims, which is bounded by MAX_SCOPE_TTL and cheaper than unreadable
     timestamps.
+
+    Never raises. `localtime` rejects a value the platform cannot represent
+    (an OSError for 1e18, on macOS), and this is called from the refusal text
+    inside the write guard — where a raise would turn one hand-edited cell in
+    the claim table into a refusal of every edit in the project.
     """
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(when))
+    try:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(when))
+    except (OSError, OverflowError, ValueError):
+        return "an unrepresentable time (%r)" % (when,)
 
 
 def _claim_view(claim, now):
@@ -488,6 +533,117 @@ def _caller_owner(params):
     return owner.strip() if isinstance(owner, str) else ""
 
 
+def _parse_scope_rows(rows, pid):
+    """Turn the table's cells into claims. Pure, and never raises.
+
+    Rows written by another process are dropped: a table saved inside a .toe
+    would otherwise come back after a restart as a claim held by a pid that is
+    gone, which no expiry and no release would ever clear.
+
+    A row that does not parse is skipped rather than reported, because this
+    runs inside the write guard: raising on one hand-edited cell would refuse
+    every edit in the project until somebody found the table.
+    """
+    claims = {}
+    for row in rows:
+        cells = [str(cell) for cell in row]
+        if len(cells) < 5 or cells[0] == _SCOPE_HEADER[0]:
+            continue
+        try:
+            path = _normalise_scope_path(cells[0])
+            owner = _normalise_owner(cells[1])
+            claimed = float(cells[2])
+            expires = float(cells[3])
+            row_pid = int(cells[4])
+        except (ValueError, TypeError):
+            continue
+        if row_pid != pid:
+            continue
+        claims[path] = {
+            "path": path,
+            "owner": owner,
+            "claimed": claimed,
+            "expires": expires,
+            "pid": row_pid,
+        }
+    return claims
+
+
+def _format_scope_rows(claims, pid):
+    """The header plus one row per claim, oldest path first. Pure.
+
+    repr() rather than str() on the timestamps: the expiry a second agent is
+    refused against has to be the one this one recorded, to the last digit.
+    """
+    rows = [list(_SCOPE_HEADER)]
+    for path in sorted(claims):
+        claim = claims[path]
+        rows.append(
+            [
+                claim["path"],
+                claim["owner"],
+                repr(float(claim["claimed"])),
+                repr(float(claim["expires"])),
+                str(int(claim.get("pid", pid))),
+            ]
+        )
+    return rows
+
+
+def _scope_table(create=False):
+    """The Table DAT holding the claims, or None when there are none yet.
+
+    `create=False` on the read path so the guard never builds an operator: a
+    project where nobody has claimed anything must cost the guard one lookup
+    and nothing else.
+
+    Returns None off the host too, where `me` does not exist: the module is
+    imported there for PROTOCOL_VERSION and for testing the logic, and a
+    network with no claims in it is the truthful answer. Only NameError is
+    caught — a failure to reach a COMP that does exist must not be swallowed
+    into "nothing is claimed".
+    """
+    try:
+        holder = me.parent()
+    except NameError:
+        return None
+    table = holder.op(SCOPE_TABLE)
+    if table is None and create:
+        table = holder.create(tableDAT, SCOPE_TABLE)
+        table.clear()
+        table.appendRow(list(_SCOPE_HEADER))
+        # Parked out of the way of the DATs a person came here to read.
+        table.nodeY = -300
+    return table
+
+
+def _read_scopes():
+    """Every claim this process wrote, expired ones included. No writes."""
+    table = _scope_table()
+    if table is None:
+        return {}
+    return _parse_scope_rows(table.rows(), os.getpid())
+
+
+def _store_scopes(claims):
+    """Rewrite the table from `claims`, dropping whatever else was in it.
+
+    Called only from claim, release and the listing — never from the guard,
+    which would dirty a DAT on every edit to the network.
+    """
+    table = _scope_table(create=True)
+    if table is None:
+        raise RuntimeError(
+            "no %s table and no bridge component to put it in — claims are "
+            "kept inside TouchDesigner, so this only works through the bridge"
+            % SCOPE_TABLE
+        )
+    table.clear()
+    for row in _format_scope_rows(claims, os.getpid()):
+        table.appendRow(row)
+    return table
+
+
 def _guard_scopes(params, *paths):
     """Refuse a write that lands inside another owner's claim.
 
@@ -496,16 +652,20 @@ def _guard_scopes(params, *paths):
     absolute is skipped: resolving it needs TouchDesigner's own relative-path
     rules, and guessing at it would either block writes that are fine or claim
     a check it did not make.
+
+    Read-only by design. Expired claims are filtered in memory here and swept
+    from the table by the next claim, release or listing, so a network edit
+    never pays for a table write.
     """
-    if not _SCOPES:
+    claims = _read_scopes()
+    if not claims:
         return
     now = time.time()
-    _prune_scopes(_SCOPES, now)
     owner = _caller_owner(params)
     for path in paths:
         if not isinstance(path, str) or not path.strip().startswith("/"):
             continue
-        claim = _blocking_claim(_SCOPES, path, owner, now)
+        claim = _blocking_claim(claims, path, owner, now)
         if claim is not None:
             raise ScopeHeld(_scope_refusal(claim, path, owner, now))
 
@@ -523,9 +683,10 @@ def m_claim_scope(params):
     path = _normalise_scope_path(params.get("path"))
     owner = _normalise_owner(params.get("owner"))
     ttl = _scope_ttl(params.get("ttl"))
-    _prune_scopes(_SCOPES, now)
+    claims = _read_scopes()
+    _prune_scopes(claims, now)
 
-    clash = _overlapping_claim(_SCOPES, path, owner, now)
+    clash = _overlapping_claim(claims, path, owner, now)
     if clash is not None:
         raise ScopeHeld(
             "'%s' overlaps '%s', claimed by '%s' from %s until %s (%d s left). "
@@ -540,19 +701,32 @@ def m_claim_scope(params):
             )
         )
 
-    existing = _SCOPES.get(path)
+    existing = claims.get(path)
     # Re-claiming one's own path renews it rather than stacking a second
     # record: a long job should extend its claim, not lose it mid-flight.
     claimed = existing["claimed"] if existing else now
-    _SCOPES[path] = {
+    claims[path] = {
         "path": path,
         "owner": owner,
         "claimed": claimed,
         "expires": now + ttl,
     }
-    view = _claim_view(_SCOPES[path], now)
+    table = _store_scopes(claims)
+
+    # Read back before reporting success. A claim that was accepted but not
+    # kept is the defect this carrier exists to fix, and the only honest way
+    # to promise it is to look.
+    kept = _read_scopes().get(path)
+    if kept is None or kept["owner"] != owner:
+        raise RuntimeError(
+            "the claim on '%s' did not survive being written to %s — refusing "
+            "to report an area as held when it is not" % (path, table.path)
+        )
+
+    view = _claim_view(kept, now)
     view["renewed"] = existing is not None
     view["ttl"] = ttl
+    view["table"] = table.path
     return view
 
 
@@ -566,10 +740,14 @@ def m_release_scope(params):
     now = time.time()
     path = _normalise_scope_path(params.get("path"))
     owner = _normalise_owner(params.get("owner"))
-    _prune_scopes(_SCOPES, now)
+    claims = _read_scopes()
+    _prune_scopes(claims, now)
 
-    claim = _SCOPES.get(path)
+    claim = claims.get(path)
     if claim is None:
+        # Still rewrite: this call may be the one that clears rows left by
+        # expiry or by a previous process.
+        _store_scopes(claims)
         return {
             "released": False,
             "path": path,
@@ -581,15 +759,19 @@ def m_release_scope(params):
             "(it expires by itself at %s)."
             % (path, claim["owner"], owner, _stamp(claim["expires"]))
         )
-    del _SCOPES[path]
+    del claims[path]
+    _store_scopes(claims)
     return {"released": True, "path": path, "owner": owner}
 
 
 def m_scopes(_params):
     """Every live claim: who holds what, since when, and when it lapses."""
     now = time.time()
-    expired = _prune_scopes(_SCOPES, now)
-    live = [_claim_view(claim, now) for claim in _active_scopes(_SCOPES, now)]
+    claims = _read_scopes()
+    expired = _prune_scopes(claims, now)
+    live = [_claim_view(claim, now) for claim in _active_scopes(claims, now)]
+    if expired:
+        _store_scopes(claims)
     return {"count": len(live), "scopes": live, "expired": expired, "now": now}
 
 
