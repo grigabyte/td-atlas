@@ -15,6 +15,7 @@ import pytest
 from td_atlas.project.diff import diff
 from td_atlas.project.formats import (
     FormatError,
+    read_custom_parms,
     read_node,
     read_parms,
     read_payload,
@@ -115,6 +116,113 @@ def test_read_parms_unwraps_a_quoted_expression():
 def test_read_parms_unescapes_a_quoted_expression():
     line = '?\nBody 81 "" "said \\"hi\\" and \\\'bye\\\'"\n?'
     assert read_parms(line)["Body"].effective == "said \"hi\" and 'bye'"
+
+
+# -- parameter modes: which halves a line carries ---------------------------
+#
+# One line per bit combination that the expansion cache actually contains
+# (222 components, 474,656 lines). The combinations are: no bit, 0x10 alone,
+# 0x200 alone, 0x10|0x200, and 0x200000.
+
+def test_read_parms_splits_a_bind_expression_off_the_constant():
+    """The evidence line: bind mode with no expression bit.
+
+    `/checker/checker/color1` in the shipped `checker.tox`. Flags 515 is
+    0x203 — bind, no 0x10 — and reading the halves off the shape of the line
+    instead of the flags word reported the parameter as holding the constant
+    and the bind expression glued together.
+    """
+    parm = read_parms("?\ncolorr 515 1 parent.Checker.par.Color1r\n?")["colorr"]
+    assert parm.value == "1"
+    assert parm.bind == "parent.Checker.par.Color1r"
+    assert parm.expr is None
+    assert parm.mode == "bind"
+    assert parm.effective == "parent.Checker.par.Color1r"
+
+
+def test_read_parms_reads_a_bind_expression_that_is_a_chop_channel():
+    """A bind master need not be a parameter — 26 lines in the cache are not.
+
+    `op('bind1')['chan1']` is a Bind CHOP channel, which the index's
+    `Binding` article names as one of the things allowed to be a bind master.
+    """
+    line = "?\nValue0 67109443 0.43 op('bind1')['chan1']\n?"
+    parm = read_parms(line)["Value0"]
+    assert parm.value == "0.43"
+    assert parm.bind == "op('bind1')['chan1']"
+
+
+def test_read_parms_reads_a_constant_an_expression_and_a_bind_together():
+    """547 lines in the cache carry both bits and three values."""
+    line = (
+        "?\nfontsize 561 20 \"parent.Widget.par.Labelfontsize.eval() or 1\" "
+        "op('bg').par.fontsize\n?"
+    )
+    parm = read_parms(line)["fontsize"]
+    assert parm.value == "20"
+    assert parm.expr == "parent.Widget.par.Labelfontsize.eval() or 1"
+    assert parm.bind == "op('bg').par.fontsize"
+    # Bind outranks expression when both bits are set; both halves are kept.
+    assert parm.mode == "bind"
+
+
+def test_read_parms_admits_it_cannot_split_the_unknown_layout():
+    """Bit 0x200000: one value more than the mode bits account for.
+
+    13 lines in the cache carry it, and in every one the extra value is
+    identical to the one before it — so nothing can say which position is the
+    expression and which the bind. The reader reports the constant and hands
+    the rest back unsplit rather than guessing.
+    """
+    line = (
+        "?\nAngleofview 69206592 210 op('./float1').par.Value0 "
+        "op('./float1').par.Value0\n?"
+    )
+    parm = read_parms(line)["Angleofview"]
+    assert parm.value == "210"
+    assert parm.expr is None and parm.bind is None
+    assert parm.unrecognised == (
+        "op('./float1').par.Value0 op('./float1').par.Value0"
+    )
+    assert parm.mode == "unknown"
+
+
+def test_read_parms_does_not_invent_a_pair_without_a_mode_bit():
+    """A constant with spaces stays one value, whatever it looks like."""
+    parm = read_parms("?\nlabel 0 1 parent.Thing.par.Value\n?")["label"]
+    assert parm.value == "1 parent.Thing.par.Value"
+    assert parm.expr is None and parm.bind is None
+    assert parm.mode == "constant"
+
+
+def test_read_parms_keeps_a_byte_order_mark_out_of_the_constant():
+    """`<BOM>"..."` is still one quoted field, not a fragment plus debris.
+
+    6 lines in the cache write a BOM before an expression's opening quote.
+    Without this the constant comes back as `\ufeff"[x` — a piece of a value.
+    """
+    line = '?\nexpr 49 7 \ufeff"[x.name for x in op(\'a\').points]"\n?'
+    parm = read_parms(line)["expr"]
+    assert parm.value == "7"
+    assert parm.expr == "\ufeff[x.name for x in op('a').points]"
+
+
+# -- .cparm is a different grammar ------------------------------------------
+
+def test_read_custom_parms_reads_the_page_header_as_page_names():
+    """`pages 4 ...` is a page list; the number is a count, not flags.
+
+    Read with the `.parm` grammar the component gains a parameter named
+    `pages` whose value is the four page names glued into one string.
+    """
+    text = (
+        '?\npages 4 Text Settings "OP Viewer" About\n'
+        '772804868 Version Version 1 1 0 0 1 1 1 2 0 2.3.4 "" About 1\n?'
+    )
+    custom = read_custom_parms(text)
+    assert custom.pages == ["Text", "Settings", "OP Viewer", "About"]
+    # The definition lines are not read at all — an admitted blank.
+    assert custom.parms == {}
 
 
 def test_read_parms_keeps_spaces_in_a_constant():
@@ -445,6 +553,128 @@ def _palette(*parts):
 
 
 @needs_td
+def test_the_bind_parameters_of_the_shipped_checker_are_not_glued():
+    """The defect on the file it was found in.
+
+    `/checker/checker/color1` binds its four channels to the component's
+    custom parameters. Before the flags word decided the split, each of them
+    was reported as holding `1 parent.Checker.par.Color1r` — a value the
+    parameter does not have, and one that would have been written back into
+    somebody's `.parm` by the reassembler.
+    """
+    from td_atlas.project import index_resolver, load_file
+    from td_atlas.project.serialize import to_text
+
+    project = load_file(_palette("Generators", "checker.tox"),
+                        resolver=index_resolver())
+    node = project.find("/checker/checker/color1")
+    for name, master in [
+        ("colorr", "parent.Checker.par.Color1r"),
+        ("colorg", "parent.Checker.par.Color1g"),
+        ("colorb", "parent.Checker.par.Color1b"),
+        ("alpha", "parent.Checker.par.Color1a"),
+    ]:
+        parm = node.parms[name]
+        assert parm.value == "1"
+        assert parm.bind == master
+        assert parm.mode == "bind"
+
+    # And it reaches the text, or the reassembler cannot see the two halves.
+    data = json.loads(to_text(project, "/checker/checker/color1"))
+    assert data["operators"][0]["parms"]["colorr"] == {
+        "bind": "parent.Checker.par.Color1r",
+        "value": "1",
+    }
+
+    # The `.cparm` header is page names, not a parameter called `pages`.
+    owner = project.find("/checker/checker")
+    assert owner.custom_pages == ["Checker", "About"]
+    assert "pages" not in owner.custom_parms
+
+
+@needs_td
+@pytest.mark.parametrize(
+    "parts",
+    [
+        ("Generators", "checker.tox"),
+        ("Tools", "battery.tox"),
+        ("UI", "popDialog.tox"),
+        ("Techniques", "motionSense.tox"),
+        ("Mapping", "camSchnappr.tox"),
+    ],
+)
+def test_no_parameter_value_glues_two_fields_together(parts):
+    """Every value a reader hands back is one whole field of its line.
+
+    The check is the grammar itself, run against the file: re-lex each
+    `.parm` line, and require that a line whose flags word promises halves
+    splits into exactly that many fields with the reader's `value`, `expr` and
+    `bind` each equal to one of them. A line with no mode bit promises no
+    split at all, so its remainder is one value by definition and the only
+    thing to check is that the reader did not split it anyway.
+    """
+    from td_atlas.project import index_resolver, load_file
+    from td_atlas.project.expand import expand
+    from td_atlas.project.formats import (
+        _BIND_BIT,
+        _EXPR_BIT,
+        _PARM_LINE,
+        _UNKNOWN_EXTRA_BIT,
+        _all_fields,
+        _unquote,
+    )
+
+    path = _palette(*parts)
+    project = load_file(path, resolver=index_resolver())
+    root = expand(path).root
+
+    checked = 0
+    for parm_file in sorted(root.rglob("*.parm")):
+        for raw in parm_file.read_text(errors="replace").splitlines():
+            line = raw.strip()
+            if not line or line == "?":
+                continue
+            match = _PARM_LINE.match(line)
+            if not match:
+                continue
+            flags = int(match.group("flags"))
+            rest = match.group("rest").strip()
+            parms = read_parms(line)
+            parm = parms[match.group("name")]
+            checked += 1
+
+            if flags & _UNKNOWN_EXTRA_BIT:
+                assert parm.expr is None and parm.bind is None
+                continue
+
+            halves = bool(flags & _EXPR_BIT) + bool(flags & _BIND_BIT)
+            if not halves:
+                assert parm.value == _unquote(rest)
+                assert parm.expr is None and parm.bind is None
+                continue
+
+            fields = _all_fields(rest)
+            assert len(fields) == halves + 1, line
+            recovered = [parm.value]
+            if flags & _EXPR_BIT:
+                recovered.append(parm.expr)
+            if flags & _BIND_BIT:
+                recovered.append(parm.bind)
+            assert recovered == fields, line
+    assert checked > 50
+
+    # And the defect's signature nowhere in the loaded project: a constant
+    # that ends with the very half that was supposed to be split off it. (A
+    # constant may legitimately *equal* its expression — `$ON` does — which is
+    # why this looks for the glue, the separating space, and not containment.)
+    for node in project.walk():
+        for parm in node.parms.values():
+            for half in (parm.expr, parm.bind):
+                if half:
+                    assert not parm.value.endswith(" " + half)
+
+
+@needs_td
 @pytest.mark.parametrize(
     "parts", [("Generators", "checker.tox"), ("Tools", "battery.tox")]
 )
@@ -472,8 +702,11 @@ def test_every_dat_in_a_shipped_component_round_trips(parts):
 def test_serialising_a_four_thousand_operator_component(capsys):
     """The size and cost of the format on the largest component shipped.
 
-    Reference numbers from the format measurement (kantanMapper, 4080 nodes):
-    99,068 lines and 5,475,136 bytes.
+    Reference numbers (kantanMapper, 4080 nodes): 106,082 lines and
+    6,111,237 bytes. The first measurement of the format read 99,068 lines
+    and 5,475,136 bytes; the 7% growth is the bind parameters, which used to
+    print as one bare string per parameter and now print as a two-key map
+    because the constant and the bind expression are two values, not one.
     """
     import time
 
@@ -494,7 +727,7 @@ def test_serialising_a_four_thousand_operator_component(capsys):
         print(
             f"\nkantanMapper.tox: {count} operators, {lines} lines, "
             f"{size} bytes, serialised in {elapsed * 1000:.0f} ms "
-            f"(reference: 4080 / 99068 / 5475136)"
+            f"(reference: 4080 / 106082 / 6111237)"
         )
     assert count > 3000
     json.loads(text)

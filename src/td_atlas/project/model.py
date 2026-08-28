@@ -17,6 +17,7 @@ from .formats import (
     ParmValue,
     read_build,
     read_node,
+    read_custom_parms,
     read_parms,
     read_payload,
     read_table,
@@ -35,6 +36,9 @@ class Node:
     node: NodeFile
     parms: dict[str, ParmValue] = field(default_factory=dict)
     custom_parms: dict[str, ParmValue] = field(default_factory=dict)
+    # Custom parameter page names, from the `.cparm` header line. The
+    # definitions themselves are not read — see `read_custom_parms`.
+    custom_pages: list[str] = field(default_factory=list)
     text: str | None = None            # DAT contents, when present
     table: list[list[str]] | None = None
     children: list[Node] = field(default_factory=list)
@@ -173,7 +177,9 @@ def load(expansion: Expansion, resolver: TypeResolver | None = None) -> Project:
             entry.parms = read_parms(_read(parm_file) or "")
         cparm_file = stem.with_suffix(".cparm")
         if cparm_file.exists():
-            entry.custom_parms = read_parms(_read(cparm_file) or "")
+            custom = read_custom_parms(_read(cparm_file) or "")
+            entry.custom_parms = custom.parms
+            entry.custom_pages = custom.pages
 
         text_file = stem.with_suffix(".text")
         if text_file.exists():

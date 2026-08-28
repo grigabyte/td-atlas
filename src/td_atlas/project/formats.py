@@ -9,7 +9,8 @@ Files per operator, all optional but `.n`:
 
     foo.n       node: family, type, position, flags, input wiring
     foo.parm    parameter values that differ from the defaults
-    foo.cparm   custom parameter definitions
+    foo.cparm   custom parameter definitions — a *different* grammar from
+                `.parm`, see `read_custom_parms`
     foo.text    DAT contents — Python, GLSL, plain text
     foo.table   Table DAT cells
     foo.panel   panel UI state (layout only; not read here)
@@ -181,16 +182,44 @@ def read_node(text: str) -> NodeFile:
     return node
 
 
-# `.parm` lines are `name <flags> <constant> [<expression>]`, wrapped in `?`
-# sentinels. A parameter in expression mode keeps both: the last constant it
-# held and the expression now driving it.
+# A `.parm` line is positional: `name <flags> <constant> [<expression>]
+# [<bind expression>]`, wrapped in `?` sentinels. Which of the optional halves
+# are present is decided by two bits of the flags word, and by nothing else —
+# measured over all 469,446 `.parm` lines in the expansion cache (222
+# components and projects), where the field count equals
+# `1 + expression_bit + bind_bit` on 469,433 of them. The 13 exceptions all
+# carry one further bit and are handled separately below.
+#
+# Reading the halves off the *shape* of the line instead is what the previous
+# version did, and it fabricated values: `colorr 515 1 parent.Checker.par.Color1r`
+# carries no expression bit, so the whole tail became the constant and the
+# parameter was reported as holding `1 parent.Checker.par.Color1r`.
 _PARM_LINE = re.compile(r"^(?P<name>\S+)\s+(?P<flags>-?\d+)\s*(?P<rest>.*)$")
 
-# Bit 4 of the flags word marks expression mode. Determined by measurement,
-# not documentation: across the 2861 .parm files in the shipped libraries, all
-# 14835 lines with this bit carry exactly two values and none without it do.
-# The other bits track unrelated state and are left alone.
+# Bit 4: expression mode. 138,658 lines in the cache carry it, and every one of
+# them has exactly two values — the constant and the expression.
 _EXPR_BIT = 0x10
+
+# Bit 9: Bind mode, the fourth parameter mode (Constant, Expression, Export,
+# Bind). Measured first, then named from the index's `Binding` article: all
+# 4,670 lines carrying this bit have a second value, and 4,644 of those are a
+# `.par.` reference — a *bind expression*, naming the bind master. The other
+# 26 are `op('bind1')['chan1']` and table-cell subscripts, which the article
+# says are exactly the other things allowed to be a bind master.
+#
+# 547 lines carry both bits and hold three values: constant, expression, bind
+# expression. A bind reference does not use its expression, but the file keeps
+# the expression it last had, the same way it keeps the constant.
+_BIND_BIT = 0x200
+
+# Bit 21 appears on 13 lines in the cache and on nothing else, and those 13
+# are exactly the lines carrying one value more than the two bits above
+# account for. What it *means* is unknown: in all 13 the extra value is
+# identical to the one before it, so no measurement can say which position is
+# the expression and which the bind expression. Lines carrying it therefore
+# report their constant and hand the rest back verbatim as unrecognised,
+# rather than assigning it to a half that might be the wrong one.
+_UNKNOWN_EXTRA_BIT = 0x200000
 
 
 def _unquote(text: str) -> str:
@@ -202,31 +231,81 @@ def _unquote(text: str) -> str:
 
 @dataclass
 class ParmValue:
+    """One line of a `.parm` file: a constant plus whichever halves it keeps.
+
+    Every field here is something the file said. Nothing is inferred from the
+    shape of the line, and no field ever holds two of the others glued
+    together — when the layout is not recognised, `unrecognised` carries the
+    unsplit remainder and `expr` and `bind` stay empty.
+    """
+
     flags: int
     value: str
     """The constant value, retained even while an expression drives the parameter."""
 
     expr: str | None = None
+    """The expression, when the expression bit is set. May be the empty string."""
+
+    bind: str | None = None
+    """The bind expression: what names this parameter's bind master."""
+
+    unrecognised: str | None = None
+    """Everything after the constant on a line whose layout was not measured."""
 
     @property
     def is_expression(self) -> bool:
         return bool(self.flags & _EXPR_BIT)
 
     @property
+    def is_bind(self) -> bool:
+        return bool(self.flags & _BIND_BIT)
+
+    @property
+    def mode(self) -> str:
+        """The parameter mode this line records.
+
+        Bind outranks expression when both bits are set. That ordering is a
+        choice read off the `Binding` article — "a bind reference does not use
+        its constant, expression or export parameter modes" — and not
+        something the files were measured to confirm.
+        """
+        if self.unrecognised is not None:
+            return "unknown"
+        if self.is_bind:
+            return "bind"
+        if self.is_expression:
+            return "expression"
+        return "constant"
+
+    @property
     def effective(self) -> str:
         """What actually drives the parameter."""
+        if self.is_bind and self.bind:
+            return self.bind
         if self.is_expression and self.expr:
             return self.expr
         return self.value
 
     def render(self) -> str:
+        if self.unrecognised is not None:
+            return f"{self.value}  [unrecognised: {self.unrecognised}]"
+        if self.is_bind and self.bind:
+            return f"{self.bind}  [bind]"
         if self.is_expression and self.expr:
             return f"{self.expr}  [expression]"
         return self.value
 
 
 def read_parms(text: str) -> dict[str, ParmValue]:
-    """Parse a `.parm` or `.cparm` file into {name: ParmValue}."""
+    """Parse a `.parm` file into {name: ParmValue}.
+
+    Which halves a line carries comes from the flags word, never from the
+    line's shape: a constant may contain spaces and be unquoted, so a line
+    with two space-separated words is a pair or a single value depending
+    entirely on `_EXPR_BIT` and `_BIND_BIT`.
+
+    For `.cparm` use `read_custom_parms` — its first line is not a parameter.
+    """
     out: dict[str, ParmValue] = {}
     for raw in text.splitlines():
         line = raw.strip()
@@ -235,21 +314,85 @@ def read_parms(text: str) -> dict[str, ParmValue]:
         match = _PARM_LINE.match(line)
         if not match:
             continue
-
-        flags = int(match.group("flags"))
-        rest = match.group("rest").strip()
-
-        if flags & _EXPR_BIT:
-            constant, expression = _split_pair(rest)
-        else:
-            # Constants may legitimately contain spaces, so the remainder is
-            # taken whole rather than tokenised.
-            constant, expression = _unquote(rest), None
-
-        out[match.group("name")] = ParmValue(
-            flags=flags, value=constant, expr=expression
-        )
+        name = match.group("name")
+        out[name] = _parm_value(int(match.group("flags")), match.group("rest"))
     return out
+
+
+def _parm_value(flags: int, rest: str) -> ParmValue:
+    rest = rest.strip()
+
+    if flags & _UNKNOWN_EXTRA_BIT:
+        constant, remainder = _take_field(rest)
+        remainder = remainder.strip()
+        return ParmValue(flags=flags, value=constant, unrecognised=remainder or None)
+
+    halves = bool(flags & _EXPR_BIT) + bool(flags & _BIND_BIT)
+    if not halves:
+        # Constants may legitimately contain spaces, so the remainder is
+        # taken whole rather than tokenised.
+        return ParmValue(flags=flags, value=_unquote(rest))
+
+    values = _split_values(rest, halves + 1)
+    parm = ParmValue(flags=flags, value=values[0])
+    index = 1
+    # Verbatim, the empty string included: 83 lines in the cache read
+    # `<name> <flags> "" ""` — expression mode on, expression empty. Folding
+    # that into `None` would report the half as absent where the file says it
+    # is present and blank.
+    if flags & _EXPR_BIT:
+        parm.expr = values[index]
+        index += 1
+    if flags & _BIND_BIT:
+        parm.bind = values[index]
+    return parm
+
+
+@dataclass
+class CustomParms:
+    """A parsed `.cparm` file."""
+
+    pages: list[str] = field(default_factory=list)
+    parms: dict[str, ParmValue] = field(default_factory=dict)
+
+
+def read_custom_parms(text: str) -> CustomParms:
+    """Parse a `.cparm` file — custom parameter *definitions*.
+
+    A `.cparm` does not share the `.parm` grammar, and two things follow.
+
+    Its first line is `pages <count> <name>...`: the number in the flags
+    column is the page count, not a flags word. Verified on all 5,210 `pages`
+    lines in the expansion cache — the count equals the number of names on
+    every one of them. Read as a parameter (which is what happened before)
+    the component gains a parameter named `pages` whose value is the page
+    names glued together, which is not a value it has.
+
+    Its remaining lines are definitions — `<typecode> <name> <label> ...` —
+    and this reader does **not** read them: the layout of those columns has
+    not been measured. They fail `_PARM_LINE` (the second column is a name,
+    not a number) and are dropped, so `parms` on a real `.cparm` comes back
+    empty. That is an admitted blank, not a claim that the component has no
+    custom parameters; the page names are all that is recovered here.
+    """
+    result = CustomParms()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line == "?":
+            continue
+        match = _PARM_LINE.match(line)
+        if not match:
+            continue
+        name = match.group("name")
+        rest = match.group("rest").strip()
+        if name == "pages" and not result.pages:
+            # The declared count is not used to drive the split: every field
+            # is lexed strictly, so no page name can absorb the next one even
+            # if a file ever disagrees with its own count.
+            result.pages = _all_fields(rest)
+            continue
+        result.parms[name] = _parm_value(int(match.group("flags")), rest)
+    return result
 
 
 _ESCAPES = {'\\"': '"', "\\\\": "\\", "\\n": "\n", "\\t": "\t", "\\'": "'"}
@@ -270,39 +413,75 @@ def _unescape(text: str) -> str:
 
 
 def _take_field(text: str) -> tuple[str, str]:
-    """Read one field — a quoted string or a bare token — and the remainder."""
+    """Read one field — a quoted string or a bare token — and the remainder.
+
+    A field may be preceded by one or more byte-order marks: 62 lines in the
+    expansion cache carry a BOM in a line's tail, and 6 of them write
+    `<BOM>"..."` where every other line writes `"..."`.
+    Whether TouchDesigner meant the BOM as part of the string or as noise
+    cannot be told from the file, so it is kept, prefixed to the field's value
+    — dropping it would edit somebody's expression, and treating the BOM as
+    the field's first character (which is what happens without this) makes the
+    quotes content, splits the expression on every space, and hands back a
+    fragment of a value as if it were the whole one.
+    """
     text = text.lstrip()
+    prefix = ""
+    while text[:1] == "\ufeff":
+        prefix += text[0]
+        text = text[1:]
     if not text:
-        return "", ""
+        return prefix, ""
     if text[0] != '"':
         head, _, tail = text.partition(" ")
-        return head, tail
+        return prefix + head, tail
     index = 1
     while index < len(text):
         if text[index] == "\\":
             index += 2
             continue
         if text[index] == '"':
-            return _unescape(text[1:index]), text[index + 1 :]
+            return prefix + _unescape(text[1:index]), text[index + 1 :]
         index += 1
-    return _unescape(text[1:]), ""  # unterminated quote
+    return prefix + _unescape(text[1:]), ""  # unterminated quote
 
 
-def _split_pair(rest: str) -> tuple[str, str | None]:
-    """Split `<constant> <expression>`, where either half may be quoted.
+def _split_values(rest: str, count: int) -> list[str]:
+    """Split a line's tail into exactly `count` values.
+
+    Every value but the last is lexed strictly — a quoted string or a bare
+    token. The last one takes whatever is left, unquoted if it is quoted, so
+    that a trailing value the writer left unquoted survives whole. That
+    forgiving last step is why the count must come from the flags word: with
+    the wrong count the last value silently swallows the next one.
 
     Quotes inside an unquoted expression are content, not syntax: the
     expression `op('circle').par.value0` must survive intact, so a general
     shell-style tokeniser is the wrong tool — it would strip the inner quotes
     and hand back Python that no longer parses.
     """
-    constant, remainder = _take_field(rest)
-    expression = remainder.strip()
-    if not expression:
-        return constant, None
-    if expression[0] == '"':
-        expression, _ = _take_field(expression)
-    return constant, expression or None
+    values: list[str] = []
+    for _ in range(max(count - 1, 0)):
+        head, rest = _take_field(rest)
+        values.append(head)
+    tail = rest.strip()
+    if tail.lstrip("\ufeff")[:1] == '"':
+        tail, _ = _take_field(tail)
+    values.append(tail)
+    return values[:count]
+
+
+def _all_fields(rest: str) -> list[str]:
+    """Lex a tail into every field it holds, strictly.
+
+    Used where the number of values is written in the file rather than implied
+    by a flag, so nothing has to absorb a remainder.
+    """
+    out: list[str] = []
+    while rest.strip():
+        head, rest = _take_field(rest)
+        out.append(head)
+    return out
 
 
 def read_build(text: str) -> dict[str, str]:

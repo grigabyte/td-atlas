@@ -101,6 +101,11 @@ def node_data(node: Node, children: bool = True) -> dict[str, Any]:
     data["custom_parms"] = {
         name: _parm(value) for name, value in sorted(node.custom_parms.items())
     }
+    # Only when the node has custom parameter pages, the way `saved_type`
+    # appears only when it differs: an unconditional key would add a line to
+    # every operator in every file for the sake of the few that have one.
+    if node.custom_pages:
+        data["custom_pages"] = list(node.custom_pages)
     data["text"] = split_text(node.text) if node.text is not None else None
     data["table"] = node.table
     if children:
@@ -109,15 +114,32 @@ def node_data(node: Node, children: bool = True) -> dict[str, Any]:
 
 
 def _parm(value) -> Any:
-    """A parameter as a bare string, or a pair when an expression drives it.
+    """A parameter as a bare string, or a map when the line carries more.
 
     The constant is kept alongside the expression because the file keeps it:
     it is the value the parameter falls back to when the expression is turned
-    off, and discarding it would make the serialisation lossy.
+    off, and discarding it would make the serialisation lossy. The same holds
+    for a bind expression, which names the parameter's bind master.
+
+    Every half the reader recovered appears under its own key. Nothing is ever
+    concatenated into `value`, and a line whose layout the reader did not
+    recognise emits `unrecognised` with the remainder verbatim — a reassembler
+    has to see that it is not looking at a plain constant.
     """
-    if value.is_expression and value.expr:
-        return {"expr": value.expr, "value": value.value}
-    return value.value
+    out: dict[str, Any] = {}
+    # `is not None`, not truthiness: an expression the file stores as the
+    # empty string is a stored expression, and dropping the key would tell a
+    # reassembler the parameter is a plain constant.
+    if value.is_expression and value.expr is not None:
+        out["expr"] = value.expr
+    if value.is_bind and value.bind is not None:
+        out["bind"] = value.bind
+    if value.unrecognised is not None:
+        out["unrecognised"] = value.unrecognised
+    if not out:
+        return value.value
+    out["value"] = value.value
+    return out
 
 
 def project_data(project: Project, path: str | None = None) -> dict[str, Any]:
