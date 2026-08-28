@@ -43,14 +43,14 @@ or derive the real mapping from TouchDesigner.
 
 ```bash
 uv pip install -e . pytest
-pytest                       # 91 tests, ~0.2 s
+pytest                       # 92 tests, ~0.2 s
 ```
 
 `test_project.py::test_expands_and_reads_a_shipped_example` and both tests in
 `test_release.py` need a TouchDesigner installation — the latter two shell out
 to `toecollapse` and `toeexpand` from the bundle — and skip without one; that's
-3 of the 91. The other 88, including the whole health-check suite, run on
-synthetic fixtures with no installation needed. **None of the 91 need a
+3 of the 92. The other 89, including the whole health-check suite, run on
+synthetic fixtures with no installation needed. **None of the 92 need a
 running TouchDesigner instance** — keep it that way; tests that need one
 cannot be trusted to run.
 
