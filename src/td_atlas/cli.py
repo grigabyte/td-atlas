@@ -1135,6 +1135,7 @@ def cmd_project(args: argparse.Namespace) -> int:
     from .project import ExpandError, collapse, expand, index_resolver, load_file
     from .project.diff import diff as diff_projects
     from .project.render import describe, grep, render_matches
+    from .project.serialize import to_text as to_json_text
 
     resolver = index_resolver()
 
@@ -1149,6 +1150,19 @@ def cmd_project(args: argparse.Namespace) -> int:
                     params=args.params,
                 )
             )
+        elif args.action == "text":
+            project = load_file(args.file, refresh=args.refresh, resolver=resolver)
+            text = to_json_text(project, path=args.path or None)
+            if args.output:
+                out = Path(args.output)
+                out.write_text(text, encoding="utf-8")
+                print(f"wrote {len(text.encode())} bytes to {out}")
+            else:
+                # No trailing blank line: the text already ends in one, and
+                # print() would add a second, so piping it to a JSON reader
+                # would still work but a byte comparison against the file
+                # written by -o would not.
+                sys.stdout.write(text)
         elif args.action == "grep":
             project = load_file(args.file, resolver=resolver)
             matches = grep(project, args.pattern, regex=not args.fixed)
@@ -1180,7 +1194,7 @@ def cmd_project(args: argparse.Namespace) -> int:
     except ExpandError as exc:
         _say(f"error: {exc}")
         return 1
-    except ValueError as exc:
+    except (LookupError, ValueError) as exc:
         _say(f"error: {exc}")
         return 1
     return 0
@@ -1325,6 +1339,14 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--path", help="only this subtree, e.g. /project1")
     a.add_argument("--depth", type=int, default=2)
     a.add_argument("--params", action="store_true", help="include parameters")
+    a.add_argument("--refresh", action="store_true", help="ignore the cache")
+
+    a = actions.add_parser(
+        "text", help="dump the whole network as JSON an agent can read"
+    )
+    a.add_argument("file")
+    a.add_argument("--path", help="only this subtree, e.g. /project1")
+    a.add_argument("-o", "--output", help="write to a file instead of stdout")
     a.add_argument("--refresh", action="store_true", help="ignore the cache")
 
     a = actions.add_parser("grep", help="search the code inside a project's DATs")

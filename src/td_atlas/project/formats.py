@@ -80,7 +80,7 @@ class NodeFile:
     y: float = 0.0
     width: float = 0.0
     height: float = 0.0
-    flags: list[str] = field(default_factory=list)
+    flags: dict[str, str] = field(default_factory=dict)
     inputs: list[tuple[int, str]] = field(default_factory=list)
     color: tuple[float, float, float] | None = None
 
@@ -102,6 +102,26 @@ def _floats(parts: list[str]) -> list[float]:
             out.append(float(part))
         except ValueError:
             pass
+    return out
+
+
+def _flag_pairs(tokens: list[str]) -> dict[str, str]:
+    """Pair a `flags` line's tokens into {flag: value}.
+
+    The line is pairs, not a token list: `viewer 1 parlanguage 0` is two flags
+    with values, and reading it flat reports four. Measured across the 19,001
+    `flags` lines in the expansion cache — every one has an even token count,
+    and the two vocabularies are disjoint (20 flag names, values only `0`, `1`,
+    `on`, `off`), so no line is ambiguous between the two readings.
+
+    An odd trailing token has never been observed; it is kept with an empty
+    value rather than dropped, because losing a flag silently is worse than
+    reporting one whose value we could not read.
+    """
+    out: dict[str, str] = {}
+    for index in range(0, len(tokens), 2):
+        name = tokens[index]
+        out[name] = tokens[index + 1] if index + 1 < len(tokens) else ""
     return out
 
 
@@ -149,7 +169,7 @@ def read_node(text: str) -> NodeFile:
             if len(values) >= 4:
                 node.x, node.y, node.width, node.height = values[:4]
         elif head == "flags":
-            node.flags = rest.lstrip("= ").split()
+            node.flags = _flag_pairs(rest.lstrip("= ").split())
         elif head == "color":
             values = _floats(rest.split())
             if len(values) >= 3:

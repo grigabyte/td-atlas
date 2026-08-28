@@ -1,6 +1,6 @@
 # Tool reference
 
-Thirty-four MCP tools in three groups.
+Thirty-five MCP tools in three groups.
 
 ## Index — offline, no running TouchDesigner
 
@@ -48,6 +48,7 @@ Thirty-four MCP tools in three groups.
 | Tool | Use it for |
 | --- | --- |
 | `td_project_read(file, path, depth, params)` | Operator tree of a .toe/.tox without TouchDesigner. |
+| `td_project_text(file, path, max_bytes)` | The whole network as JSON — every parameter, wire, flag and DAT line. Reach for it when the tree is not enough; narrow with `path`, since a big network is refused rather than cut. |
 | `td_project_grep(file, pattern, limit)` | Search the Python and GLSL inside DATs. |
 | `td_project_diff(before, after, show_moves, include_text)` | Semantic comparison of two files. |
 

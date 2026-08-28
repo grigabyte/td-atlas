@@ -357,6 +357,26 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_project_grep",),
     ),
+    "project_text_too_large": Recovery(
+        cause=(
+            "the network serialises to more text than one tool result may "
+            "carry, and a cut-off dump is not valid JSON"
+        ),
+        action=(
+            "narrow with 'path' to one component — td_project_read shows the "
+            "tree and where the operators are — or write the whole file with "
+            "'td-atlas project text FILE -o network.json' and read it from disk"
+        ),
+        resume=("td_project_read", "td_project_text"),
+    ),
+    "project_path_unknown": Recovery(
+        cause="the project holds no operator at that path",
+        action=(
+            "the message above lists the top-level operators; walk down from "
+            "one of those rather than guessing a path"
+        ),
+        resume=("td_project_read",),
+    ),
     "bad_label": Recovery(
         cause="the label would not be a usable filename",
         action="use only letters, digits, dot, dash and underscore",

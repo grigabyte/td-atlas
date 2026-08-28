@@ -7,6 +7,7 @@ libraries it ships, and skip when there is none.
 
 from __future__ import annotations
 
+import json
 import struct
 
 import pytest
@@ -288,3 +289,257 @@ def test_expands_and_reads_a_shipped_example():
     assert any(n.op_type == "blurTOP" for n in nodes)
     # Every node should have resolved to a canonical, index-joinable type.
     assert all(n.op_type for n in nodes if n.family)
+
+
+# -- serialising to JSON ----------------------------------------------------
+
+# Every way a hand-written line format has been seen to lose DAT text, in one
+# string: a trailing newline (so the last element is empty), trailing spaces on
+# a line, a lone CR, an embedded quote and backslash, a tab, and the three
+# characters `str.splitlines()` breaks on but `split("\n")` does not.
+_ADVERSARIAL = (
+    'print("a\\\\b")\t \n'
+    "trailing spaces   \n"
+    "carriage\rreturn\n"
+    "form\x0cfeed and \x0bvtab and  separator\n"
+    "\n"
+)
+
+
+def test_serialised_project_is_ordinary_json(project):
+    from td_atlas.project.serialize import to_text
+
+    data = json.loads(to_text(project))
+    assert data["operator_count"] == 4
+    assert data["operators"][0]["name"] == "project1"
+    assert [c["name"] for c in data["operators"][0]["children"]] == [
+        "noise1", "blur1", "script1"
+    ]
+
+
+def test_dat_text_round_trips_byte_for_byte(project, tmp_path):
+    """The failure this exists to catch: text that comes back subtly edited.
+
+    Every hand-written format measured for this lost something here — a
+    trailing newline, a trailing space, a cell separator. The array of lines
+    survives only because `split("\\n")` and `"\\n".join` are exact inverses,
+    so the assertion is byte equality against what `model.py` read, not
+    'looks the same'.
+    """
+    from td_atlas.project.serialize import join_text, to_text
+
+    script = project.roots[0].children[2]
+    script.text = _ADVERSARIAL
+
+    data = json.loads(to_text(project))
+    lines = data["operators"][0]["children"][2]["text"]
+    assert join_text(lines) == _ADVERSARIAL
+
+    # And the tempting alternative really does lose data, which is why this
+    # test is worth its length.
+    assert "\n".join(_ADVERSARIAL.splitlines()) != _ADVERSARIAL
+
+
+def test_dat_text_is_one_output_line_per_dat_line(project):
+    """The whole reason for the custom printer: a one-line edit diffs as one."""
+    from td_atlas.project.serialize import to_text
+
+    project.roots[0].children[2].text = "import math\nprint(math.pi)\n"
+    text = to_text(project)
+    assert '        "import math",\n' in text
+    assert '        "print(math.pi)",\n' in text
+
+
+def test_vectors_and_flags_stay_on_one_line(project):
+    from td_atlas.project.serialize import to_text
+
+    text = to_text(project)
+    assert '"tile": [5.0, 5.0, 1.0, 1.0],\n' in text
+    assert '"inputs": [[0, "noise1"]],\n' in text
+
+
+def test_serialised_inputs_keep_their_index(project):
+    """Input 2 wired with 0 and 1 empty is not the same as input 0 wired."""
+    from td_atlas.project.serialize import node_data
+
+    node = _node(
+        "/project1/comp1",
+        "COMP:geo\ninputs\n{\n2 \tnoise1\n}\nend\n",
+    )
+    assert node_data(node)["inputs"] == [[2, "noise1"]]
+
+
+def test_expression_parameters_keep_the_constant_as_well(project):
+    from td_atlas.project.serialize import node_data
+
+    node = _node(
+        "/project1/noise1", "TOP:noise\nend\n",
+        '?\nperiod 16 2.5 "absTime.seconds"\n?',
+    )
+    assert node_data(node)["parms"]["period"] == {
+        "expr": "absTime.seconds", "value": "2.5"
+    }
+
+
+def test_parameters_are_sorted(project):
+    from td_atlas.project.serialize import node_data
+
+    node = _node(
+        "/project1/noise1", "TOP:noise\nend\n",
+        "?\nperiod 0 2.5\namp 0 1\nharmonics 0 3\n?",
+    )
+    assert list(node_data(node)["parms"]) == ["amp", "harmonics", "period"]
+
+
+def test_table_rows_are_one_per_output_line(project):
+    from td_atlas.project.serialize import to_text
+
+    project.roots[0].children[2].table = [["a", "b"], ["c", "d"]]
+    text = to_text(project)
+    assert '          ["a", "b"],\n' in text
+    assert '          ["c", "d"]\n' in text
+
+
+def test_an_unknown_path_is_refused_with_the_top_level_listed(project):
+    from td_atlas.project.serialize import to_text
+
+    with pytest.raises(LookupError) as caught:
+        to_text(project, path="/nope")
+    assert "/project1" in str(caught.value)
+
+
+def test_a_subtree_serialises_alone(project):
+    from td_atlas.project.serialize import to_text
+
+    data = json.loads(to_text(project, path="/project1/noise1"))
+    assert data["operator_count"] == 1
+    assert data["operators"][0]["name"] == "noise1"
+
+
+# -- the flags line ---------------------------------------------------------
+
+def test_node_flags_are_pairs_not_a_flat_token_list():
+    """`viewer 1 parlanguage 0` is two flags with values, not four flags.
+
+    Read flat, roughly half of every flags line's tokens are reported as
+    flags that do not exist: 88,720 tokens across the 19,001 `flags` lines in
+    the expansion cache, of which 44,360 are values. The old assertion here
+    (`"current" in node.flags`) passed either way and so guarded nothing.
+    """
+    assert read_node(_N).flags == {
+        "current": "on", "viewer": "1", "parlanguage": "0"
+    }
+    assert "on" not in read_node(_N).flags
+
+
+# -- serialising real files -------------------------------------------------
+
+def _palette(*parts):
+    install = _installed()
+    if install is None:
+        pytest.skip("no TouchDesigner installation")
+    path = install.palette.joinpath(*parts)
+    if not path.exists():
+        pytest.skip(f"{path} not shipped by this build")
+    return path
+
+
+@needs_td
+@pytest.mark.parametrize(
+    "parts", [("Generators", "checker.tox"), ("Tools", "battery.tox")]
+)
+def test_every_dat_in_a_shipped_component_round_trips(parts):
+    from td_atlas.project import index_resolver, load_file
+    from td_atlas.project.serialize import join_text, to_text
+
+    project = load_file(_palette(*parts), resolver=index_resolver())
+    data = json.loads(to_text(project))
+
+    def texts(entries):
+        for entry in entries:
+            if entry["text"] is not None:
+                yield entry["name"], join_text(entry["text"])
+            yield from texts(entry["children"])
+
+    serialised = dict(texts(data["operators"]))
+    original = {n.name: n.text for n in project.scripts()}
+    assert serialised == original
+    assert original  # a component with no DAT would make this vacuous
+    assert data["operator_count"] == len(list(project.walk()))
+
+
+@needs_td
+def test_serialising_a_four_thousand_operator_component(capsys):
+    """The size and cost of the format on the largest component shipped.
+
+    Reference numbers from the format measurement (kantanMapper, 4080 nodes):
+    99,068 lines and 5,475,136 bytes.
+    """
+    import time
+
+    from td_atlas.project import index_resolver, load_file
+    from td_atlas.project.serialize import to_text
+
+    project = load_file(
+        _palette("Mapping", "kantanMapper.tox"), resolver=index_resolver()
+    )
+    count = len(list(project.walk()))
+    started = time.perf_counter()
+    text = to_text(project)
+    elapsed = time.perf_counter() - started
+
+    lines = text.count("\n")
+    size = len(text.encode())
+    with capsys.disabled():
+        print(
+            f"\nkantanMapper.tox: {count} operators, {lines} lines, "
+            f"{size} bytes, serialised in {elapsed * 1000:.0f} ms "
+            f"(reference: 4080 / 99068 / 5475136)"
+        )
+    assert count > 3000
+    json.loads(text)
+    # Not a performance target, a guard against an accidental quadratic: the
+    # measured cost is a quarter of a second.
+    assert elapsed < 10
+
+
+@needs_td
+def test_the_mcp_tool_refuses_a_network_larger_than_the_limit():
+    from td_atlas.mcp.server import td_project_text
+
+    text = td_project_text(str(_palette("Mapping", "kantanMapper.tox")), max_bytes=1000)
+    assert "over the 1000 byte limit" in text
+    assert "fix: " in text
+    assert "td_project_read" in text
+
+
+@needs_td
+def test_the_mcp_tool_refuses_an_unknown_path_with_a_hint():
+    from td_atlas.mcp.server import td_project_text
+
+    text = td_project_text(str(_palette("Generators", "checker.tox")), path="/nope")
+    assert "no node at '/nope'" in text
+    assert "fix: " in text
+
+
+@needs_td
+def test_the_cli_writes_a_readable_file(tmp_path):
+    from td_atlas.cli import main
+
+    out = tmp_path / "network.json"
+    assert main([
+        "project", "text", str(_palette("Generators", "checker.tox")),
+        "--path", "/checker", "-o", str(out),
+    ]) == 0
+    assert json.loads(out.read_text())["path"] == "/checker"
+
+
+@needs_td
+def test_the_cli_reports_an_unknown_path_instead_of_raising(capsys):
+    from td_atlas.cli import main
+
+    assert main([
+        "project", "text", str(_palette("Generators", "checker.tox")),
+        "--path", "/nope",
+    ]) == 1
+    assert "no node at '/nope'" in capsys.readouterr().err

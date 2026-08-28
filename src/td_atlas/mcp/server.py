@@ -910,6 +910,46 @@ def td_project_read(
 
 @mcp.tool()
 @guarded
+def td_project_text(file: str, path: str = "", max_bytes: int = 200_000) -> str:
+    """Dump a whole .toe/.tox network as JSON, without TouchDesigner running.
+
+    Use this when td_project_read's tree is not enough — when the answer needs
+    every parameter, the wiring, the flags and the DAT code at once, for
+    instance before rewriting a component or explaining what an unfamiliar
+    project actually does.
+
+    DAT text arrives as an array of lines rather than one escaped string, so a
+    single changed line stays a single changed line; join the array with '\n'
+    to get the file back byte for byte. Standard JSON otherwise.
+
+    A network larger than `max_bytes` is refused rather than truncated: a cut
+    dump is not parseable JSON, and `path` narrows the dump to one component.
+    """
+    from ..project import ExpandError, index_resolver, load_file
+    from ..project.serialize import dumps, project_data
+
+    try:
+        project = load_file(file, resolver=index_resolver())
+        data = project_data(project, path=path or None)
+    except ExpandError as exc:
+        return failure(exc)
+    except LookupError as exc:
+        return f"error: {exc}\n{hint('project_path_unknown')}"
+
+    text = dumps(data)
+    size = len(text.encode())
+    if size > max_bytes:
+        return (
+            f"{project.source.name} at '{data['path']}' is "
+            f"{data['operator_count']} operators and serialises to "
+            f"{size} bytes, over the {max_bytes} byte limit.\n"
+            f"{hint('project_text_too_large')}"
+        )
+    return text
+
+
+@mcp.tool()
+@guarded
 def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
     """Search the Python and GLSL held inside a project's DATs.
 
