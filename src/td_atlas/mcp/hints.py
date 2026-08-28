@@ -1,0 +1,383 @@
+"""Recovery hints: what happened, what to do, what to call next.
+
+An MCP tool that fails hands the agent a string, and a bare exception message
+is not enough to act on: "LookupError: no operator at path '/project1/blur2'"
+says nothing about whether to re-read the network, rebuild the index, restart
+TouchDesigner or give up. Without that, an agent guesses, and its cheapest
+guess is to repeat the same call.
+
+So every refusal carries doctor's three-part shape (`cli.py`, `render_checks`)
+— observed state, `fix:`, and here also `continue with:`, naming a tool or
+command that exists. One table below holds every wording, which is what lets
+the tests check all of them at once rather than the handful a test happens to
+exercise: that no hint recommends an uninstallable package, and that every
+tool and subcommand named in one is real.
+
+Where no honest recovery is known — a TouchDesigner exception type nobody has
+mapped, a bug in this package — the hint says so and names nothing. That is
+the project invariant (an honest gap over a confident wrong answer) applied to
+its own error paths.
+"""
+
+from __future__ import annotations
+
+import functools
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+from ..bridge.client import BridgeError, BridgeUnavailable
+
+
+class IndexMissing(RuntimeError):
+    """The atom index has not been built on this host.
+
+    A distinct type rather than a message the hint layer has to recognise by
+    its text: `store()` raises it, `classify()` matches on the class, and
+    neither can drift from the other by a reworded string.
+    """
+
+
+@dataclass(frozen=True)
+class Recovery:
+    """One mapped failure: the cause, the repair, and what to call next.
+
+    `resume` names MCP tools (`td_network`) or CLI subcommands
+    (`td-atlas build`) and is empty when no honest next call exists — an
+    invented one costs more than a gap, because the agent will make it.
+    """
+
+    cause: str
+    action: str
+    resume: tuple[str, ...] = ()
+    # Set on the copies produced by `fill()`; the table itself holds none.
+    fields: dict[str, str] = field(default_factory=dict, repr=False)
+
+    def fill(self, **values: str) -> Recovery:
+        return Recovery(
+            self.cause.format(**values),
+            self.action.format(**values),
+            self.resume,
+        )
+
+    def render(self) -> str:
+        lines = [f"cause: {self.cause}", f"fix: {self.action}"]
+        if self.resume:
+            lines.append("continue with: " + ", ".join(self.resume))
+        return "\n".join(lines)
+
+
+# -- the table --------------------------------------------------------------
+#
+# Keyed by what was observed, not by which tool observed it: the same bridge
+# timeout reaches an agent through any of the twelve bridge tools and the
+# useful advice does not vary between them.
+
+HINTS: dict[str, Recovery] = {
+    # Bridge transport. Keys match `BridgeUnavailable.reason`.
+    "bridge_unreachable": Recovery(
+        cause=(
+            "nothing answered on the bridge port — TouchDesigner is not "
+            "running, or is running without the td-atlas bridge"
+        ),
+        action=(
+            "have the artist open the project and paste the bootstrap line "
+            "that 'td-atlas install' prints into TouchDesigner's textport; "
+            "'td-atlas doctor' says which link of the chain is missing"
+        ),
+        resume=("td_instances", "td_doctor"),
+    ),
+    "bridge_timeout": Recovery(
+        cause=(
+            "the bridge took the call but did not answer in time; every "
+            "request runs on TouchDesigner's main thread during a cook, so a "
+            "long script blocks it"
+        ),
+        action=(
+            "wait for the running work to finish, then retry in smaller "
+            "pieces rather than one long td_exec"
+        ),
+        resume=("td_status",),
+    ),
+    "bridge_http": Recovery(
+        cause=(
+            "something answered on that port but not with a bridge reply — "
+            "another program may hold it, or the Web Server DAT is misconfigured"
+        ),
+        action=(
+            "check the port and the token with 'td-atlas doctor', and "
+            "re-stage the bridge with 'td-atlas install' if it disagrees"
+        ),
+        resume=("td_instances", "td_doctor"),
+    ),
+    "bridge_protocol": Recovery(
+        cause="the bridge and this host speak different protocol versions",
+        action=(
+            "the line above names which side is behind; 'td-atlas doctor' "
+            "reports both versions, and 'td-atlas reload' pushes a current "
+            "handler into the running instance"
+        ),
+        resume=("td_doctor",),
+    ),
+    # Failures the handler reported. Keys match `BridgeError.type`, which is
+    # the exception class name from inside TouchDesigner; the ones here were
+    # observed live against build 2025.32460, not guessed.
+    "Unauthorized": Recovery(
+        cause="the bridge rejected the token this host sent",
+        action=(
+            "the bridge reads its token from ~/.td-atlas/config.json itself; "
+            "'td-atlas doctor' compares the two, and 'td-atlas install' "
+            "re-stages the bridge against the current one"
+        ),
+        resume=("td_doctor",),
+    ),
+    "LookupError": Recovery(
+        cause="no operator exists at that path in the running project",
+        action=(
+            "list what is actually there before retrying — paths are "
+            "case-sensitive, and TouchDesigner numbers a new node ('blur2') "
+            "when the name you asked for was taken"
+        ),
+        resume=("td_network", "td_op_info"),
+    ),
+    "AttributeError": Recovery(
+        cause=(
+            "the operator has no member by that name — usually a parameter "
+            "name that does not exist on this operator type"
+        ),
+        action=(
+            "take the exact names from the index instead of from "
+            "TouchDesigner's documentation, which describes parameter groups "
+            "('t') where the settable members are 'tx', 'ty', 'tz'"
+        ),
+        resume=("td_operator_schema",),
+    ),
+    "TypeError": Recovery(
+        cause="the target is the wrong kind of operator for this call",
+        action=(
+            "check the family and type of the path you are aiming at, then "
+            "aim at one the call accepts"
+        ),
+        resume=("td_op_info",),
+    ),
+    "SyntaxError": Recovery(
+        cause="the Python sent to TouchDesigner does not parse",
+        action=(
+            "the message above names the line; note that the code runs in "
+            "TouchDesigner's embedded Python 3.11, so 3.12+ syntax fails here"
+        ),
+        resume=("td_python_api",),
+    ),
+    "ScopeHeld": Recovery(
+        cause="another agent's claim covers the subtree this call writes to",
+        action=(
+            "the refusal above names the owner and when the claim lapses: "
+            "send that owner if the claim is yours, work outside the subtree, "
+            "or wait it out"
+        ),
+        resume=("td_scopes",),
+    ),
+    "ValueError": Recovery(
+        cause="the bridge refused one of the arguments",
+        action=(
+            "the message above names which one; correct that argument rather "
+            "than repeating the call unchanged"
+        ),
+    ),
+    # No mapping. Deliberately names nothing to call: see the module docstring.
+    "unmapped_bridge_error": Recovery(
+        cause=(
+            "TouchDesigner raised {type}, which this connector has no mapped "
+            "recovery for"
+        ),
+        action=(
+            "none known — treat the message above as the whole answer, and "
+            "change something before retrying rather than repeating the call"
+        ),
+    ),
+    "unmapped_error": Recovery(
+        cause="{type} was raised inside td-atlas itself, not by TouchDesigner",
+        action=(
+            "none known — this is a fault in this package rather than "
+            "something to repair in the project"
+        ),
+    ),
+    # The offline index.
+    "index_missing": Recovery(
+        cause="this host has no atom index yet, so nothing can be looked up",
+        action=(
+            "run 'td-atlas build' for the offline pass, then 'td-atlas probe' "
+            "with TouchDesigner open to add defaults, ranges and menu options"
+        ),
+        resume=("td_doctor",),
+    ),
+    "index_stale": Recovery(
+        cause=(
+            "the index names a file that is not on disk — it caches one "
+            "TouchDesigner installation and that installation has changed"
+        ),
+        action=(
+            "re-run 'td-atlas build' (then 'td-atlas probe') after "
+            "TouchDesigner was moved, updated or reinstalled"
+        ),
+        resume=("td_doctor",),
+    ),
+    "no_match": Recovery(
+        cause="nothing in the index matched that wording",
+        action=(
+            "widen it before concluding the thing does not exist: fewer "
+            "words, plain language describing the effect, and no family filter"
+        ),
+        resume=("td_search_operators", "td_search_parameters", "td_docs"),
+    ),
+    "unknown_op_type": Recovery(
+        cause="the index holds no operator of that type",
+        action=(
+            "type names are camelCase with the family suffix ('noiseTOP', "
+            "'audiodeviceinCHOP'); search by what the operator does instead "
+            "of spelling one out"
+        ),
+        resume=("td_search_operators",),
+    ),
+    "no_example": Recovery(
+        cause="TouchDesigner ships no example network for this operator type",
+        action=(
+            "there is nothing to fetch — read the parameter list and the "
+            "documentation for it instead"
+        ),
+        resume=("td_operator_schema", "td_docs"),
+    ),
+    "params_refused": Recovery(
+        cause=(
+            "the parameter names were checked against the index first and "
+            "would have failed in TouchDesigner, so nothing was sent"
+        ),
+        action=(
+            "use the exact names from the operator's schema; the suggestions "
+            "above come from the index and are safe to trust"
+        ),
+        resume=("td_operator_schema",),
+    ),
+    "palette_ambiguous": Recovery(
+        cause="that palette name exists in more than one palette folder",
+        action=(
+            "repeat the call with category= set to one of the folders listed "
+            "above, so the choice is yours rather than a guess"
+        ),
+        resume=("td_palette",),
+    ),
+    "palette_unknown": Recovery(
+        cause="no palette component carries that exact name",
+        action=(
+            "names are camelCase and matched exactly here; search names, "
+            "folders and descriptions instead of guessing the spelling"
+        ),
+        resume=("td_palette",),
+    ),
+    # Reading .toe/.tox from disk.
+    "project_unreadable": Recovery(
+        cause="the file could not be unpacked as a TouchDesigner project",
+        action=(
+            "check the path, and that TouchDesigner is installed on this host "
+            "— reading a .toe shells out to its 'toeexpand'; "
+            "'td-atlas doctor' checks that installation"
+        ),
+        resume=("td_doctor",),
+    ),
+    "bad_pattern": Recovery(
+        cause="the search pattern is not a valid regular expression",
+        action=(
+            "the message above names the position; escape the character or "
+            "search for a plain substring"
+        ),
+        resume=("td_project_grep",),
+    ),
+    "bad_label": Recovery(
+        cause="the label would not be a usable filename",
+        action="use only letters, digits, dot, dash and underscore",
+        resume=("td_snapshot",),
+    ),
+    "doctor_failed": Recovery(
+        cause="the check pass itself raised, so no link was verified",
+        action=(
+            "run 'td-atlas doctor' on this host: the CLI runs the same checks "
+            "and shows the traceback this call cannot"
+        ),
+        resume=("td_status",),
+    ),
+}
+
+# BridgeError types that have their own entry above. Anything else is
+# unmapped on purpose rather than by omission.
+MAPPED_BRIDGE_ERRORS = frozenset(
+    {
+        "Unauthorized",
+        "LookupError",
+        "AttributeError",
+        "TypeError",
+        "SyntaxError",
+        "ScopeHeld",
+        "ValueError",
+    }
+)
+
+
+def hint(key: str, **values: str) -> str:
+    """The rendered hint block for a table key, without a leading newline."""
+    return HINTS[key].fill(**values).render() if values else HINTS[key].render()
+
+
+def classify(exc: BaseException) -> Recovery:
+    """The recovery for an observed exception.
+
+    Never returns None: an unmapped failure gets the honest-gap entry, so no
+    caller has to decide what to say when it does not know.
+    """
+    if isinstance(exc, BridgeUnavailable):
+        reason = getattr(exc, "reason", "") or "bridge_unreachable"
+        return HINTS.get(reason, HINTS["bridge_unreachable"])
+    if isinstance(exc, BridgeError):
+        if exc.type in MAPPED_BRIDGE_ERRORS:
+            return HINTS[exc.type]
+        return HINTS["unmapped_bridge_error"].fill(type=exc.type)
+    if isinstance(exc, IndexMissing):
+        return HINTS["index_missing"]
+
+    from ..project import ExpandError
+
+    if isinstance(exc, ExpandError):
+        return HINTS["project_unreadable"]
+    return HINTS["unmapped_error"].fill(type=type(exc).__name__)
+
+
+def failure(exc: BaseException, head: str | None = None) -> str:
+    """A tool's whole failure text: what it already said, plus the hint.
+
+    `head` keeps a tool's own wording where that wording carries something the
+    generic line cannot — td_build's rollback notice, td_exec's traceback.
+    """
+    if head is None:
+        head = f"error: {exc}"
+    return f"{head}\n{classify(exc).render()}"
+
+
+def guarded(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Turn any escaping exception into a hinted string, for one MCP tool.
+
+    Two things at once. An exception out of a tool reaches the agent as an
+    opaque ToolError with no hint attached (see AGENTS.md), and the branches
+    that already return text should not each need their own copy of the
+    mapping. `functools.wraps` keeps the signature FastMCP derives its schema
+    from, including td_render's deliberately absent return annotation.
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(*args, **kwargs)
+        except (BridgeUnavailable, BridgeError, RuntimeError, OSError, ValueError) as exc:
+            return failure(exc)
+
+    # Read by the test that every registered tool is wrapped, so a tool added
+    # later cannot quietly go back to raising ToolError.
+    wrapper.__td_atlas_guarded__ = True
+    return wrapper

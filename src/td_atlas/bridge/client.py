@@ -62,7 +62,18 @@ class BridgeUnavailable(RuntimeError):
     A protocol mismatch outside the supported range is raised as this too:
     from the caller's point of view a bridge speaking an incompatible
     protocol is exactly as unusable as one that never answered.
+
+    `reason` separates the four ways this happens, because they need four
+    different repairs and the message text is the wrong thing to recognise
+    them by — a reworded message would silently change which advice a caller
+    gives. The values are the keys of the recovery table in
+    `mcp/hints.py`; an unspecified one falls back to the same entry as
+    'never answered', which is what an unexplained unavailability looks like.
     """
+
+    def __init__(self, message: str, reason: str = "bridge_unreachable"):
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass
@@ -183,13 +194,15 @@ class BridgeClient:
             reported = "no protocol version" if version is None else f"protocol {version}"
             raise BridgeUnavailable(
                 f"The running bridge reports {reported}, below the minimum "
-                f"{MIN_PROTOCOL_VERSION} this client supports. {_UPGRADE_BRIDGE}"
+                f"{MIN_PROTOCOL_VERSION} this client supports. {_UPGRADE_BRIDGE}",
+                reason="bridge_protocol",
             )
         if version > EXPECTED_PROTOCOL_VERSION:
             raise BridgeUnavailable(
                 f"The running bridge speaks protocol {version}, newer than "
                 f"the {EXPECTED_PROTOCOL_VERSION} this client expects. "
-                f"{_UPGRADE_HOST}"
+                f"{_UPGRADE_HOST}",
+                reason="bridge_protocol",
             )
         if version < EXPECTED_PROTOCOL_VERSION:
             self.version_warning = (
@@ -224,19 +237,22 @@ class BridgeClient:
                 payload = json.loads(exc.read().decode())
             except Exception:
                 raise BridgeUnavailable(
-                    f"HTTP {exc.code} from {self.url}: {exc.reason}"
+                    f"HTTP {exc.code} from {self.url}: {exc.reason}",
+                    reason="bridge_http",
                 ) from exc
         except urllib.error.URLError as exc:
             raise BridgeUnavailable(
                 f"Cannot reach TouchDesigner at {self.url} ({exc.reason}). "
                 "Is TouchDesigner running with the td-atlas bridge installed? "
-                "Run 'td-atlas install' for the one-line bootstrap."
+                "Run 'td-atlas install' for the one-line bootstrap.",
+                reason="bridge_unreachable",
             ) from exc
         except TimeoutError as exc:
             raise BridgeUnavailable(
                 f"TouchDesigner did not respond within "
                 f"{timeout or self.timeout}s. A long-running script blocks "
-                f"TouchDesigner's main thread."
+                f"TouchDesigner's main thread.",
+                reason="bridge_timeout",
             ) from exc
 
         if not payload.get("ok"):

@@ -46,6 +46,24 @@ Twenty-nine MCP tools in three groups.
 | `td_project_grep(file, pattern, limit)` | Search the Python and GLSL inside DATs. |
 | `td_project_diff(before, after, show_moves, include_text)` | Semantic comparison of two files. |
 
+## When a tool refuses
+
+Any refusal — a dead bridge, a path that does not exist, a parameter name the
+index rejects, an index that was never built — comes back with the state it
+observed and then three lines:
+
+```
+cause: no operator exists at that path in the running project
+fix: list what is actually there before retrying — paths are case-sensitive ...
+continue with: td_network, td_op_info
+```
+
+`continue with:` names tools and `td-atlas` subcommands that exist; act on it
+rather than repeating the call. Where the connector has no mapped recovery —
+an exception type nobody has classified — it says `fix: none known` and names
+nothing, which means the message above it is the whole answer: change
+something before retrying.
+
 ## Not exposed over MCP
 
 A contact sheet needs repeated sampling over wall-clock time, which a single

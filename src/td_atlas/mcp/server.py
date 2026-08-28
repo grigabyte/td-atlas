@@ -20,6 +20,7 @@ from .. import config as cfg
 from ..atoms.store import AtomStore
 from ..atoms.validate import validate_params
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
+from .hints import IndexMissing, failure, guarded, hint
 
 mcp = FastMCP(
     "td-atlas",
@@ -39,7 +40,7 @@ def store() -> AtomStore:
     if _store is None:
         _store = AtomStore(cfg.db_path())
         if not _store.exists():
-            raise RuntimeError(
+            raise IndexMissing(
                 "No atom index yet. Run 'td-atlas build' (and 'td-atlas probe' "
                 "with TouchDesigner open) to create it."
             )
@@ -102,6 +103,7 @@ def _fmt_param(row: dict[str, Any]) -> str:
 # -- index tools ------------------------------------------------------------
 
 @mcp.tool()
+@guarded
 def td_search_operators(query: str, family: str = "", limit: int = 12) -> str:
     """Find TouchDesigner operators by what they do.
 
@@ -112,7 +114,7 @@ def td_search_operators(query: str, family: str = "", limit: int = 12) -> str:
     """
     rows = store().search_ops(query, family=family, limit=limit)
     if not rows:
-        return f"No operators match {query!r}."
+        return f"No operators match {query!r}.\n{hint('no_match')}"
     lines = []
     for row in rows:
         summary = (row["summary"] or "").split(". ")[0]
@@ -121,6 +123,7 @@ def td_search_operators(query: str, family: str = "", limit: int = 12) -> str:
 
 
 @mcp.tool()
+@guarded
 def td_operator_schema(
     op_type: str, page: str = "", include_hidden: bool = False
 ) -> str:
@@ -141,10 +144,10 @@ def td_operator_schema(
             "SELECT type FROM ops WHERE type LIKE ? LIMIT 8",
             (f"%{op_type.rstrip('0123456789')}%",),
         ).fetchall()
-        hint = (
+        suggestion = (
             " Did you mean: " + ", ".join(r["type"] for r in close) if close else ""
         )
-        return f"No operator type '{op_type}'.{hint}"
+        return f"No operator type '{op_type}'.{suggestion}\n{hint('unknown_op_type')}"
 
     out = [f"{row['type']} ({row['family']}) — {row['label']}"]
     if row["summary"]:
@@ -180,6 +183,7 @@ def td_operator_schema(
 
 
 @mcp.tool()
+@guarded
 def td_search_parameters(query: str, limit: int = 20) -> str:
     """Find which operators have a parameter matching a description.
 
@@ -193,7 +197,7 @@ def td_search_parameters(query: str, limit: int = 20) -> str:
         (store().match(query), limit),
     ).fetchall()
     if not rows:
-        return f"No parameters match {query!r}."
+        return f"No parameters match {query!r}.\n{hint('no_match')}"
     return "\n".join(
         f"{r['op_type']}.{r['name']} — {r['label']}: "
         f"{(r['summary'] or '')[:160]}"
@@ -202,6 +206,7 @@ def td_search_parameters(query: str, limit: int = 20) -> str:
 
 
 @mcp.tool()
+@guarded
 def td_python_api(name: str, query: str = "") -> str:
     """Python members and methods available on a class, with inherited ones.
 
@@ -233,7 +238,7 @@ def td_python_api(name: str, query: str = "") -> str:
     sql += " ORDER BY kind, name"
     rows = db.conn.execute(sql, params).fetchall()
     if not rows:
-        return f"Nothing found for '{name}'."
+        return f"Nothing found for '{name}'.\n{hint('no_match')}"
 
     out = [f"{class_name} (inherits: {', '.join(chain[1:]) or 'none'})"]
     if row is not None and row["doc"]:
@@ -251,6 +256,7 @@ def td_python_api(name: str, query: str = "") -> str:
 
 
 @mcp.tool()
+@guarded
 def td_docs(query: str, page: str = "", limit: int = 5) -> str:
     """Search or read TouchDesigner's documentation, mirrored offline.
 
@@ -264,7 +270,7 @@ def td_docs(query: str, page: str = "", limit: int = 5) -> str:
             "SELECT page, title, text FROM articles WHERE page = ?", (page,)
         ).fetchone()
         if row is None:
-            return f"No article '{page}'."
+            return f"No article '{page}'.\n{hint('no_match')}"
         return f"# {row['title']}\n\n{row['text'][:20000]}"
 
     rows = db.conn.execute(
@@ -274,13 +280,14 @@ def td_docs(query: str, page: str = "", limit: int = 5) -> str:
         (store().match(query), limit),
     ).fetchall()
     if not rows:
-        return f"No documentation matches {query!r}."
+        return f"No documentation matches {query!r}.\n{hint('no_match')}"
     return "\n\n".join(
         f"## {r['title']}  (page: {r['page']})\n{r['s']}" for r in rows
     )
 
 
 @mcp.tool()
+@guarded
 def td_expression_help(query: str, limit: int = 10) -> str:
     """Look up TouchDesigner expression and command syntax."""
     rows = store().conn.execute(
@@ -289,7 +296,7 @@ def td_expression_help(query: str, limit: int = 10) -> str:
         (f"%{query}%", f"%{query}%", limit),
     ).fetchall()
     if not rows:
-        return f"No expression or command matches {query!r}."
+        return f"No expression or command matches {query!r}.\n{hint('no_match')}"
     return "\n\n".join(
         f"[{r['kind']}] {r['signature']}\n{(r['text'] or '')[:500]}" for r in rows
     )
@@ -298,6 +305,7 @@ def td_expression_help(query: str, limit: int = 10) -> str:
 # -- bridge tools -----------------------------------------------------------
 
 @mcp.tool()
+@guarded
 def td_status() -> str:
     """Whether TouchDesigner is reachable, and what project it has open."""
     db_note = "index: missing"
@@ -309,7 +317,7 @@ def td_status() -> str:
             f"{store().get_meta('td_version', '?')})"
         )
     except RuntimeError as exc:
-        db_note = f"index: {exc}"
+        db_note = failure(exc, head=f"index: {exc}")
 
     client = bridge()
     try:
@@ -324,6 +332,7 @@ def td_status() -> str:
 
 
 @mcp.tool()
+@guarded
 def td_instances() -> str:
     """Which TouchDesigner instances are running, and which one these tools reach.
 
@@ -382,6 +391,7 @@ def td_instances() -> str:
 
 
 @mcp.tool()
+@guarded
 def td_doctor() -> str:
     """Check the whole chain — install, index, probe pass, bridge, this server.
 
@@ -403,7 +413,10 @@ def td_doctor() -> str:
     try:
         checks = doctor_checks(args)
     except Exception as exc:  # never an opaque ToolError; see AGENTS.md
-        return f"error: could not run the checks ({type(exc).__name__}: {exc})"
+        return (
+            f"error: could not run the checks ({type(exc).__name__}: {exc})\n"
+            f"{hint('doctor_failed')}"
+        )
     report = render_checks(checks)
     broken = [check.link for check in checks if check.broken]
     if broken:
@@ -412,13 +425,14 @@ def td_doctor() -> str:
 
 
 @mcp.tool()
+@guarded
 def td_network(path: str = "/project1", depth: int = 1) -> str:
     """List the operators inside a component and how they are wired."""
     client = bridge()
     try:
         result = client.network(path=path, depth=depth)
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
 
     lines = [f"{result['path']} ({result['type']})"]
 
@@ -443,13 +457,14 @@ def td_network(path: str = "/project1", depth: int = 1) -> str:
 
 
 @mcp.tool()
+@guarded
 def td_op_info(path: str) -> str:
     """Inspect one operator in the running project: type, wiring, live parameter values."""
     client = bridge()
     try:
         info = client.op_info(path)
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
 
     lines = [
         f"{info['path']} ({info['type']}, {info['family']})",
@@ -470,6 +485,7 @@ def td_op_info(path: str) -> str:
 
 
 @mcp.tool()
+@guarded
 def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
     """Apply several edits to the project as one atomic, undoable block.
 
@@ -528,18 +544,22 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
             return (
                 "Refusing to apply — these would fail in TouchDesigner:\n\n"
                 + "\n\n".join(problems)
+                + f"\n\n{hint('params_refused')}"
             )
 
     client = bridge()
     try:
         result = client.batch(operations, undo_name=undo_name)
     except BridgeError as exc:
-        return (
-            f"batch failed and was rolled back — {exc.type}: {exc.message}\n"
-            f"{exc.traceback or ''}"
+        return failure(
+            exc,
+            head=(
+                f"batch failed and was rolled back — {exc.type}: "
+                f"{exc.message}\n{exc.traceback or ''}"
+            ),
         )
     except BridgeUnavailable as exc:
-        return f"error: {exc}"
+        return failure(exc)
 
     lines = [f"applied {result['applied']} operation(s) as '{undo_name}'"]
     for item in result["results"]:
@@ -549,6 +569,7 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
 
 
 @mcp.tool()
+@guarded
 def td_set_params(
     path: str, pars: dict, op_type: str = "", owner: str = ""
 ) -> str:
@@ -563,19 +584,20 @@ def td_set_params(
         try:
             check = validate_params(store(), op_type, pars)
             if not check.ok:
-                return check.render()
+                return f"{check.render()}\n\n{hint('params_refused')}"
         except RuntimeError:
             pass
     client = bridge()
     try:
         result = client.call("par_set", path=path, pars=pars, owner=owner)
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     applied = ", ".join(f"{k}={v!r}" for k, v in result["applied"].items())
     return f"{_warn(client)}{result['path']}: {applied}"
 
 
 @mcp.tool()
+@guarded
 def td_render(path: str, width: int = 512, height: int = 0):
     """Render a TOP and return the image, so you can see what you built.
 
@@ -591,11 +613,12 @@ def td_render(path: str, width: int = 512, height: int = 0):
             path, fmt=".png", width=width or None, height=height or None
         )
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     return Image(data=data, format="png")
 
 
 @mcp.tool()
+@guarded
 def td_health(path: str = "/project1", interval: float = 1.0) -> str:
     """Find what is quietly broken — the failures nothing reports.
 
@@ -623,11 +646,12 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
     try:
         result = check(client, path=path, interval=interval).render()
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     return _warn(client) + result
 
 
 @mcp.tool()
+@guarded
 def td_palette(query: str = "", category: str = "", limit: int = 20) -> str:
     """Search the ready-made components TouchDesigner ships in its palette.
 
@@ -661,9 +685,9 @@ def td_palette(query: str = "", category: str = "", limit: int = 20) -> str:
     try:
         rows = db.conn.execute(sql, params).fetchall()
     except Exception as exc:
-        return f"error: {exc}"
+        return failure(exc)
     if not rows:
-        return f"No palette component matches {query or category!r}."
+        return f"No palette component matches {query or category!r}.\n{hint('no_match')}"
     lines = []
     for row in rows:
         lines.append(f"{row['name']} [{row['category']}]  {row['path']}")
@@ -673,6 +697,7 @@ def td_palette(query: str = "", category: str = "", limit: int = 20) -> str:
 
 
 @mcp.tool()
+@guarded
 def td_palette_load(
     name: str,
     parent: str = "/project1",
@@ -716,9 +741,8 @@ def td_palette_load(
     if not rows:
         detail = f" in a category matching {category!r}" if category else ""
         return (
-            f"No palette component is named {name!r}{detail}. Names are "
-            f"camelCase and are matched exactly here — find the right one with "
-            f"td_palette, which searches names, folders and descriptions."
+            f"No palette component is named {name!r}{detail}.\n"
+            f"{hint('palette_unknown')}"
         )
     if len(rows) > 1:
         lines = [
@@ -726,16 +750,15 @@ def td_palette_load(
             f"guess — repeat the call with category= set to one of these:"
         ]
         lines += [f"  category={r['category']!r}  {r['path']}" for r in rows]
+        lines.append(hint("palette_ambiguous"))
         return "\n".join(lines)
 
     row = rows[0]
     tox = Path(row["path"])
     if not tox.is_file():
         return (
-            f"error: the index lists {row['name']} at {tox}, but there is no "
-            f"file there. The index is a cache of one TouchDesigner "
-            f"installation — re-run 'td-atlas build' if TouchDesigner was "
-            f"moved, updated or reinstalled."
+            f"error: the index lists {row['name']} at {tox}, but there is "
+            f"no file there.\n{hint('index_stale')}"
         )
 
     client = bridge()
@@ -749,7 +772,7 @@ def td_palette_load(
             owner=owner,
         )
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
 
     lines = [
         f"loaded {row['name']} [{row['category']}] into {parent} as "
@@ -780,6 +803,7 @@ def td_palette_load(
 
 
 @mcp.tool()
+@guarded
 def td_glossary(term: str, limit: int = 5) -> str:
     """Look up TouchDesigner terminology.
 
@@ -795,13 +819,14 @@ def td_glossary(term: str, limit: int = 5) -> str:
         (db.match(term), limit),
     ).fetchall()
     if not rows:
-        return f"No glossary entry matches {term!r}."
+        return f"No glossary entry matches {term!r}.\n{hint('no_match')}"
     return "\n\n".join(
         f"## {r['title']}\n{(r['text'] or '')[:900]}" for r in rows
     )
 
 
 @mcp.tool()
+@guarded
 def td_errors() -> str:
     """Every operator in the project currently reporting an error or warning.
 
@@ -812,7 +837,7 @@ def td_errors() -> str:
     try:
         result = client.errors()
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     if not result["count"]:
         return _warn(client) + "No operators are reporting errors or warnings."
     lines = [f"{result['count']} operator(s) reporting problems:"]
@@ -824,6 +849,7 @@ def td_errors() -> str:
 
 
 @mcp.tool()
+@guarded
 def td_exec(code: str) -> str:
     """Run Python inside TouchDesigner and return its output.
 
@@ -836,9 +862,11 @@ def td_exec(code: str) -> str:
     try:
         result = client.exec(code)
     except BridgeError as exc:
-        return f"{exc.type}: {exc.message}\n{exc.traceback or ''}"
+        return failure(
+            exc, head=f"{exc.type}: {exc.message}\n{exc.traceback or ''}"
+        )
     except BridgeUnavailable as exc:
-        return f"error: {exc}"
+        return failure(exc)
     parts = []
     if result.get("stdout"):
         parts.append(result["stdout"].rstrip())
@@ -852,6 +880,7 @@ def td_exec(code: str) -> str:
 # -- project file tools -----------------------------------------------------
 
 @mcp.tool()
+@guarded
 def td_project_read(
     file: str, path: str = "", depth: int = 2, params: bool = False
 ) -> str:
@@ -868,11 +897,12 @@ def td_project_read(
     try:
         project = load_file(file, resolver=index_resolver())
     except ExpandError as exc:
-        return f"error: {exc}"
+        return failure(exc)
     return describe(project, path=path or None, depth=depth, params=params)
 
 
 @mcp.tool()
+@guarded
 def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
     """Search the Python and GLSL held inside a project's DATs.
 
@@ -886,13 +916,14 @@ def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
         project = load_file(file, resolver=index_resolver())
         matches = grep(project, pattern, limit=limit)
     except ExpandError as exc:
-        return f"error: {exc}"
+        return failure(exc)
     except ValueError as exc:
-        return f"error: {exc}"
+        return f"error: {exc}\n{hint('bad_pattern')}"
     return render_matches(matches, pattern)
 
 
 @mcp.tool()
+@guarded
 def td_project_diff(
     before: str, after: str, show_moves: bool = False, include_text: bool = True
 ) -> str:
@@ -912,11 +943,12 @@ def td_project_diff(
             include_text=include_text,
         )
     except ExpandError as exc:
-        return f"error: {exc}"
+        return failure(exc)
     return f"{result.summary()}\n\n{result.render(show_moves=show_moves)}"
 
 
 @mcp.tool()
+@guarded
 def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     """Save a component to a file so it can be diffed later.
 
@@ -929,7 +961,7 @@ def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     leaves the artist working in ~/.td-atlas instead of their own project.
     """
     if not re.fullmatch(r"[\w.-]+", label):
-        return "error: label may contain only letters, digits, dot, dash, underscore"
+        return f"error: {label!r} is not a usable label.\n{hint('bad_label')}"
     target = cfg.home() / "snapshots"
     target.mkdir(parents=True, exist_ok=True)
     destination = target / f"{label}.tox"
@@ -940,12 +972,13 @@ def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     try:
         result = client.call("save_tox", path=path, file=str(destination))
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     saved = result.get("saved") or destination
     return f"{_warn(client)}saved {path} to {saved}"
 
 
 @mcp.tool()
+@guarded
 def td_example(op_type: str, depth: int = 3) -> str:
     """Show a working example network for an operator.
 
@@ -958,9 +991,12 @@ def td_example(op_type: str, depth: int = 3) -> str:
         "SELECT type, snippet_path FROM ops WHERE type = ?", (op_type,)
     ).fetchone()
     if row is None:
-        return f"No operator type '{op_type}'."
+        return f"No operator type '{op_type}'.\n{hint('unknown_op_type')}"
     if not row["snippet_path"]:
-        return f"TouchDesigner ships no example network for {op_type}."
+        return (
+            f"TouchDesigner ships no example network for {op_type}.\n"
+            f"{hint('no_example')}"
+        )
 
     from ..project import ExpandError, index_resolver, load_file
     from ..project.render import describe
@@ -968,18 +1004,19 @@ def td_example(op_type: str, depth: int = 3) -> str:
     try:
         project = load_file(row["snippet_path"], resolver=index_resolver())
     except ExpandError as exc:
-        return f"error: {exc}"
+        return failure(exc)
     return describe(project, depth=depth, params=True)
 
 
 @mcp.tool()
+@guarded
 def td_undo(redo: bool = False) -> str:
     """Undo (or redo) the last change, including whole td_build batches."""
     client = bridge()
     try:
         result = client.call("redo" if redo else "undo")
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     stack = result.get("redoStack" if redo else "undoStack") or []
     return (
         f"{_warn(client)}{'redone' if redo else 'undone'}; "
@@ -990,6 +1027,7 @@ def td_undo(redo: bool = False) -> str:
 # -- scope claims -----------------------------------------------------------
 
 @mcp.tool()
+@guarded
 def td_claim_scope(path: str, owner: str, ttl_seconds: float = 600) -> str:
     """Announce one subtree of the network as yours while you work in it.
 
@@ -1014,7 +1052,7 @@ def td_claim_scope(path: str, owner: str, ttl_seconds: float = 600) -> str:
             "claim_scope", path=path, owner=owner, ttl=ttl_seconds
         )
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     verb = "renewed" if result.get("renewed") else "claimed"
     return (
         f"{_warn(client)}{verb} {result['path']} for '{result['owner']}' "
@@ -1023,6 +1061,7 @@ def td_claim_scope(path: str, owner: str, ttl_seconds: float = 600) -> str:
 
 
 @mcp.tool()
+@guarded
 def td_release_scope(path: str, owner: str) -> str:
     """Give a claimed subtree back before its claim expires.
 
@@ -1034,13 +1073,14 @@ def td_release_scope(path: str, owner: str) -> str:
     try:
         result = client.call("release_scope", path=path, owner=owner)
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     if not result.get("released"):
         return f"{_warn(client)}{result.get('note', 'nothing to release')}"
     return f"{_warn(client)}released {result['path']}"
 
 
 @mcp.tool()
+@guarded
 def td_scopes() -> str:
     """Which subtrees other agents have claimed, and until when.
 
@@ -1052,7 +1092,7 @@ def td_scopes() -> str:
     try:
         result = client.call("scopes")
     except (BridgeUnavailable, BridgeError) as exc:
-        return f"error: {exc}"
+        return failure(exc)
     if not result["count"]:
         return _warn(client) + "No scope is claimed; the whole network is free."
     lines = [f"{result['count']} scope(s) claimed:"]
