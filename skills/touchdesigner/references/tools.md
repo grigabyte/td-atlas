@@ -1,6 +1,6 @@
 # Tool reference
 
-Twenty-six MCP tools in three groups.
+Twenty-nine MCP tools in three groups.
 
 ## Index — offline, no running TouchDesigner
 

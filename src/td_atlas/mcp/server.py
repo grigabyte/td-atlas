@@ -549,12 +549,15 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
 
 
 @mcp.tool()
-def td_set_params(path: str, pars: dict, op_type: str = "") -> str:
+def td_set_params(
+    path: str, pars: dict, op_type: str = "", owner: str = ""
+) -> str:
     """Set parameters on an existing operator, checked against the index first.
 
     Values may be a constant, {"expr": "..."} for an expression, {"bind": "..."}
     or {"pulse": true}. Pass `op_type` to have the names validated locally
-    before anything is sent.
+    before anything is sent. Pass the same `owner` you claimed the area with,
+    or your own claim refuses this write.
     """
     if op_type:
         try:
@@ -565,7 +568,7 @@ def td_set_params(path: str, pars: dict, op_type: str = "") -> str:
             pass
     client = bridge()
     try:
-        result = client.call("par_set", path=path, pars=pars)
+        result = client.call("par_set", path=path, pars=pars, owner=owner)
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
     applied = ", ".join(f"{k}={v!r}" for k, v in result["applied"].items())
@@ -676,6 +679,7 @@ def td_palette_load(
     rename: str = "",
     position: list | None = None,
     category: str = "",
+    owner: str = "",
 ) -> str:
     """Install one of TouchDesigner's palette components into the project.
 
@@ -742,6 +746,7 @@ def td_palette_load(
             file=str(tox),
             name=rename or None,
             position=position,
+            owner=owner,
         )
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"

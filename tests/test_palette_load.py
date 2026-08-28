@@ -116,6 +116,8 @@ def test_looks_the_component_up_by_name_and_sends_the_indexed_path(
                 "file": str(world / "Palette" / "kantanMapper.tox"),
                 "name": None,
                 "position": None,
+                # Empty unless the caller claimed the area with td_claim_scope.
+                "owner": "",
             },
         )
     ]

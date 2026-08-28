@@ -17,7 +17,7 @@ import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 # The shared secret, read from ~/.td-atlas/config.json when the server starts —
 # see _load_token(). It is not baked into this text: a released .tox is one file
@@ -1110,6 +1110,7 @@ def m_palette_load(params):
     largest palette components therefore stall the main thread for about a
     second — bounded, but visible as a dropped frame.
     """
+    _guard_scopes(params, params.get("parent") or "/")
     file = params.get("file")
     if not file:
         raise ValueError("palette_load requires 'file'")
