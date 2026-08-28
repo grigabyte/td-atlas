@@ -6,16 +6,24 @@ import argparse
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import config as cfg
 from .atoms import probe as probe_mod
 from .atoms.extract_static import extract
 from .atoms.store import AtomStore
-from .bridge.client import BridgeClient, BridgeError, BridgeUnavailable
-from .install import InstallNotFound, discover
+from .bridge.client import (
+    EXPECTED_PROTOCOL_VERSION,
+    BridgeClient,
+    BridgeError,
+    BridgeUnavailable,
+)
+from .install import InstallNotFound, TDInstall, discover
 
 COMPONENT_DIR = Path(__file__).parent / "component"
 
@@ -512,6 +520,455 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+# -- doctor -----------------------------------------------------------------
+#
+# One pass over the whole chain, one line per link. The failure this command
+# exists for is the one that never raises: an index built from a different
+# TouchDesigner build still answers every question, with defaults, ranges and
+# menu options belonging to a build that is no longer installed. `status`
+# prints both numbers but never compares them, so the mismatch reads as two
+# ordinary lines. Here it is a named link with its own verdict.
+
+OK = "ok"
+WARN = "warn"
+FAIL = "fail"
+ABSENT = "absent"
+UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class Check:
+    """One link of the chain, with what was observed and how to repair it.
+
+    `status` distinguishes four non-ok outcomes on purpose, because merging
+    them is what makes a diagnostic useless: FAIL is broken, WARN is a known
+    gap that still works, ABSENT is a state nobody has to fix (TouchDesigner
+    simply is not running), UNKNOWN is a check that could not be carried out
+    — which is reported, never skipped and never counted as a pass.
+    """
+
+    link: str
+    status: str
+    detail: str
+    fix: str = ""
+
+    @property
+    def broken(self) -> bool:
+        return self.status == FAIL
+
+
+def check_environment() -> Check:
+    """Is this package running from an environment that can import it at all?
+
+    Reuses the two diagnoses `status` already prints; both describe the same
+    end state (an MCP client's fresh launch dies with ModuleNotFoundError)
+    from different causes.
+    """
+    import sysconfig
+
+    diagnosis = broken_env_diagnosis(Path(sys.prefix))
+    fix = "uv venv && uv pip install -e ."
+    if diagnosis is None:
+        diagnosis = broken_editable_install_diagnosis(
+            Path(sysconfig.get_path("purelib"))
+        )
+        fix = "uv pip install -e . --reinstall"
+    if diagnosis:
+        return Check("environment", FAIL, diagnosis, fix)
+    return Check(
+        "environment",
+        OK,
+        f"running from {sys.prefix} with 'td_atlas' importable as installed",
+    )
+
+
+def check_install(explicit: str | None = None) -> tuple[Check, TDInstall | None]:
+    """Locate TouchDesigner and confirm the files the index is built from."""
+    try:
+        install = discover(explicit)
+    except InstallNotFound as exc:
+        return (
+            Check(
+                "touchdesigner",
+                FAIL,
+                str(exc),
+                "install TouchDesigner, or point td-atlas at it: "
+                "TD_ATLAS_INSTALL=/path/to/TouchDesigner.app",
+            ),
+            None,
+        )
+
+    missing = install.missing_sources()
+    if missing:
+        return (
+            Check(
+                "touchdesigner",
+                FAIL,
+                f"{install.version} at {install.root}, but the index sources "
+                f"are incomplete — missing {', '.join(missing)}. A build from "
+                f"this installation would silently omit what they hold.",
+                "reinstall TouchDesigner with its samples and help, or pass "
+                "--install-path to a complete installation",
+            ),
+            install,
+        )
+    return (
+        Check(
+            "touchdesigner",
+            OK,
+            f"build {install.version} at {install.root}, all index sources present",
+        ),
+        install,
+    )
+
+
+def check_index(db: Path, install: TDInstall | None) -> list[Check]:
+    """Three linked questions: is there an index, whose build, and was it probed."""
+    store = AtomStore(db)
+    if not store.exists():
+        return [
+            Check("index", FAIL, f"no index at {db}", "td-atlas build"),
+            Check(
+                "index build",
+                UNKNOWN,
+                "nothing to compare — there is no index to carry a build string",
+            ),
+            Check(
+                "probe",
+                UNKNOWN,
+                "nothing to check — the runtime pass records itself in the "
+                "index, and there is no index",
+            ),
+        ]
+
+    try:
+        stats = store.stats()
+        version = store.get_meta("td_version") or ""
+        built_from = store.get_meta("td_install") or "an unrecorded location"
+        static = store.get_meta("static_pass") or "incomplete"
+        runtime = store.get_meta("runtime_pass")
+        probed_types = store.get_meta("runtime_types_probed")
+    except sqlite3.Error as exc:
+        return [
+            Check(
+                "index",
+                FAIL,
+                f"{db} exists but could not be read as an index ({exc})",
+                "td-atlas build",
+            ),
+            Check("index build", UNKNOWN, "the index could not be read"),
+            Check("probe", UNKNOWN, "the index could not be read"),
+        ]
+    finally:
+        store.close()
+
+    checks: list[Check] = []
+    if static == "complete":
+        checks.append(
+            Check(
+                "index",
+                OK,
+                f"{stats['ops']} ops, {stats['params']} params, "
+                f"{stats['articles']} articles, built from "
+                f"{version or 'an unrecorded build'} at {built_from}",
+            )
+        )
+    else:
+        checks.append(
+            Check(
+                "index",
+                FAIL,
+                f"{db} has no completed static pass recorded "
+                f"(static_pass={static!r}); it is a partial index and what is "
+                f"missing from it is not knowable from inside",
+                "td-atlas build",
+            )
+        )
+
+    checks.append(_check_index_build(version, install))
+
+    if runtime == "complete":
+        checks.append(
+            Check(
+                "probe",
+                OK,
+                f"runtime pass complete: {stats['ops_probed']} ops probed"
+                + (f", {probed_types} types instantiated" if probed_types else ""),
+            )
+        )
+    else:
+        checks.append(
+            Check(
+                "probe",
+                WARN,
+                "the runtime pass has never completed, so the index carries no "
+                "parameter defaults, no value ranges, no menu options and no "
+                "connector counts — every question about those returns a gap",
+                "open TouchDesigner with the bridge, then: td-atlas probe",
+            )
+        )
+    return checks
+
+
+def _check_index_build(version: str, install: TDInstall | None) -> Check:
+    """The comparison nothing else in this tool makes.
+
+    An index from another build is the one fault here that produces no error
+    anywhere downstream: every lookup succeeds and returns facts about a
+    TouchDesigner that is not the one running.
+    """
+    if not version:
+        return Check(
+            "index build",
+            FAIL,
+            "the index records no build string, so nothing can confirm which "
+            "TouchDesigner its defaults and menus describe",
+            "td-atlas build",
+        )
+    if install is None:
+        return Check(
+            "index build",
+            UNKNOWN,
+            f"the index was built from {version}, but no installation was "
+            f"found here to compare it against",
+        )
+    if version == install.version:
+        return Check(
+            "index build", OK, f"index and installation agree: {version}"
+        )
+    return Check(
+        "index build",
+        FAIL,
+        f"MISMATCH: the index was built from TouchDesigner {version}, but "
+        f"the installation found here is {install.version}. Defaults, value "
+        f"ranges and menu options served from this index describe the other "
+        f"build. Nothing will raise: an agent reading it will configure "
+        f"parameters that may not exist in {install.version}, and the only "
+        f"symptom is a network that does not do what it was told.",
+        "td-atlas build   (then 'td-atlas probe' with TouchDesigner open)",
+    )
+
+
+def check_bridge(args: argparse.Namespace) -> Check:
+    """Registry, port, protocol and token — told apart, not merged.
+
+    'Not running' is a state and never a failure. 'Registered but silent',
+    'answering with an unusable protocol' and 'answering but refusing the
+    token' are three different repairs, so they are three different lines.
+    """
+    live = [record for record in cfg.read_instances() if record.alive]
+    note = ""
+    if not live:
+        if not cfg.config_path().exists():
+            return Check(
+                "bridge",
+                WARN,
+                "the bridge has never been staged on this host "
+                f"({cfg.config_path()} does not exist), so no TouchDesigner "
+                "can be driven live; the offline index still works",
+                "td-atlas install",
+            )
+        # An empty registry is not proof that nothing is listening: a bridge
+        # older than the registry never writes a record, and every command
+        # still reaches it through the session/config port. Dial before
+        # declaring absence.
+        port = getattr(args, "port", None) or int(
+            (cfg.load_session() or {}).get("port")
+            or cfg.load_config().get("port")
+            or cfg.DEFAULT_PORT
+        )
+        if cfg.port_listening(port) is False:
+            return Check(
+                "bridge",
+                ABSENT,
+                f"no running TouchDesigner has registered a bridge "
+                f"({cfg.instances_dir()} is empty) and nothing is listening "
+                f"on port {port} — a state, not a fault",
+                "start TouchDesigner and paste the 'td-atlas install' "
+                "bootstrap line into its textport (Alt+T)",
+            )
+        note = (
+            f"; port {port} answers although nothing registered itself — a "
+            f"bridge older than the instance registry"
+        )
+
+    try:
+        client = BridgeClient.discover(
+            timeout=3.0,
+            port=getattr(args, "port", None),
+            project=getattr(args, "project", None),
+        )
+    except cfg.InstanceSelectionError as exc:
+        return Check(
+            "bridge",
+            FAIL,
+            str(exc).replace("\n", " "),
+            "td-atlas instances",
+        )
+
+    record = client.instance
+    where = f" ({record.label})" if record is not None else ""
+    listening = cfg.port_listening(client.port)
+
+    try:
+        info = client.ping()
+    except BridgeError as exc:
+        # Reached the handler and it refused us: the token on this host is not
+        # the one the running bridge holds.
+        return Check(
+            "bridge",
+            FAIL,
+            f"port {client.port}{where} answers but rejected the request "
+            f"({exc.type}: {exc.message}) — the token in {cfg.config_path()} "
+            f"is not the one the running bridge was started with",
+            "td-atlas reload   (or re-run the 'td-atlas install' bootstrap "
+            "line in the textport)",
+        )
+    except BridgeUnavailable as exc:
+        if listening is False:
+            return Check(
+                "bridge",
+                FAIL,
+                f"a record claims a bridge on port {client.port}{where}, "
+                f"but nothing is listening there: {exc}",
+                "re-run the 'td-atlas install' bootstrap line in "
+                "TouchDesigner's textport",
+            )
+        # Listening (or unmeasurable) but unusable — the exception text is the
+        # precise one, protocol range included.
+        return Check(
+            "bridge",
+            FAIL,
+            f"port {client.port}{where} accepts connections but the bridge "
+            f"is not usable: {exc}",
+            "td-atlas reload   (or re-run the bootstrap line in the textport)",
+        )
+
+    protocol = record.protocol if record is not None else None
+    detail = (
+        f"connected on port {client.port} to '{info.get('project')}' "
+        f"(build {info.get('build')}, {info.get('fps')} fps, "
+        f"protocol {protocol if protocol is not None else '?'}"
+        f"/{EXPECTED_PROTOCOL_VERSION} expected)"
+    )
+    if client.version_warning:
+        return Check(
+            "bridge",
+            WARN,
+            f"{detail} — {client.version_warning}",
+            "td-atlas reload",
+        )
+    if len(live) > 1:
+        others = ", ".join(f"{i.label} (--port {i.port})" for i in live if i.port != client.port)
+        detail += f"; {len(live)} bridges are running, checked this one only ({others})"
+    return Check("bridge", OK, detail + note)
+
+
+def check_mcp_server(run=None) -> Check:
+    """Does the launch line `install` prints actually start?
+
+    Measured, not assumed: the printed interpreter is asked to import the
+    server module the way an MCP client would launch it — PYTHONPATH removed
+    from the environment and a neutral working directory — because those two
+    are exactly what hide a broken editable install from every invocation
+    made inside this project. A full stdio handshake is not attempted: the
+    server does not exit on its own, and every failure this check is for
+    happens at import.
+    """
+    run = run or subprocess.run
+    command = mcp_command()
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    probe = [command[0], "-c", "import td_atlas.mcp.server"]
+    try:
+        completed = run(
+            probe,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=tempfile.gettempdir(),
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return Check(
+            "mcp server",
+            FAIL,
+            f"could not launch {' '.join(command)}: {exc}",
+            "uv pip install -e . --reinstall",
+        )
+
+    if completed.returncode == 0:
+        return Check(
+            "mcp server",
+            OK,
+            f"'{mcp_connection_line()}' launches: its interpreter imports the "
+            f"server module with no PYTHONPATH and from a neutral directory",
+        )
+    stderr = (completed.stderr or "").strip().splitlines()
+    last = stderr[-1] if stderr else f"exit status {completed.returncode}"
+    return Check(
+        "mcp server",
+        FAIL,
+        f"the launch line printed by 'td-atlas install' does not start: "
+        f"importing the server module with {command[0]}, without PYTHONPATH "
+        f"and from a neutral directory, failed with {last}. An MCP client "
+        f"launches it exactly that way and would see the server die at "
+        f"startup",
+        "uv pip install -e . --reinstall",
+    )
+
+
+def doctor_checks(args: argparse.Namespace, run=None) -> list[Check]:
+    """Every link, in the order a failure propagates along the chain."""
+    checks = [check_environment()]
+    install_check, install = check_install(getattr(args, "install_path", None))
+    checks.append(install_check)
+    checks.extend(check_index(Path(getattr(args, "db", None) or cfg.db_path()), install))
+    checks.append(check_bridge(args))
+    checks.append(check_mcp_server(run=run))
+    return checks
+
+
+_STATUS_LABEL = {
+    OK: "ok",
+    WARN: "warn",
+    FAIL: "FAIL",
+    ABSENT: "absent",
+    UNKNOWN: "unknown",
+}
+
+
+def render_checks(checks: list[Check]) -> str:
+    width = max(len(c.link) for c in checks)
+    lines = []
+    for check in checks:
+        lines.append(
+            f"{check.link:<{width}} : {_STATUS_LABEL[check.status]} — {check.detail}"
+        )
+        if check.fix and check.status != OK:
+            lines.append(f"{' ' * width}   fix: {check.fix}")
+    return "\n".join(lines)
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    checks = doctor_checks(args)
+    print(render_checks(checks))
+    broken = [c for c in checks if c.broken]
+    print()
+    if broken:
+        word = "link" if len(broken) == 1 else "links"
+        print(f"{len(broken)} broken {word}: " + ", ".join(c.link for c in broken))
+        return 1
+    unresolved = [c for c in checks if c.status in (WARN, UNKNOWN)]
+    if unresolved:
+        print(
+            "nothing is broken; unresolved: "
+            + ", ".join(f"{c.link} ({_STATUS_LABEL[c.status]})" for c in unresolved)
+        )
+    else:
+        print("every link checked out.")
+    return 0
+
+
 def cmd_search(args: argparse.Namespace) -> int:
     store = AtomStore(args.db or cfg.db_path())
     if not store.exists():
@@ -799,6 +1256,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("status", help="show install, index and bridge state")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser(
+        "doctor",
+        help="check the whole chain link by link and say what to run to fix it",
+    )
+    p.add_argument("--install-path", help="TouchDesigner application directory")
+    p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("search", help="full-text search over operators")
     p.add_argument("query")
