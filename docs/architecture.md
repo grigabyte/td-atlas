@@ -132,6 +132,6 @@ would cost an agent exactly the time the tool exists to save.
   for this reason; both looked like complete success while being wrong.
 - **Never write beside a user's file.** The TouchDesigner tools do; this
   project copies first.
-- **Keep the offline layers offline.** 66 of 67 tests run without
+- **Keep the offline layers offline.** All but three tests run without
   TouchDesigner. Tests that need a running application cannot be trusted to
   run.

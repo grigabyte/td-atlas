@@ -199,7 +199,7 @@ cp -r skills/touchdesigner ~/.claude/skills/
 
 ```bash
 uv pip install -e . pytest
-pytest                  # 67 tests; only one needs TouchDesigner
+pytest                  # three tests need an installation, none a running instance
 td-atlas reload         # re-stage the bridge and reload it through itself
 ```
 
@@ -245,7 +245,7 @@ td-atlas/
 │   │   ├── diff.py             semantic comparison
 │   │   └── render.py           tree description and code search
 │   └── mcp/server.py       23 MCP tools over all three layers
-└── tests/                  67 tests, 66 of them offline
+└── tests/                  three need an installation, none a running instance
 ```
 
 ## Licence

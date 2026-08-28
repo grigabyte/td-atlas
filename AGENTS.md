@@ -55,7 +55,7 @@ or derive the real mapping from TouchDesigner.
 
 ```bash
 uv pip install -e . pytest
-pytest                       # 92 tests, ~0.2 s
+pytest                       # a couple of hundred, well under a second
 ```
 
 `test_project.py::test_expands_and_reads_a_shipped_example` and both tests in
