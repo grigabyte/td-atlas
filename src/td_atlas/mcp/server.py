@@ -870,6 +870,83 @@ def td_undo(redo: bool = False) -> str:
     )
 
 
+# -- scope claims -----------------------------------------------------------
+
+@mcp.tool()
+def td_claim_scope(path: str, owner: str, ttl_seconds: float = 600) -> str:
+    """Announce one subtree of the network as yours while you work in it.
+
+    Reach for this before a run of edits whenever another agent or session may
+    be touching the same project: without a claim, two agents editing the same
+    nodes overwrite each other and neither result reports anything wrong.
+    `owner` is any string that identifies you (a task name, a session id) —
+    it is what the other agent is told when it is refused.
+
+    The claim covers everything below `path`: '/project1/audio' includes
+    '/project1/audio/eq1' but not '/project1/audio2'. It lapses on its own
+    after `ttl_seconds`, so a crash cannot park a subtree for the session;
+    claim again to renew. This is an agreement between agents, not a lock —
+    it does not constrain a person editing those nodes by hand.
+
+    Write calls must carry the same `owner` to pass their own claim; the
+    refusal text says which owner to send.
+    """
+    client = bridge()
+    try:
+        result = client.call(
+            "claim_scope", path=path, owner=owner, ttl=ttl_seconds
+        )
+    except (BridgeUnavailable, BridgeError) as exc:
+        return f"error: {exc}"
+    verb = "renewed" if result.get("renewed") else "claimed"
+    return (
+        f"{_warn(client)}{verb} {result['path']} for '{result['owner']}' "
+        f"until {result['expiresAt']} ({result['expiresIn']:g} s)"
+    )
+
+
+@mcp.tool()
+def td_release_scope(path: str, owner: str) -> str:
+    """Give a claimed subtree back before its claim expires.
+
+    Call it as soon as a run of edits is finished — otherwise the next agent
+    waits out the whole time-to-live for nothing. Only the owner named on the
+    claim can release it.
+    """
+    client = bridge()
+    try:
+        result = client.call("release_scope", path=path, owner=owner)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return f"error: {exc}"
+    if not result.get("released"):
+        return f"{_warn(client)}{result.get('note', 'nothing to release')}"
+    return f"{_warn(client)}released {result['path']}"
+
+
+@mcp.tool()
+def td_scopes() -> str:
+    """Which subtrees other agents have claimed, and until when.
+
+    Check this before editing a project someone else may be in — it is the
+    only way to see a claim before a write bounces off it, and it names the
+    owner to coordinate with.
+    """
+    client = bridge()
+    try:
+        result = client.call("scopes")
+    except (BridgeUnavailable, BridgeError) as exc:
+        return f"error: {exc}"
+    if not result["count"]:
+        return _warn(client) + "No scope is claimed; the whole network is free."
+    lines = [f"{result['count']} scope(s) claimed:"]
+    for claim in result["scopes"]:
+        lines.append(
+            f"  {claim['path']} — '{claim['owner']}' since {claim['claimedAt']}, "
+            f"until {claim['expiresAt']} ({claim['expiresIn']:g} s left)"
+        )
+    return _warn(client) + "\n".join(lines)
+
+
 def main() -> None:
     mcp.run()
 

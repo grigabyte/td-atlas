@@ -269,6 +269,330 @@ def _refresh_instance(dat):
         _write_instance(dat, now)
 
 
+# -- scope claims -----------------------------------------------------------
+
+# Cooperative claims on subtrees of the network, so two agents editing the same
+# project stop overwriting each other in silence.
+#
+# The claims live here, inside TouchDesigner, and not on the host: agents are
+# separate processes (often on separate MCP servers) and the bridge is the one
+# thing they demonstrably share. Held in memory only — a claim is about who is
+# working right now, so losing the lot when TouchDesigner quits is the correct
+# behaviour, and it keeps this module free of any state at import time, which
+# the host's import for PROTOCOL_VERSION depends on.
+#
+# This is an agreement between agents, not a permission system. Nothing here
+# constrains a human editing the same nodes by hand, and an agent that never
+# sends an owner is never stopped by its own claim — see _caller_owner.
+_SCOPES = {}
+
+# Every claim expires. An agent that crashes between claim and release must not
+# park a subtree for the rest of the session, and there is nobody to notice that
+# it has: expiry is the only cleanup that does not depend on the claimant coming
+# back.
+DEFAULT_SCOPE_TTL = 600.0
+# A day, as a typo guard: a claim is minutes of work, and `ttl=1e9` from a bad
+# unit conversion would otherwise be indistinguishable from "forever".
+MAX_SCOPE_TTL = 86400.0
+
+
+class ScopeHeld(Exception):
+    """Raised when a write, or a claim, collides with another owner's claim.
+
+    Surfaces to the caller as error type 'ScopeHeld', which is the signal to
+    coordinate rather than retry — a retry loop will not outlast a live claim.
+    """
+
+
+def _normalise_scope_path(path):
+    """An operator path in one comparable form: absolute, no trailing slash.
+
+    Exists so '/project1/audio/', '/project1//audio' and '/project1/audio' are
+    one claim rather than three, since a claim that can be spelled three ways
+    stops nothing.
+    """
+    if not isinstance(path, str) or not path.strip():
+        raise ValueError("a scope path is required, for example '/project1/audio'")
+    text = path.strip()
+    if not text.startswith("/"):
+        raise ValueError(
+            "scope paths are absolute: '%s' has no leading '/'" % path
+        )
+    parts = [part for part in text.split("/") if part]
+    return "/" + "/".join(parts)
+
+
+def _normalise_owner(owner):
+    """The claimant's name, or a refusal. Empty owners are rejected on purpose.
+
+    An empty owner would compare equal to the absent owner on an unattributed
+    write, which would let any caller walk through every claim.
+    """
+    if not isinstance(owner, str) or not owner.strip():
+        raise ValueError(
+            "an owner name is required — any string that identifies this agent "
+            "or session, so a second agent can be told who holds the scope"
+        )
+    return owner.strip()
+
+
+def _scope_ttl(ttl):
+    """Seconds a claim should last, defaulting rather than lasting forever."""
+    if ttl is None or ttl == "":
+        return DEFAULT_SCOPE_TTL
+    try:
+        seconds = float(ttl)
+    except (TypeError, ValueError):
+        raise ValueError("ttl must be a number of seconds, got %r" % (ttl,))
+    # `not seconds > 0` also rejects NaN, which would otherwise make every
+    # comparison against `expires` false and the claim invisible but present.
+    if not seconds > 0:
+        raise ValueError("ttl must be a positive number of seconds, got %r" % (ttl,))
+    if seconds > MAX_SCOPE_TTL:
+        raise ValueError(
+            "ttl of %g s exceeds the %g s ceiling; claim for the work in hand "
+            "and renew it if it runs long" % (seconds, MAX_SCOPE_TTL)
+        )
+    return seconds
+
+
+def _scope_contains(scope, path):
+    """Whether `path` lies at or below `scope`. Both already normalised.
+
+    The separator in the prefix test is what makes '/project1/audio2' fall
+    outside '/project1/audio' — a plain startswith reports it as inside, and
+    would hand one agent a veto over its neighbour's network.
+    """
+    if scope == "/":
+        return True
+    return path == scope or path.startswith(scope + "/")
+
+
+def _scopes_overlap(one, other):
+    """Whether two subtrees intersect — either contains the other."""
+    return _scope_contains(one, other) or _scope_contains(other, one)
+
+
+def _scope_alive(claim, now):
+    return float(claim.get("expires", 0.0)) > now
+
+
+def _active_scopes(claims, now):
+    """The claims still in force at `now`, oldest path first. Pure; no pruning."""
+    return [
+        claims[path]
+        for path in sorted(claims)
+        if _scope_alive(claims[path], now)
+    ]
+
+
+def _prune_scopes(claims, now):
+    """Drop expired claims. Returns the paths dropped, for the caller to report."""
+    dead = [path for path in sorted(claims) if not _scope_alive(claims[path], now)]
+    for path in dead:
+        del claims[path]
+    return dead
+
+
+def _blocking_claim(claims, path, owner, now):
+    """The claim that stops `owner` writing to `path`, or None.
+
+    Only claims held by *another* owner block, and only claims that cover the
+    path — a claim below it (a colleague holding '/project1/audio/eq1') does not
+    stop a write to its parent node itself, which is a deliberate reading of
+    "inside": the guard answers "is this node in someone else's area", not "does
+    someone hold anything under here".
+    """
+    target = _normalise_scope_path(path)
+    for claim in _active_scopes(claims, now):
+        if claim["owner"] == owner:
+            continue
+        if _scope_contains(claim["path"], target):
+            return claim
+    return None
+
+
+def _overlapping_claim(claims, path, owner, now):
+    """The claim that stops `owner` claiming `path`, or None.
+
+    Claiming uses overlap rather than containment: two agents holding
+    '/project1/audio' and '/project1/audio/eq1' would each believe the eq is
+    theirs alone.
+    """
+    target = _normalise_scope_path(path)
+    for claim in _active_scopes(claims, now):
+        if claim["owner"] == owner:
+            continue
+        if _scopes_overlap(claim["path"], target):
+            return claim
+    return None
+
+
+def _stamp(when):
+    """A wall-clock moment an agent can compare with its own clock.
+
+    Claims are timed on time.time() rather than the monotonic clock the
+    instance registry uses, because their times are read by a *different*
+    process than the one that set them; a monotonic reading means nothing
+    there. The cost is that a system clock stepped backwards extends live
+    claims, which is bounded by MAX_SCOPE_TTL and cheaper than unreadable
+    timestamps.
+    """
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(when))
+
+
+def _claim_view(claim, now):
+    """One claim as reported: both raw seconds and something readable."""
+    return {
+        "path": claim["path"],
+        "owner": claim["owner"],
+        "claimed": claim["claimed"],
+        "claimedAt": _stamp(claim["claimed"]),
+        "expires": claim["expires"],
+        "expiresAt": _stamp(claim["expires"]),
+        "expiresIn": round(claim["expires"] - now, 1),
+    }
+
+
+def _scope_refusal(claim, path, owner, now):
+    """The refusal text: who holds it, since when, until when, what to do."""
+    left = max(0.0, claim["expires"] - now)
+    who = "'%s'" % owner if owner else "an unnamed caller"
+    return (
+        "%s is inside '%s', claimed by '%s' from %s until %s (%d s left). "
+        "The write from %s was refused. Either work outside that subtree, or "
+        "send owner='%s' if that claim is yours, or wait for it to expire, or "
+        "ask its owner to call release_scope. Claims are visible to everyone "
+        "through the 'scopes' method."
+        % (
+            _normalise_scope_path(path),
+            claim["path"],
+            claim["owner"],
+            _stamp(claim["claimed"]),
+            _stamp(claim["expires"]),
+            int(left),
+            who,
+            claim["owner"],
+        )
+    )
+
+
+def _caller_owner(params):
+    """Who this request says it is, or '' for an unattributed one.
+
+    An unattributed write matches no claim, so it is refused inside any live
+    claim rather than let through — including a claim its own author took out.
+    That is the fail-safe direction, and the refusal says which owner to send.
+    """
+    owner = params.get("owner")
+    return owner.strip() if isinstance(owner, str) else ""
+
+
+def _guard_scopes(params, *paths):
+    """Refuse a write that lands inside another owner's claim.
+
+    Runs before the paths are resolved, so a refusal costs no operator lookup
+    and reads the same whether or not the target exists. A path that is not
+    absolute is skipped: resolving it needs TouchDesigner's own relative-path
+    rules, and guessing at it would either block writes that are fine or claim
+    a check it did not make.
+    """
+    if not _SCOPES:
+        return
+    now = time.time()
+    _prune_scopes(_SCOPES, now)
+    owner = _caller_owner(params)
+    for path in paths:
+        if not isinstance(path, str) or not path.strip().startswith("/"):
+            continue
+        claim = _blocking_claim(_SCOPES, path, owner, now)
+        if claim is not None:
+            raise ScopeHeld(_scope_refusal(claim, path, owner, now))
+
+
+def m_claim_scope(params):
+    """Announce a subtree as one agent's working area.
+
+    Prevents the failure where two agents edit the same network and each sees
+    its own changes silently reverted. A claim on '/project1/audio' covers
+    every node below it; '/project1/audio2' is a different area. Claiming a
+    subtree that overlaps another owner's live claim is refused, as is a write
+    into it from anybody else.
+    """
+    now = time.time()
+    path = _normalise_scope_path(params.get("path"))
+    owner = _normalise_owner(params.get("owner"))
+    ttl = _scope_ttl(params.get("ttl"))
+    _prune_scopes(_SCOPES, now)
+
+    clash = _overlapping_claim(_SCOPES, path, owner, now)
+    if clash is not None:
+        raise ScopeHeld(
+            "'%s' overlaps '%s', claimed by '%s' from %s until %s (%d s left). "
+            "Claim a subtree outside it, or wait for it to expire."
+            % (
+                path,
+                clash["path"],
+                clash["owner"],
+                _stamp(clash["claimed"]),
+                _stamp(clash["expires"]),
+                int(max(0.0, clash["expires"] - now)),
+            )
+        )
+
+    existing = _SCOPES.get(path)
+    # Re-claiming one's own path renews it rather than stacking a second
+    # record: a long job should extend its claim, not lose it mid-flight.
+    claimed = existing["claimed"] if existing else now
+    _SCOPES[path] = {
+        "path": path,
+        "owner": owner,
+        "claimed": claimed,
+        "expires": now + ttl,
+    }
+    view = _claim_view(_SCOPES[path], now)
+    view["renewed"] = existing is not None
+    view["ttl"] = ttl
+    return view
+
+
+def m_release_scope(params):
+    """Give a claimed subtree back before it expires.
+
+    Only the owner can release its own claim; releasing something nobody holds
+    is reported, not raised, since an agent tidying up after a crash cannot
+    know whether its claim already expired.
+    """
+    now = time.time()
+    path = _normalise_scope_path(params.get("path"))
+    owner = _normalise_owner(params.get("owner"))
+    _prune_scopes(_SCOPES, now)
+
+    claim = _SCOPES.get(path)
+    if claim is None:
+        return {
+            "released": False,
+            "path": path,
+            "note": "no live claim on '%s' — it expired or was never made" % path,
+        }
+    if claim["owner"] != owner:
+        raise ScopeHeld(
+            "'%s' is held by '%s', not by '%s'; only its owner can release it "
+            "(it expires by itself at %s)."
+            % (path, claim["owner"], owner, _stamp(claim["expires"]))
+        )
+    del _SCOPES[path]
+    return {"released": True, "path": path, "owner": owner}
+
+
+def m_scopes(_params):
+    """Every live claim: who holds what, since when, and when it lapses."""
+    now = time.time()
+    expired = _prune_scopes(_SCOPES, now)
+    live = [_claim_view(claim, now) for claim in _active_scopes(_SCOPES, now)]
+    return {"count": len(live), "scopes": live, "expired": expired, "now": now}
+
+
 # -- serialisation ----------------------------------------------------------
 
 def _jsonable(value, depth=0):
@@ -443,6 +767,7 @@ def m_network(params):
 
 def m_op_create(params):
     """Create an operator, optionally setting parameters and wiring an input."""
+    _guard_scopes(params, params.get("parent") or "/")
     parent_comp = _resolve(params.get("parent") or "/")
     op_type = params.get("type")
     if not op_type:
@@ -466,6 +791,7 @@ def m_op_create(params):
 
 def m_op_delete(params):
     paths = params.get("paths") or [params.get("path")]
+    _guard_scopes(params, *paths)
     removed = []
     for path in paths:
         target = _resolve(path)
@@ -475,6 +801,9 @@ def m_op_delete(params):
 
 
 def m_op_connect(params):
+    # Both ends: a connection changes the wiring of the node it lands on as
+    # much as the one it leaves.
+    _guard_scopes(params, params.get("from"), params.get("to"))
     source = _resolve(params.get("from"))
     target = _resolve(params.get("to"))
     index = int(params.get("index", 0))
@@ -483,6 +812,7 @@ def m_op_connect(params):
 
 
 def m_op_disconnect(params):
+    _guard_scopes(params, params.get("path"))
     target = _resolve(params.get("path"))
     index = int(params.get("index", 0))
     target.inputConnectors[index].disconnect()
@@ -520,6 +850,7 @@ def _apply_pars(target, values):
 
 
 def m_par_set(params):
+    _guard_scopes(params, params.get("path"))
     target = _resolve(params.get("path"))
     return {"path": target.path, "applied": _apply_pars(target, params["pars"])}
 
@@ -694,7 +1025,13 @@ def m_batch(params):
                 raise ValueError(
                     "step %d: unknown method '%s'" % (index, step.get("method"))
                 )
-            results.append(method(step.get("params") or {}))
+            step_params = dict(step.get("params") or {})
+            # The owner named on the batch carries into every step, so an
+            # agent that claimed a scope does not have to repeat itself on
+            # each operation — and does not get refused by its own claim.
+            if params.get("owner") and "owner" not in step_params:
+                step_params["owner"] = params["owner"]
+            results.append(method(step_params))
     except Exception:
         ui.undo.endBlock()
         try:
@@ -826,6 +1163,9 @@ METHODS = {
     "op_types": m_op_types,
     "perf": m_perf,
     "health_sample": m_health_sample,
+    "claim_scope": m_claim_scope,
+    "release_scope": m_release_scope,
+    "scopes": m_scopes,
 }
 
 

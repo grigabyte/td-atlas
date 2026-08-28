@@ -33,6 +33,9 @@ Twenty-five MCP tools in three groups.
 | `td_exec(code)` | Arbitrary Python inside TouchDesigner. Last resort. |
 | `td_undo(redo)` | Undo or redo, including whole `td_build` batches. |
 | `td_snapshot(label, path)` | Save a component for later diffing. |
+| `td_claim_scope(path, owner, ttl_seconds)` | Announce a subtree as yours before a run of edits, when another agent or session may be in the same project. Covers everything below `path`; lapses on its own. |
+| `td_release_scope(path, owner)` | Hand a claimed subtree back as soon as you are done, instead of leaving the next agent to wait out the claim. |
+| `td_scopes()` | Which subtrees are claimed, by whom, until when. Check before editing a project someone else may be in. |
 
 ## Project files — on disk
 
