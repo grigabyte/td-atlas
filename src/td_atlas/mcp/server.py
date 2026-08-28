@@ -1122,6 +1122,7 @@ def td_extension_add(
     extension_name: str = "",
     promote: bool = True,
     index: int = 0,
+    position: list | None = None,
     owner: str = "",
 ) -> str:
     """Attach a Python class to a COMP as an extension, in one call.
@@ -1147,7 +1148,10 @@ def td_extension_add(
     (`op('./Name').module.Name(me)`). `extension_name` renames the extension
     for `ext` lookups without touching the class. `index` picks which
     extension slot to write; the wiki says a COMP has four, the sequence took
-    six here.
+    six here. A created COMP is given a free spot in the parent network
+    unless `position` names one — `[x, y]` in network units, the left and
+    *bottom* edges of the tile; it is ignored when aiming at a COMP that
+    already exists.
 
     The code is parsed on this host before anything is sent, so a typo costs
     no round trip. That check is not a guarantee TouchDesigner accepts it:
@@ -1208,6 +1212,7 @@ def td_extension_add(
             extension_name=extension_name,
             promote=promote,
             index=index,
+            position=position,
             owner=owner,
         )
     except (BridgeUnavailable, BridgeError) as exc:

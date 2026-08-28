@@ -1538,9 +1538,12 @@ def _extension_expr(dat_name, class_name):
     result read back off `comp.extensions`:
 
     - `op('./DemoExt').module.DemoExt(me)` — works. This is also the form
-      TouchDesigner's own components carry: 40 of the extensions under /ui and
-      /sys use it or the equivalent `me.mod.X.X(me)`, the Component Editor
-      itself (`/sys/TDDialogs/CompEditor`) among them.
+      TouchDesigner's own components carry: of the 258 non-empty Extension
+      Object expressions under /ui and /sys within six levels, 257 are this
+      form or the equivalent `me.mod.X.X(me)` — the Component Editor itself
+      (`/sys/TDDialogs/CompEditor`) among them. (Counted twice: the first pass
+      read only the first 40 rows it printed and this docstring said 40, which
+      was a listing limit, not a count.)
     - `DemoExt(me)` — the form the Extensions wiki page shows — leaves
       `extensions[0]` as None. So does `mod('DemoExt').DemoExt(me)`,
       `mod('./DemoExt').DemoExt(me)` and `iop.DemoExt`.
@@ -1658,6 +1661,12 @@ def m_extension_add(params):
             position = params.get("position")
             if position:
                 comp.nodeX, comp.nodeY = float(position[0]), float(position[1])
+            else:
+                # Through the shared placer, not a second copy of the rule:
+                # two layouts in one file drift apart. Nothing is wired here,
+                # so the new COMP simply lands beside what is already in the
+                # parent instead of on top of it at (0, 0).
+                _place_node(parent_comp, comp)
 
         dat = comp.op("./%s" % class_name)
         if dat is None:

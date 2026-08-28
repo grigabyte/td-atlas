@@ -91,6 +91,12 @@ class FakeSeq:
         self.ext = ext
 
 
+# A plausible tile, not a measured one: `_place_node` only needs a size and a
+# gap to reason about, and the real numbers come off the operator in
+# TouchDesigner. 130x90 is what a live noiseTOP reported (see `_node_box`).
+TILE = (130.0, 90.0)
+
+
 class FakeDAT:
     family = "DAT"
     OPType = "textDAT"
@@ -99,6 +105,9 @@ class FakeDAT:
         self.path = path
         self.name = path.rsplit("/", 1)[-1]
         self.text = ""
+        self.nodeX = 0.0
+        self.nodeY = 0.0
+        self.nodeWidth, self.nodeHeight = TILE
 
 
 class FakeOp:
@@ -131,6 +140,7 @@ class FakeComp:
         self.par = FakePars()
         self.nodeX = 0.0
         self.nodeY = 0.0
+        self.nodeWidth, self.nodeHeight = TILE
         self.reinits = 0
         self.evals = []
         self.extensions = [None]
@@ -139,6 +149,11 @@ class FakeComp:
         self.seq = FakeSeq(FakeSequence(self, blocks))
 
     # -- structure
+
+    @property
+    def children(self):
+        """What `_occupied_boxes` walks to find the tiles already placed."""
+        return list(self.children_by_name.values())
 
     def _make_ext_pars(self, count):
         for index in range(count):
@@ -392,6 +407,69 @@ def test_it_can_create_the_component_it_extends(td):
     assert undo.log == ["start:td-atlas extension DemoExt", "end"]
 
 
+def test_a_created_comp_lands_beside_its_neighbours_not_on_top_of_them(td):
+    """The failure this closes: two calls in a row both left a COMP at (0, 0),
+    one visible node with another underneath it. Placement goes through
+    `_place_node`, the same one `m_op_create` uses — a second copy of the rule
+    in this file would drift away from it."""
+    nodes, _undo = td
+    nodes["/project1"] = parent = FakeComp("/project1")
+    sitting = FakeComp("/project1/already")
+    sitting.nodeX, sitting.nodeY = 0.0, 0.0
+    parent.children_by_name["already"] = sitting
+
+    build(nodes, parent="/project1", name="box", class_name="DemoExt",
+          code=GOOD_CODE)
+
+    created = parent.children_by_name["box"]
+    assert (created.nodeX, created.nodeY) != (0.0, 0.0)
+    assert not handler._boxes_clash(
+        handler._node_box(created), handler._node_box(sitting)
+    )
+
+
+def test_two_created_comps_in_a_row_do_not_share_a_spot(td):
+    nodes, _undo = td
+    nodes["/project1"] = parent = FakeComp("/project1")
+
+    build(nodes, parent="/project1", name="one", class_name="DemoExt",
+          code=GOOD_CODE)
+    build(nodes, parent="/project1", name="two", class_name="DemoExt",
+          code=GOOD_CODE)
+
+    one = parent.children_by_name["one"]
+    two = parent.children_by_name["two"]
+    assert not handler._boxes_clash(
+        handler._node_box(one), handler._node_box(two)
+    )
+
+
+def test_a_position_the_caller_asked_for_is_never_second_guessed(td):
+    nodes, _undo = td
+    nodes["/project1"] = parent = FakeComp("/project1")
+    parent.children_by_name["already"] = FakeComp("/project1/already")
+
+    build(nodes, parent="/project1", name="box", class_name="DemoExt",
+          code=GOOD_CODE, position=[300, -120])
+
+    created = parent.children_by_name["box"]
+    assert (created.nodeX, created.nodeY) == (300.0, -120.0)
+
+
+def test_an_existing_comp_is_not_moved(td):
+    """`position` describes where to put a COMP being created. Aimed at one
+    that is already in the network, the call adds an extension and leaves the
+    layout alone."""
+    nodes, _undo = td
+    nodes["/project1/box"] = comp = FakeComp("/project1/box")
+    comp.nodeX, comp.nodeY = 55.0, 66.0
+
+    build(nodes, path="/project1/box", class_name="DemoExt", code=GOOD_CODE,
+          position=[300, -120])
+
+    assert (comp.nodeX, comp.nodeY) == (55.0, 66.0)
+
+
 # -- the silent failure ----------------------------------------------------
 
 def test_a_class_that_raises_in_init_comes_back_as_a_reported_failure(td):
@@ -642,6 +720,7 @@ def test_the_tool_sends_the_code_the_class_and_the_owner(monkeypatch):
                 "extension_name": "",
                 "promote": True,
                 "index": 0,
+                "position": None,
                 "owner": "agent-a",
             },
         )
@@ -659,6 +738,25 @@ def test_an_existing_comp_is_sent_as_a_path_with_no_parent(monkeypatch):
     _method, params = fake.calls[0]
     assert params["path"] == "/project1/box"
     assert params["parent"] is None and params["name"] is None
+
+
+def test_a_position_reaches_the_bridge(monkeypatch):
+    """The handler reads `position`; without this parameter on the surface
+    there is no road to it — the shape of defect this project has shipped
+    three times already."""
+    fake = FakeBridge()
+
+    tool(
+        monkeypatch,
+        fake,
+        class_name="DemoExt",
+        code=GOOD_CODE,
+        parent="/project1",
+        name="box",
+        position=[300, -120],
+    )
+
+    assert fake.calls[0][1]["position"] == [300, -120]
 
 
 def test_the_reply_says_how_to_call_the_extension(monkeypatch):
