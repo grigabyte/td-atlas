@@ -321,6 +321,24 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_extension_add", "td_op_info"),
     ),
+    "flag_unknown": Recovery(
+        cause="no node flag goes by that name",
+        action=(
+            "the flags a node has are display, render, bypass, lock, expose, "
+            "viewer, activeViewer, cloneImmune, allowCooking, selected and "
+            "pickable; Clone Master is a parameter, not a flag, so it is set "
+            "with td_set_params"
+        ),
+        resume=("td_flags", "td_set_params"),
+    ),
+    "no_annotations": Recovery(
+        cause="no Annotate COMP exists in that subtree",
+        action=(
+            "nothing was written there to read — widen the path, or leave the "
+            "first note yourself so the next agent has one"
+        ),
+        resume=("td_network", "td_annotate"),
+    ),
     # Reading .toe/.tox from disk.
     "project_unreadable": Recovery(
         cause="the file could not be unpacked as a TouchDesigner project",

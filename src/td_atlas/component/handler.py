@@ -948,7 +948,14 @@ def m_network(params):
 
 
 def m_op_create(params):
-    """Create an operator, optionally setting parameters and wiring an input."""
+    """Create an operator, optionally setting parameters and wiring an input.
+
+    A `position` is honoured exactly as given. Without one, the node is given a
+    free spot instead of TouchDesigner's (0, 0), and one wired to a source
+    lands to the right of it — see `_place_node`, which also names the case
+    this does not cover: nodes wired by separate `op_connect` steps rather than
+    by `connect` here are spread out, but not ordered by the chain.
+    """
     _guard_scopes(params, params.get("parent") or "/")
     parent_comp = _resolve(params.get("parent") or "/")
     op_type = params.get("type")
@@ -963,10 +970,16 @@ def m_op_create(params):
     if params.get("pars"):
         _apply_pars(created, params["pars"])
 
+    sources = []
     for wiring in params.get("connect") or []:
         source = _resolve(wiring["from"])
         index = int(wiring.get("index", 0))
         source.outputConnectors[0].connect(created.inputConnectors[index])
+        sources.append(source)
+
+    # After the wiring, because the wiring says which node this one follows.
+    if not position:
+        _place_node(parent_comp, created, sources)
 
     return _op_summary(created, include_pars=False)
 
@@ -1200,6 +1213,10 @@ def m_batch(params):
     name = params.get("undo_name") or "td-atlas batch"
     results = []
     ui.undo.startBlock(name)
+    # Counted so a step that closes the block from under this one can give the
+    # level back rather than leave the endBlock below to fail; see _UNDO_HELD.
+    _UNDO_HELD[0] += 1
+    del _BATCH_NOTES[:]
     try:
         for index, step in enumerate(steps):
             method = METHODS.get(step.get("method"))
@@ -1215,12 +1232,25 @@ def m_batch(params):
                 step_params["owner"] = params["owner"]
             results.append(method(step_params))
     except Exception:
+        _UNDO_HELD[0] -= 1
         ui.undo.endBlock()
         try:
             ui.undo.undo()
         except Exception:
             pass
+        # After the undo, never before it: destroying the note first pushes a
+        # delete onto the stack, and the undo below then pops *that*, putting
+        # the note straight back. Measured — the note survived a failed batch
+        # twice, once for each ordering, before this order held.
+        for note in _BATCH_NOTES:
+            try:
+                note.destroy()
+            except Exception:
+                pass
+        del _BATCH_NOTES[:]
         raise
+    _UNDO_HELD[0] -= 1
+    del _BATCH_NOTES[:]
     ui.undo.endBlock()
     return {"applied": len(results), "results": results}
 
@@ -1702,6 +1732,628 @@ def m_extension_add(params):
         )
     return result
 
+# -- where a node lands ------------------------------------------------------
+#
+# A node's own size is never assumed: `nodeWidth`/`nodeHeight` are read off the
+# live operator, because tiles differ by type and by how the artist has resized
+# them. Measured on build 2025.32460: noiseTOP 130x90, outTOP 130x72,
+# geometryCOMP 160x130, annotateCOMP 382x288. A single hard-coded tile size
+# would therefore overlap outTOP's neighbours and leave a hole beside geo1.
+#
+# Only the whitespace between tiles is a choice, and it is one, not a
+# measurement: 40 units across is about a third of a default tile, enough for
+# the wire between two nodes to be visible, and 20 down keeps a column compact.
+_LAYOUT_GAP_X = 40.0
+_LAYOUT_GAP_Y = 20.0
+
+# Cap on the scan below, so a crowded network cannot turn one create into a
+# long main-thread stall. Reaching it is not a failure: the fallback position
+# past the right edge of everything is free by construction.
+_LAYOUT_MAX_PROBES = 400
+
+
+def _node_box(target):
+    """(left, bottom, width, height) of one node tile, in network units.
+
+    `nodeX`/`nodeY` are the left and *bottom* edges of the tile, not its centre
+    — the centre has its own pair, `nodeCenterX`/`nodeCenterY` (OP class page,
+    confirmed live: a fresh noiseTOP at nodeX/nodeY 0,0 reports nodeCenterX 65,
+    nodeCenterY 45 with a 130x90 tile). Treating nodeY as a centre puts every
+    computed row half a tile out.
+    """
+    return (
+        float(target.nodeX),
+        float(target.nodeY),
+        float(target.nodeWidth),
+        float(target.nodeHeight),
+    )
+
+
+def _boxes_clash(one, other, gap_x=_LAYOUT_GAP_X, gap_y=_LAYOUT_GAP_Y):
+    """True when two tiles overlap, or sit closer than the gap.
+
+    The gap is part of the test rather than a nicety applied afterwards:
+    touching tiles are as unreadable as overlapping ones in the network editor.
+    """
+    ax, ay, aw, ah = one
+    bx, by, bw, bh = other
+    return (
+        ax - gap_x < bx + bw
+        and bx < ax + aw + gap_x
+        and ay - gap_y < by + bh
+        and by < ay + ah + gap_y
+    )
+
+
+def _occupied_boxes(parent_comp, exclude=None):
+    """The tiles already in a network, skipping one node.
+
+    `exclude` is the node being placed: it exists by the time its position is
+    computed (its size cannot be read before it does), and a node always
+    clashes with itself.
+
+    A child whose tile cannot be read is skipped rather than fatal — the
+    placement of one new node is not worth failing over a sibling the read did
+    not understand, and the worst case is a tile it does not avoid.
+    """
+    boxes = []
+    exclude_path = getattr(exclude, "path", None)
+    for child in parent_comp.children:
+        if exclude_path is not None and child.path == exclude_path:
+            continue
+        try:
+            boxes.append(_node_box(child))
+        except Exception:
+            continue
+    return boxes
+
+
+def _free_position(boxes, width, height, seed):
+    """The first position at or below-right of `seed` that clashes with nothing.
+
+    Scans columns rightward and, within a column, downward — the direction a
+    TouchDesigner network reads, since nodeY grows upward. When the scan runs
+    out of probes it returns a spot past the right edge of every tile, which is
+    free by construction: no box can reach past its own right edge plus the gap.
+    """
+    seed_x, seed_y = float(seed[0]), float(seed[1])
+    if not boxes:
+        return (seed_x, seed_y)
+
+    step_x = width + _LAYOUT_GAP_X
+    step_y = height + _LAYOUT_GAP_Y
+    probes = 0
+    columns = 8
+    rows = max(1, _LAYOUT_MAX_PROBES // columns)
+    for col in range(columns):
+        for row in range(rows):
+            if probes >= _LAYOUT_MAX_PROBES:
+                break
+            probes += 1
+            candidate = (seed_x + col * step_x, seed_y - row * step_y, width, height)
+            if not any(_boxes_clash(candidate, box) for box in boxes):
+                return (candidate[0], candidate[1])
+
+    right = max(box[0] + box[2] for box in boxes)
+    return (right + _LAYOUT_GAP_X, seed_y)
+
+
+def _placement_seed(boxes, height, sources):
+    """Where to start looking, given what the new node is wired to.
+
+    With an input source, the seed is immediately to its right, centred on it:
+    that is what makes a chain built in one batch read left to right, which is
+    how TouchDesigner networks are laid out. Centring rather than aligning
+    bottoms matters because tile heights differ (130x90 against 130x72), and a
+    bottom-aligned chain of mixed types looks stepped.
+
+    With no source, the seed is past the right edge of everything already
+    there, top-aligned with the topmost tile — so a second node created without
+    a position lands beside the first instead of on top of it.
+    """
+    if sources:
+        try:
+            sx, sy, sw, sh = _node_box(sources[0])
+            return (sx + sw + _LAYOUT_GAP_X, sy + (sh - height) / 2.0)
+        except Exception:
+            pass
+    if not boxes:
+        return (0.0, 0.0)
+    right = max(box[0] + box[2] for box in boxes)
+    top = max(box[1] + box[3] for box in boxes)
+    return (right + _LAYOUT_GAP_X, top - height)
+
+
+def _place_node(parent_comp, created, sources=()):
+    """Give a node with no requested position a spot of its own.
+
+    Exists because the alternative is what the bridge did before: a create
+    without a position left the node wherever TouchDesigner put it, which is
+    (0, 0) for every one of them, so an agent building ten nodes built one
+    visible node with nine underneath it.
+
+    A position the caller asked for is never touched — see `m_op_create`. This
+    runs after any wiring, because the wiring is what says which node the new
+    one belongs to the right of.
+    """
+    try:
+        width, height = float(created.nodeWidth), float(created.nodeHeight)
+    except Exception:
+        # A node whose tile size cannot be read cannot be placed honestly;
+        # leaving it where TouchDesigner put it is the smaller wrong.
+        return None
+    boxes = _occupied_boxes(parent_comp, exclude=created)
+    seed = _placement_seed(boxes, height, sources)
+    x, y = _free_position(boxes, width, height, seed)
+    created.nodeX, created.nodeY = x, y
+    return (x, y)
+
+
+# -- notes in the network ----------------------------------------------------
+
+# The parameters that hold an Annotate's text and colour are *custom*
+# parameters, added by the component's own default setup, not built-ins: a
+# freshly created annotateCOMP reports pages ['Text', 'Settings', 'OP Viewer',
+# 'About'] on top of the built-in Annotate page (measured live, 2025.32460).
+# That is why every read below is defensive — an annotateCOMP saved by an older
+# TouchDesigner, or stripped of its extension, has the built-in page and no
+# 'Bodytext', and the honest answer there is a null field rather than a
+# traceback.
+# TouchDesigner's undo blocks nest and count, and creating an annotateCOMP
+# closes one of those levels from under the caller: its own OnCreate does undo
+# bookkeeping, so a `startBlock` / `create(annotateCOMP)` / `endBlock` sequence
+# fails on the endBlock with 'Cannot end non existent undo operation' (measured
+# on 2025.32460; with two levels open, exactly one survived). m_batch records
+# here that it is holding a level, so a note created inside a batch can give
+# that level back instead of leaving the batch's own endBlock to raise — which
+# would report a batch that applied cleanly as a failure.
+#
+# Per-request state, and safe as such: a request runs to completion on the main
+# thread before the next one starts, and TouchDesigner re-executes this module
+# between requests, so it cannot leak across them either.
+_UNDO_HELD = [0]
+
+# Notes a batch created, so a failed batch can take them back out. m_batch
+# promises that a failed batch leaves no partial network behind, and one
+# `ui.undo.undo()` is how it keeps that promise — but an annotateCOMP has to be
+# created outside the batch's block (above), and measured on 2025.32460 that
+# single undo does not remove it: a batch whose next step failed left the note
+# standing in the network. So the note is destroyed explicitly instead.
+_BATCH_NOTES = []
+
+_ANNOTATE_TYPE = "annotateCOMP"
+
+# request field -> parameter name on the component.
+_ANNOTATE_TEXT_PARS = (
+    ("text", "Bodytext"),
+    ("title", "Titletext"),
+    ("font_size", "Bodyfontsize"),
+    ("mode", "Mode"),
+)
+_ANNOTATE_COLOR_PARS = ("Backcolorr", "Backcolorg", "Backcolorb")
+
+
+def _annotate_par(target, name):
+    return getattr(target.par, name, None)
+
+
+def _annotate_require(target, name, field):
+    par = _annotate_par(target, name)
+    if par is None:
+        raise ValueError(
+            "%s has no '%s' parameter, so '%s' cannot be written. This "
+            "annotateCOMP is missing the default-setup custom parameters that "
+            "carry its text and colour." % (target.path, name, field)
+        )
+    return par
+
+
+def _annotate_apply(target, params):
+    """Write the requested fields onto an Annotate, and report what landed."""
+    written = {}
+    for field, par_name in _ANNOTATE_TEXT_PARS:
+        if params.get(field) is None:
+            continue
+        par = _annotate_require(target, par_name, field)
+        par.val = params[field]
+        written[field] = _jsonable(par.eval())
+
+    color = params.get("color")
+    if color:
+        if len(color) < 3:
+            raise ValueError("annotate colour needs three components, r g b")
+        for par_name, value in zip(_ANNOTATE_COLOR_PARS, color):
+            _annotate_require(target, par_name, "color").val = float(value)
+        written["color"] = [float(c) for c in color[:3]]
+    if params.get("alpha") is not None:
+        _annotate_require(target, "Backcoloralpha", "alpha").val = float(
+            params["alpha"]
+        )
+        written["alpha"] = float(params["alpha"])
+
+    size = params.get("size")
+    if size:
+        if len(size) < 2:
+            raise ValueError("annotate size needs two numbers, width and height")
+        target.nodeWidth, target.nodeHeight = float(size[0]), float(size[1])
+        written["size"] = [float(size[0]), float(size[1])]
+
+    position = params.get("position")
+    if position:
+        target.nodeX, target.nodeY = float(position[0]), float(position[1])
+        written["position"] = [float(position[0]), float(position[1])]
+    return written
+
+
+def m_annotate(params):
+    """Leave a note in the network, or rewrite one that is already there.
+
+    The half of the pair an agent writes. A network an agent built says nothing
+    about *why*; an Annotate is where that goes, in the one place the person who
+    opens the project will actually look — the network editor itself.
+
+    Measured live on build 2025.32460, because none of this is documented:
+
+    - `create(annotateCOMP, 'my_note')` ignores the name and produces
+      'annotate1'. The component's own OnCreate renames it, so the name is not
+      the caller's to choose at create time; assigning `.name` afterwards does
+      stick, and that is what `name` below does. The reply always carries the
+      path the note actually has.
+    - A fresh Annotate also places itself, at (-300, 100) relative to its
+      parent, every time — two notes created in a row sit exactly on top of
+      each other. So a note with no requested position goes through the same
+      placement as any other node.
+    - `nodeX`/`nodeY`/`nodeWidth`/`nodeHeight` assigned after creation hold
+      across frames; the box really is sized by the node tile, not by a
+      parameter.
+    - A newline written straight into `Bodytext` round-trips as a newline. The
+      wiki says to use an expression for newlines; for a plain assignment
+      through Python it is unnecessary.
+
+    Pass `path` to rewrite an existing note instead of adding another — an
+    agent that reruns should not leave a stack of duplicates.
+    """
+    path = params.get("path")
+    if path:
+        _guard_scopes(params, path)
+        target = _resolve(path)
+        if target.OPType != _ANNOTATE_TYPE:
+            raise TypeError(
+                "%s is a %s, not an %s — 'path' here names a note to rewrite, "
+                "not the network to put one in (that is 'parent')"
+                % (target.path, target.OPType, _ANNOTATE_TYPE)
+            )
+        ui.undo.startBlock("td-atlas annotate %s" % target.name)
+        try:
+            written = _annotate_apply(target, params)
+        finally:
+            # No `undo()` on failure here, unlike the create branch below: this
+            # branch only writes parameters, and if a build ever stops
+            # recording those, an undo would roll back somebody else's edit
+            # instead of this one. A half-written note is visible; a silently
+            # reverted neighbour is not.
+            ui.undo.endBlock()
+        summary = _op_summary(target)
+        summary["written"] = written
+        summary["created"] = False
+        return summary
+
+    parent = params.get("parent") or "/"
+    _guard_scopes(params, parent)
+    parent_comp = _resolve(parent)
+    if not hasattr(parent_comp, "create"):
+        raise TypeError(
+            "%s (%s) is not a COMP and cannot hold a note"
+            % (parent_comp.path, parent_comp.OPType)
+        )
+
+    # Deliberately outside any block of ours: the create closes one undo level
+    # from under the caller (see _UNDO_HELD), so a block opened before it could
+    # not be closed afterwards.
+    created = parent_comp.create(_ANNOTATE_TYPE)
+    # One startBlock either way — it gives back the level the create ate when a
+    # batch is holding one, and otherwise makes the writes below a single entry.
+    own_block = not _UNDO_HELD[0]
+    if not own_block:
+        _BATCH_NOTES.append(created)
+    ui.undo.startBlock("td-atlas annotate")
+    try:
+        name = params.get("name")
+        if name:
+            made_as = created.name
+            try:
+                created.name = name
+            except Exception as exc:
+                raise ValueError(
+                    "the note was created as %s but could not be renamed to "
+                    "'%s': %s. A sibling in %s may already hold that name — "
+                    "retry with another name, or omit it."
+                    % (made_as, name, exc, parent_comp.path)
+                )
+        written = _annotate_apply(target=created, params=params)
+        if not params.get("position"):
+            _place_node(parent_comp, created)
+    except Exception:
+        # Destroyed rather than undone: `ui.undo.undo()` terminates every open
+        # block and would roll back whatever the enclosing batch had already
+        # applied, which is somebody else's work when the caller is m_batch.
+        try:
+            created.destroy()
+        except Exception:
+            pass
+        if own_block:
+            ui.undo.endBlock()
+        raise
+    if own_block:
+        ui.undo.endBlock()
+
+    summary = _op_summary(created)
+    summary["written"] = written
+    summary["created"] = True
+    return summary
+
+
+def _annotate_view(target, siblings):
+    """One note as data, plus which nodes its box sits over."""
+    def value(par_name):
+        par = _annotate_par(target, par_name)
+        if par is None:
+            return None
+        try:
+            return _jsonable(par.eval())
+        except Exception:
+            return None
+
+    box = _node_box(target)
+    left, bottom, width, height = box
+    covers = []
+    for other in siblings:
+        if other.path == target.path or other.OPType == _ANNOTATE_TYPE:
+            continue
+        try:
+            ox, oy, ow, oh = _node_box(other)
+        except Exception:
+            continue
+        cx, cy = ox + ow / 2.0, oy + oh / 2.0
+        if left <= cx <= left + width and bottom <= cy <= bottom + height:
+            covers.append(other.path)
+
+    color = [value(name) for name in _ANNOTATE_COLOR_PARS]
+    return {
+        "path": target.path,
+        "name": target.name,
+        "title": value("Titletext"),
+        "text": value("Bodytext"),
+        "mode": value("Mode"),
+        "fontSize": value("Bodyfontsize"),
+        "color": None if color[0] is None else color,
+        "alpha": value("Backcoloralpha"),
+        "position": [left, bottom],
+        "size": [width, height],
+        # Geometric, not TouchDesigner's own answer: the tiles whose centre
+        # falls inside this box. The component's Enclose Operators feature
+        # keeps no list this can be read from, so a node the artist dragged
+        # half out of the box counts as outside.
+        "covers": covers,
+    }
+
+
+def m_annotations(params):
+    """Read every note in a subtree — including the ones a person wrote.
+
+    The other half of the pair, and the reason it exists: an artist can leave
+    an agent a brief in the project itself, as an Annotate beside the nodes it
+    is about, and without this the agent never sees it. So this reads notes
+    regardless of who wrote them, and reports the nodes each note's box sits
+    over, which is what says *what* the note is about.
+
+    Annotates are Utility nodes but do appear in `children` (measured), so the
+    walk below finds them without asking for utilities specially.
+    """
+    root = _resolve(params.get("path") or "/")
+    depth = params.get("depth")
+    depth = 8 if depth is None else int(depth)
+
+    found = []
+
+    def walk(comp, level):
+        if not hasattr(comp, "children"):
+            return
+        children = list(comp.children)
+        for child in children:
+            if child.OPType == _ANNOTATE_TYPE:
+                try:
+                    found.append(_annotate_view(child, children))
+                except Exception as exc:
+                    found.append({"path": child.path, "error": str(exc)})
+            if level < depth:
+                walk(child, level + 1)
+
+    if root.OPType == _ANNOTATE_TYPE:
+        parent_comp = root.parent()
+        siblings = list(parent_comp.children) if parent_comp is not None else [root]
+        found.append(_annotate_view(root, siblings))
+    else:
+        walk(root, 1)
+    return {"root": root.path, "count": len(found), "annotations": found}
+
+
+# -- node flags --------------------------------------------------------------
+#
+# The set and the spelling come from the OP and COMP class pages in the index.
+# Which of them a family actually accepts was measured live on 2025.32460 by
+# flipping each on a noiseTOP, geometryCOMP, noiseSOP, noiseCHOP and textDAT,
+# reading it back and restoring it, because the documentation does not say:
+#
+# - every flag below except the two noted is readable *and* settable on all
+#   five families, including `display` and `render` on a TOP or a DAT, where
+#   they have no visible effect;
+# - `allowCooking` raises on anything but a COMP ("This flag can only be
+#   disabled for COMPs"), which the class page does state;
+# - `pickable` exists on COMP only — reading it on a TOP raises
+#   tdAttributeError.
+#
+# There is no OP attribute named `clone`. The network editor's clone
+# relationship lives in the Clone Master *parameter* (`clone`), which is
+# td_set_params' job; the flag half of it is `cloneImmune`, which is here.
+NODE_FLAGS = (
+    "display",
+    "render",
+    "bypass",
+    "lock",
+    "expose",
+    "viewer",
+    "activeViewer",
+    "cloneImmune",
+    "allowCooking",
+    "selected",
+    "pickable",
+)
+
+# Flags whose absence is a fact about the family rather than a fault, so the
+# refusal can say which family does have them.
+_FLAG_FAMILIES = {
+    "pickable": "COMP",
+    "allowCooking": "COMP (other families can read it but not disable it)",
+}
+
+
+def _flag_snapshot(target):
+    """Every flag this operator actually has, and the ones it does not."""
+    flags = {}
+    unavailable = []
+    for name in NODE_FLAGS:
+        try:
+            flags[name] = bool(getattr(target, name))
+        except Exception:
+            unavailable.append(name)
+    out = {
+        "path": target.path,
+        "type": target.OPType,
+        "family": target.family,
+        "flags": flags,
+        "unavailable": unavailable,
+    }
+    clones = getattr(target, "clones", None)
+    if clones is not None:
+        # Read-only, and the reason `clone` is not in NODE_FLAGS: this is the
+        # only clone information an OP exposes as an attribute.
+        out["clones"] = [c.path for c in clones]
+    return out
+
+
+def m_flags(params):
+    """Read the flags that decide whether a node runs and what is visible.
+
+    Before this, the bridge read one flag, `bypass`, and only as a field of a
+    health sample. A bypassed node, a COMP with its display flag off and a
+    node with cooking disabled all look identical in a parameter dump and in a
+    network listing, and all three make a correct-looking network produce
+    nothing — which is exactly the silent failure this connector exists to
+    surface.
+
+    `unavailable` is not padding: it says which flags this operator genuinely
+    does not have, so a caller can tell "off" from "not a thing here".
+    """
+    paths = params.get("paths") or [params.get("path")]
+    return {"ops": [_flag_snapshot(_resolve(path)) for path in paths]}
+
+
+def m_flags_set(params):
+    """Set node flags, and refuse audibly when one will not take.
+
+    Written this way because the failure it replaces is silent. TouchDesigner
+    accepts `pickable` nowhere but a COMP and refuses `allowCooking = False`
+    outside one; a bare `setattr` on the wrong family either raises a bare
+    tdError, which reaches an agent with no mapped recovery, or — for a flag
+    that exists but does nothing here — appears to succeed. So every write is
+    read back and compared, and a value that did not land is reported as a
+    refusal naming the flag, the family and the original message.
+
+    Rollback is done here by hand rather than through `ui.undo.undo()`: a flag
+    change *is* recorded — measured on 2025.32460, flipping `bypass` puts
+    TouchDesigner's own 'Change Bypass Flag' on the stack, under that name
+    rather than the block's — but `undo()` terminates every open block and pops
+    whatever is on top, which inside a batch is the batch's own work. Restoring
+    the values this call read is the only rollback that is certain to undo just
+    this call.
+    """
+    _guard_scopes(params, params.get("path"))
+    flags = params.get("flags") or {}
+    if not flags:
+        raise ValueError(
+            "flags_set needs 'flags', a mapping of flag name to true/false"
+        )
+    unknown = [name for name in flags if name not in NODE_FLAGS]
+    if unknown:
+        raise ValueError(
+            "unknown flag(s) %s. The flags an operator has are: %s"
+            % (", ".join(sorted(unknown)), ", ".join(NODE_FLAGS))
+        )
+
+    target = _resolve(params.get("path"))
+    before = {}
+    applied = {}
+    ui.undo.startBlock("td-atlas flags %s" % target.name)
+    try:
+        for name, wanted in flags.items():
+            wanted = bool(wanted)
+            try:
+                was = bool(getattr(target, name))
+            except Exception as exc:
+                only = _FLAG_FAMILIES.get(name)
+                raise ValueError(
+                    "%s (%s) has no '%s' flag%s: %s"
+                    % (
+                        target.path,
+                        target.OPType,
+                        name,
+                        " — it exists on %s only" % only if only else "",
+                        exc,
+                    )
+                )
+            before[name] = was
+            try:
+                setattr(target, name, wanted)
+            except Exception as exc:
+                only = _FLAG_FAMILIES.get(name)
+                raise ValueError(
+                    "%s (%s) refused '%s' = %s%s: %s"
+                    % (
+                        target.path,
+                        target.OPType,
+                        name,
+                        wanted,
+                        " — settable on %s only" % only if only else "",
+                        exc,
+                    )
+                )
+            landed = bool(getattr(target, name))
+            if landed != wanted:
+                raise ValueError(
+                    "%s (%s) took '%s' = %s without complaint but reads back "
+                    "%s. Nothing was changed."
+                    % (target.path, target.OPType, name, wanted, landed)
+                )
+            applied[name] = wanted
+    except Exception:
+        for name, was in before.items():
+            try:
+                setattr(target, name, was)
+            except Exception:
+                pass
+        ui.undo.endBlock()
+        raise
+    ui.undo.endBlock()
+    return {
+        "path": target.path,
+        "type": target.OPType,
+        "family": target.family,
+        "before": before,
+        "applied": applied,
+    }
+
+
 METHODS = {
     "ping": m_ping,
     "exec": m_exec,
@@ -1727,6 +2379,10 @@ METHODS = {
     "perf": m_perf,
     "health_sample": m_health_sample,
     "extension_add": m_extension_add,
+    "annotate": m_annotate,
+    "annotations": m_annotations,
+    "flags": m_flags,
+    "flags_set": m_flags_set,
     "claim_scope": m_claim_scope,
     "release_scope": m_release_scope,
     "scopes": m_scopes,

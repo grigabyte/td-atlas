@@ -21,6 +21,7 @@ from .. import config as cfg
 from ..atoms.store import AtomStore
 from ..atoms.validate import validate_params
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
+from ..component.handler import NODE_FLAGS
 from .hints import IndexMissing, failure, guarded, hint
 
 mcp = FastMCP(
@@ -1247,6 +1248,209 @@ def td_extension_add(
     )
     lines.append(hint("extension_init_failed"))
     return _warn(client) + "\n".join(lines)
+
+
+# -- notes in the network ----------------------------------------------------
+
+@mcp.tool()
+@guarded
+def td_annotate(
+    text: str,
+    parent: str = "/project1",
+    title: str = "",
+    name: str = "",
+    path: str = "",
+    size: list | None = None,
+    color: list | None = None,
+    position: list | None = None,
+    font_size: float = 0,
+    mode: str = "",
+    owner: str = "",
+) -> str:
+    """Leave a note in the network saying what you built and why.
+
+    Reach for this at the end of a build, not as decoration: the network you
+    made records *what* it does and nothing about *why*, and the person who
+    opens the project next reads the network editor, not this conversation. An
+    Annotate is a coloured box with your text in it, sitting beside the nodes it
+    describes.
+
+    `text` is the body (newlines work), `title` the bar along the top. Without
+    `position` the note is placed where it does not cover anything, and without
+    `size` it takes the default 382x288 network units — make it big enough to
+    enclose the nodes it is about and `td_annotations` will report them as the
+    ones it covers.
+
+    Pass `path` (an existing note) instead of `parent` to rewrite that note
+    rather than add another — the right call when you rerun a build. The reply
+    always names the path the note actually has: TouchDesigner ignores the name
+    given at creation, so `name` is applied afterwards and can be refused if a
+    sibling holds it.
+
+    `mode` is comment, networkbox or annotate: a comment is text only, a
+    network box groups nodes without a title bar.
+    """
+    client = bridge()
+    request: dict[str, Any] = {"owner": owner}
+    if path:
+        request["path"] = path
+    else:
+        request["parent"] = parent
+    if text:
+        request["text"] = text
+    if title:
+        request["title"] = title
+    if name:
+        request["name"] = name
+    if size:
+        request["size"] = size
+    if color:
+        request["color"] = color
+    if position:
+        request["position"] = position
+    if font_size:
+        request["font_size"] = font_size
+    if mode:
+        request["mode"] = mode
+    try:
+        result = client.call("annotate", **request)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+
+    verb = "wrote" if result.get("created") else "rewrote"
+    lines = [f"{verb} the note at {result['path']}"]
+    written = result.get("written") or {}
+    if written:
+        lines.append("  set: " + ", ".join(sorted(written)))
+    if name and result.get("name") != name:
+        lines.append(
+            f"  note: it is named {result.get('name')!r}, not {name!r} — "
+            f"address it by the path above."
+        )
+    return _warn(client) + "\n".join(lines)
+
+
+@mcp.tool()
+@guarded
+def td_annotations(path: str = "/project1", depth: int = 8) -> str:
+    """Read the notes in a network — including the ones a person left for you.
+
+    Check this before building in a project you did not build. An artist can
+    leave a brief as an Annotate beside the nodes it concerns, which is the
+    natural place to put it and completely invisible to every other tool here:
+    it is not an error, not a parameter and not a name.
+
+    Each note comes back with the nodes its box sits over, so a note saying
+    "this chain is the one to keep" can be matched to the chain. That list is
+    geometric — the tiles whose centre falls inside the box — so a node the
+    artist dragged half out of the box counts as outside.
+    """
+    client = bridge()
+    try:
+        result = client.call("annotations", path=path, depth=depth)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    if not result["count"]:
+        return (
+            f"{_warn(client)}No note in {result['root']}.\n"
+            f"{hint('no_annotations')}"
+        )
+    lines = [f"{result['count']} note(s) in {result['root']}:"]
+    for note in result["annotations"]:
+        if note.get("error"):
+            lines.append(f"  {note['path']}: unreadable — {note['error']}")
+            continue
+        head = f"  {note['path']}"
+        if note.get("title"):
+            head += f" — {note['title']!r}"
+        lines.append(head)
+        body = note.get("text")
+        if body:
+            for line in str(body).splitlines():
+                lines.append(f"      {line}")
+        elif body is None:
+            lines.append(
+                "      (no text parameter — this Annotate has none of the "
+                "default-setup parameters that carry text)"
+            )
+        if note.get("covers"):
+            lines.append("      over: " + ", ".join(note["covers"]))
+    return _warn(client) + "\n".join(lines)
+
+
+# -- node flags --------------------------------------------------------------
+
+@mcp.tool()
+@guarded
+def td_flags(path: str) -> str:
+    """Read the flags that decide whether a node runs and what is visible.
+
+    Run this when a network looks right and produces nothing. A bypassed
+    operator, a COMP with its display or render flag off, and a COMP with
+    cooking disabled are all invisible in a parameter dump and in td_network,
+    and each of them makes a correct network output nothing — the kind of
+    silent failure that costs an hour of re-reading parameters.
+
+    `unavailable` names the flags this operator genuinely does not have, so you
+    can tell "off" from "not a thing here". The clone *master* is a parameter
+    rather than a flag, so it is not listed; `cloneImmune` is the flag half.
+    """
+    client = bridge()
+    try:
+        result = client.call("flags", path=path)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    lines = []
+    for target in result["ops"]:
+        lines.append(f"{target['path']} ({target['type']}, {target['family']})")
+        on = [name for name, value in target["flags"].items() if value]
+        off = [name for name, value in target["flags"].items() if not value]
+        lines.append("  on:  " + (", ".join(on) or "—"))
+        lines.append("  off: " + (", ".join(off) or "—"))
+        if target.get("unavailable"):
+            lines.append(
+                "  not on this operator: " + ", ".join(target["unavailable"])
+            )
+        if target.get("clones"):
+            lines.append("  cloned from here: " + ", ".join(target["clones"]))
+    return _warn(client) + "\n".join(lines)
+
+
+@mcp.tool()
+@guarded
+def td_set_flags(path: str, flags: dict, owner: str = "") -> str:
+    """Turn node flags on or off — bypass a node, hide it, stop it cooking.
+
+    The write half of td_flags, and the way to bypass an operator without
+    deleting it. `flags` is {"bypass": true} and the like.
+
+    Every write is read back before this reports success, because the failure
+    it exists to prevent is silence: TouchDesigner accepts `pickable` on COMPs
+    only and refuses `allowCooking = false` outside a COMP, and a flag that
+    exists but does nothing on this family would otherwise look like it landed.
+    A refusal names the flag and the family, and nothing is left half-set.
+
+    Pass the same `owner` you claimed the area with, or your own claim refuses
+    this write.
+    """
+    unknown = sorted(name for name in flags if name not in NODE_FLAGS)
+    if unknown:
+        # Checked here as well as in the bridge so a typo costs no round trip,
+        # and so the answer is the same whether or not TouchDesigner is up.
+        return (
+            f"error: no node flag is named {', '.join(repr(n) for n in unknown)}.\n"
+            f"{hint('flag_unknown')}"
+        )
+    client = bridge()
+    try:
+        result = client.call("flags_set", path=path, flags=flags, owner=owner)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    changes = ", ".join(
+        f"{name}: {result['before'][name]} -> {value}"
+        for name, value in result["applied"].items()
+    )
+    return f"{_warn(client)}{result['path']} ({result['type']}) {changes}"
 
 
 def main() -> None:
