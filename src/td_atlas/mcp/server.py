@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP, Image
@@ -629,7 +630,7 @@ def td_palette(query: str = "", category: str = "", limit: int = 20) -> str:
 
     277 finished tools — projection mappers, corner-pinners, colour pickers,
     audio analysers, UI widgets. Check here before building something from
-    scratch. Load one with `op(parent).loadTox(path)` or the Palette browser.
+    scratch, then install the one you want with td_palette_load.
     """
     db = store()
     sql = "SELECT name, category, path, summary FROM palette"
@@ -666,6 +667,111 @@ def td_palette(query: str = "", category: str = "", limit: int = 20) -> str:
         if row["summary"]:
             lines.append(f"    {row['summary'][:220]}")
     return "\n".join(lines)
+
+
+@mcp.tool()
+def td_palette_load(
+    name: str,
+    parent: str = "/project1",
+    rename: str = "",
+    position: list | None = None,
+    category: str = "",
+) -> str:
+    """Install one of TouchDesigner's palette components into the project.
+
+    Reach for this the moment td_palette shows a component that does what you
+    were about to build by hand — it is one call, where the alternative is
+    td_exec with a `loadTox` path you have to get exactly right, on a machine
+    whose TouchDesigner may not be installed where you assume.
+
+    `name` is the component name td_palette reports. The .tox path comes from
+    the index and is checked on disk before anything is sent, so a stale index
+    fails here rather than as a TouchDesigner traceback. Fourteen palette names
+    exist in two folders each (the Ableton set, `operatorPath`,
+    `vrRenderToMovie`): those are refused with the candidates listed until you
+    narrow them with `category`.
+
+    The node's final name is reported back rather than assumed: TouchDesigner
+    names a loaded component after its file, and numbers it (`checker1`,
+    `checker2`) when a sibling already holds that name. `rename` is stricter —
+    a name already taken is refused outright and the load is rolled back, so
+    read the path in the reply rather than assuming the name you asked for.
+
+    Loading is not free: measured 0.006 s for a 20-operator component and
+    1.08 s for kantanMapper's 4,079, all of it on TouchDesigner's main thread.
+    """
+    db = store()
+    rows = db.conn.execute(
+        "SELECT name, category, path, summary FROM palette WHERE name = ?",
+        (name,),
+    ).fetchall()
+    if category:
+        needle = category.lower()
+        rows = [r for r in rows if needle in (r["category"] or "").lower()]
+
+    if not rows:
+        detail = f" in a category matching {category!r}" if category else ""
+        return (
+            f"No palette component is named {name!r}{detail}. Names are "
+            f"camelCase and are matched exactly here — find the right one with "
+            f"td_palette, which searches names, folders and descriptions."
+        )
+    if len(rows) > 1:
+        lines = [
+            f"{len(rows)} palette components are named {name!r}. Refusing to "
+            f"guess — repeat the call with category= set to one of these:"
+        ]
+        lines += [f"  category={r['category']!r}  {r['path']}" for r in rows]
+        return "\n".join(lines)
+
+    row = rows[0]
+    tox = Path(row["path"])
+    if not tox.is_file():
+        return (
+            f"error: the index lists {row['name']} at {tox}, but there is no "
+            f"file there. The index is a cache of one TouchDesigner "
+            f"installation — re-run 'td-atlas build' if TouchDesigner was "
+            f"moved, updated or reinstalled."
+        )
+
+    client = bridge()
+    try:
+        result = client.call(
+            "palette_load",
+            parent=parent,
+            file=str(tox),
+            name=rename or None,
+            position=position,
+        )
+    except (BridgeUnavailable, BridgeError) as exc:
+        return f"error: {exc}"
+
+    lines = [
+        f"loaded {row['name']} [{row['category']}] into {parent} as "
+        f"{result['path']} ({result.get('type', '')})"
+    ]
+    if not rename and result.get("name") != row["name"]:
+        # Only reachable without `rename`: a taken rename is refused by
+        # TouchDesigner and comes back as an error above, never as a
+        # different name. Without one, a sibling makes the load renumber
+        # silently, and every later call needs the real path.
+        lines.append(
+            f"  note: {row['name']} already existed here, so this one is "
+            f"{result.get('name')!r}."
+        )
+    if result.get("errors"):
+        lines.append(f"  ERROR: {result['errors']}")
+    if result.get("warnings"):
+        lines.append(f"  warning: {result['warnings']}")
+    if not result.get("errors") and not result.get("warnings"):
+        lines.append(
+            "  nothing reported yet — but this is read before the component "
+            "has cooked, so it is not a clean bill of health. Palette "
+            "components usually need parameters set before they do anything "
+            "(td_op_info lists them), and td_health is what catches a "
+            "component that fails once it runs."
+        )
+    return _warn(client) + "\n".join(lines)
 
 
 @mcp.tool()

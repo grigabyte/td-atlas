@@ -1,6 +1,6 @@
 # Tool reference
 
-Twenty-five MCP tools in three groups.
+Twenty-six MCP tools in three groups.
 
 ## Index — offline, no running TouchDesigner
 
@@ -28,6 +28,7 @@ Twenty-five MCP tools in three groups.
 | `td_op_info(path)` | One operator: type, wiring, live parameter values, errors. |
 | `td_build(operations, undo_name)` | Multi-step edits as one atomic, undoable block. Validated first. |
 | `td_set_params(path, pars, op_type)` | Set parameters on an existing operator. |
+| `td_palette_load(name, parent, rename, position, category)` | Install a palette component by the name `td_palette` reports. Checks the .tox is on disk first, and reports the name TouchDesigner actually gave the node. |
 | `td_render(path, width, height)` | A TOP's image, returned to you. |
 | `td_errors()` | Operators reporting an error or warning. |
 | `td_exec(code)` | Arbitrary Python inside TouchDesigner. Last resort. |

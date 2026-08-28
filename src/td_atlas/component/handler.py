@@ -1075,6 +1075,90 @@ def m_save_tox(params):
     return {"saved": target.save(params.get("file"), createFolders=True)}
 
 
+def m_palette_load(params):
+    """Load a .tox into a parent COMP and report the node that actually arrived.
+
+    Exists so that installing a palette component is not an `exec` of
+    `loadTox`, which hands nothing back: the node's name is not the caller's
+    choice, so every field of the summary is read off the created operator
+    rather than echoed from the request.
+
+    Measured against a live 2025.32460, loading checker.tox repeatedly into
+    one parent (the docs describe none of this):
+
+    - `loadTox` returns the created OP — a `baseCOMP` for palette components.
+    - It never fails on a name collision: a second load beside `checker`
+      arrives as `checker1`, a third as `checker2`.
+    - Assigning `.name` is the opposite. A name a sibling already holds raises
+      `tdError: Invalid or duplicate operator name.` and does not renumber, so
+      an explicit rename can fail after a load that succeeded. That is why the
+      whole block is rolled back below and the collision is named in the
+      error: the alternative is a component sitting in the network under a
+      name the caller did not ask for and was never told about.
+    - The undo block is not a courtesy. `loadTox` outside one pushes *nothing*
+      onto `ui.undo.undoStack`, so the load cannot be undone at all; inside
+      one it becomes a single named entry, and undoing it invalidates the
+      loaded COMP and removes it from the parent.
+    - `errors()` and `warnings()` here are read *before* any forced cook, and
+      came back empty on a freshly loaded component. So an empty pair means
+      "nothing yet", not "this component works": a node that will fail on its
+      first cook still looks clean. Forcing a cook to find out is not worth it
+      at kantanMapper's cost — td_health is the tool for that question.
+
+    Cost, measured on the same instance: 0.006 s for checker (20 operators),
+    0.054 s for cameraViewport (246), 1.08 s for kantanMapper (4,079). The
+    largest palette components therefore stall the main thread for about a
+    second — bounded, but visible as a dropped frame.
+    """
+    file = params.get("file")
+    if not file:
+        raise ValueError("palette_load requires 'file'")
+    parent_comp = _resolve(params.get("parent") or "/")
+    if not hasattr(parent_comp, "loadTox"):
+        raise TypeError(
+            "%s (%s) is not a COMP and cannot hold a component"
+            % (parent_comp.path, parent_comp.OPType)
+        )
+
+    ui.undo.startBlock("td-atlas load %s" % os.path.basename(file))
+    try:
+        created = parent_comp.loadTox(file)
+        if created is None:
+            raise RuntimeError("loadTox('%s') created no operator" % file)
+
+        name = params.get("name")
+        if name:
+            loaded_as = created.name
+            try:
+                created.name = name
+            except Exception as exc:
+                # tdError's message says only "Invalid or duplicate operator
+                # name", which leaves the caller guessing which of the two it
+                # was and which name to pick instead.
+                raise ValueError(
+                    "loaded %s but could not rename it to '%s': %s. A sibling "
+                    "in %s may already hold that name — retry with another "
+                    "name, or omit it and take the '%s' TouchDesigner chose."
+                    % (loaded_as, name, exc, parent_comp.path, loaded_as)
+                )
+
+        position = params.get("position")
+        if position:
+            created.nodeX, created.nodeY = float(position[0]), float(position[1])
+    except Exception:
+        ui.undo.endBlock()
+        try:
+            ui.undo.undo()
+        except Exception:
+            pass
+        raise
+    ui.undo.endBlock()
+
+    summary = _op_summary(created)
+    summary["file"] = file
+    return summary
+
+
 # Operators holding a shader the GPU has to compile. Measured on build
 # 2025.32460 with a deliberately broken pixel shader on a glslTOP:
 # `errors(recurse=False)` was empty, `warnings()` said only "The GLSL Shader
@@ -1237,6 +1321,7 @@ METHODS = {
     "redo": m_redo,
     "save": m_save,
     "save_tox": m_save_tox,
+    "palette_load": m_palette_load,
     "op_types": m_op_types,
     "perf": m_perf,
     "health_sample": m_health_sample,
