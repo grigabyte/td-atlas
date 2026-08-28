@@ -207,6 +207,62 @@ def test_read_parms_keeps_a_byte_order_mark_out_of_the_constant():
     assert parm.expr == "\ufeff[x.name for x in op('a').points]"
 
 
+def test_read_parms_keeps_an_expression_stored_as_the_empty_string():
+    """Present and blank is not the same as absent.
+
+    83 lines in the cache read `<name> <flags> "" ""` — expression mode on,
+    expression empty. Folding that into `None` makes the parameter look like a
+    plain constant to a reassembler.
+    """
+    parm = read_parms('?\nRawdata 201326673 "" ""\n?')["Rawdata"]
+    assert parm.expr == ""
+    assert parm.is_expression
+
+
+# -- every half the reader recovered reaches the text -----------------------
+
+def test_serialising_puts_every_recovered_half_in_the_json():
+    """Point 15 reassembles from the text, so the text has to carry it all."""
+    from td_atlas.project.serialize import node_data
+
+    lines = [
+        "?",
+        "colorr 515 1 parent.Checker.par.Color1r",
+        'fontsize 561 20 "me.width" op(\'bg\').par.fontsize',
+        "period 17 2.5 absTime.seconds",
+        'Rawdata 201326673 "" ""',
+        "Angleofview 69206592 210 op('./f').par.Value0 op('./f').par.Value0",
+        "compinput 0 on",
+        "?",
+    ]
+    node = _node("/x", "TOP:constant\nend\n", "\n".join(lines))
+    node.custom_pages = ["Checker", "About"]
+    parms = node_data(node)["parms"]
+
+    assert parms["colorr"] == {"bind": "parent.Checker.par.Color1r", "value": "1"}
+    assert parms["fontsize"] == {
+        "expr": "me.width",
+        "bind": "op('bg').par.fontsize",
+        "value": "20",
+    }
+    assert parms["period"] == {"expr": "absTime.seconds", "value": "2.5"}
+    assert parms["Rawdata"] == {"expr": "", "value": ""}
+    assert parms["Angleofview"] == {
+        "unrecognised": "op('./f').par.Value0 op('./f').par.Value0",
+        "value": "210",
+    }
+    # A plain constant stays a bare string — that is what keeps a node from
+    # spreading over thirty lines.
+    assert parms["compinput"] == "on"
+    assert node_data(node)["custom_pages"] == ["Checker", "About"]
+
+
+def test_serialising_omits_custom_pages_when_there_are_none():
+    from td_atlas.project.serialize import node_data
+
+    assert "custom_pages" not in node_data(_node("/x", "TOP:constant\nend\n"))
+
+
 # -- .cparm is a different grammar ------------------------------------------
 
 def test_read_custom_parms_reads_the_page_header_as_page_names():
@@ -590,6 +646,9 @@ def test_the_bind_parameters_of_the_shipped_checker_are_not_glued():
     owner = project.find("/checker/checker")
     assert owner.custom_pages == ["Checker", "About"]
     assert "pages" not in owner.custom_parms
+    owned = json.loads(to_text(project, "/checker/checker"))["operators"][0]
+    assert owned["custom_pages"] == ["Checker", "About"]
+    assert "pages" not in owned["custom_parms"]
 
 
 @needs_td
