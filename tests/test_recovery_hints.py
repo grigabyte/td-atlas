@@ -403,13 +403,18 @@ def test_the_doctor_failing_to_run_names_the_cli_that_shows_why(monkeypatch):
     assert "cause: " in text
 
 
+@pytest.mark.parametrize("exc", [RuntimeError("nobody mapped this"), KeyError("boom")])
 def test_a_bug_in_this_package_is_reported_as_one_rather_than_as_a_ToolError(
-    monkeypatch,
+    monkeypatch, exc
 ):
+    """Including exception types nobody anticipated — a KeyError out of a tool
+    is the case where an unhinted ToolError would reach the agent."""
+
     def explode():
-        raise RuntimeError("something nobody mapped")
+        raise exc
 
     monkeypatch.setattr(server, "bridge", explode)
     text = server.td_errors()
+    assert "inside td-atlas itself" in text
     assert "none known" in text
     assert "continue with:" not in text

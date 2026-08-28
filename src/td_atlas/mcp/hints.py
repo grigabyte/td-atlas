@@ -22,7 +22,7 @@ its own error paths.
 from __future__ import annotations
 
 import functools
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from ..bridge.client import BridgeError, BridgeUnavailable
@@ -49,8 +49,6 @@ class Recovery:
     cause: str
     action: str
     resume: tuple[str, ...] = ()
-    # Set on the copies produced by `fill()`; the table itself holds none.
-    fields: dict[str, str] = field(default_factory=dict, repr=False)
 
     def fill(self, **values: str) -> Recovery:
         return Recovery(
@@ -374,7 +372,12 @@ def guarded(func: Callable[..., Any]) -> Callable[..., Any]:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
-        except (BridgeUnavailable, BridgeError, RuntimeError, OSError, ValueError) as exc:
+        except Exception as exc:
+            # Deliberately everything, not a tuple of the expected types: an
+            # unforeseen one is precisely the case where the agent gets a
+            # ToolError with no hint, and `classify` already has an honest
+            # answer for it. BaseException stays uncaught — a KeyboardInterrupt
+            # is not a failure to recover from.
             return failure(exc)
 
     # Read by the test that every registered tool is wrapped, so a tool added
