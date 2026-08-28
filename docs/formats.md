@@ -94,10 +94,12 @@ combination: 326,118 constant, 138,658 expression, 4,110 bind, 547 both.
 
 `0x200` is Bind mode — the fourth parameter mode, after Constant, Expression
 and Export. Every one of the 4,670 lines carrying it has a second value, and
-4,644 of those are a `.par.` reference: the *bind expression*, naming the
-bind master. The remaining 26 are `op('bind1')['chan1']` subscripts and table
-cells, which the wiki's `Binding` article names as exactly the other things
-allowed to be a bind master.
+4,645 of those are a `.par.` reference: the *bind expression*, naming the
+bind master. Of the remaining 25, most are `op('bind1')['chan1']` subscripts
+and table cells, which the wiki's `Binding` article names as exactly the
+other things allowed to be a bind master; a few are neither — `(me,
+'PivotDistance')` and `ext.PopDialogExt._EnteredText` — and what makes them
+valid bind masters was not measured.
 
 **Bit `0x200000`: an extra value whose meaning is unknown.** It appears on 13
 lines in the cache and on nothing else, and those 13 are exactly the lines
