@@ -1484,6 +1484,224 @@ def m_perf(_params):
     }
 
 
+def _extension_targets(params):
+    """The paths an extension build writes to, for the scope guard.
+
+    Both the parent and the child are named in the create case: the parameters
+    and the DAT land inside the new COMP, which is a subtree of its own.
+    """
+    path = params.get("path")
+    if path:
+        return (path,)
+    parent = params.get("parent")
+    name = params.get("name")
+    if parent and name:
+        return (parent, "%s/%s" % (parent.rstrip("/"), name))
+    return (parent,) if parent else ()
+
+
+def _extension_expr(dat_name, class_name):
+    """The Extension Object code that actually resolves the class.
+
+    Measured on a live 2025.32460 against a textDAT named DemoExt holding
+    `class DemoExt`, with every form pulsed through Re-Init Extensions and the
+    result read back off `comp.extensions`:
+
+    - `op('./DemoExt').module.DemoExt(me)` — works. This is also the form
+      TouchDesigner's own components carry: 40 of the extensions under /ui and
+      /sys use it or the equivalent `me.mod.X.X(me)`, the Component Editor
+      itself (`/sys/TDDialogs/CompEditor`) among them.
+    - `DemoExt(me)` — the form the Extensions wiki page shows — leaves
+      `extensions[0]` as None. So does `mod('DemoExt').DemoExt(me)`,
+      `mod('./DemoExt').DemoExt(me)` and `iop.DemoExt`.
+
+    And the failure is silent: after each of those, `errors(recurse=False)` and
+    `warnings(recurse=False)` on the COMP were both empty and
+    `extensionsReady` was True. Nothing but the textport says the extension
+    does not exist. That is the whole reason this method reads the result back
+    instead of reporting what it set.
+    """
+    return "op('./%s').module.%s(me)" % (dat_name, class_name)
+
+
+def m_extension_add(params):
+    """Attach a Python class to a COMP as an extension, in one block.
+
+    Replaces the five blind steps this used to take through `exec` — create
+    the COMP, create the DAT, write the text, set three sequence parameters,
+    re-initialise — of which the last one fails without saying so (see
+    `_extension_expr`).
+
+    Measured on 2025.32460, and none of it documented:
+
+    - A fresh COMP reports `seq.ext.numBlocks == 1`, yet `par.ext1object`
+      already exists and assigning it grows the sequence to 2. The sequence is
+      grown explicitly below rather than relying on that one-block window,
+      which was only measured for the next block, not for an arbitrary index.
+      The wiki says a component has four extensions; the sequence took six.
+    - `reinitextensions` takes effect within the same request: the extension
+      was callable through `ext` on the next line, with no frame in between.
+    - A class that raises in `__init__` leaves `extensions[index]` as None with
+      the COMP reporting no error, exactly like the wrong expression does. The
+      real message is recovered by evaluating the same expression through
+      `comp.evalExpression`, which raises it on the host side of the bridge.
+      That re-runs `__init__` a second time — acceptable only because the
+      first run already failed.
+
+    A class whose `__init__` fails is *not* rolled back. The structure asked
+    for is there and correct, the DAT is addressable, and the caller gets both
+    paths plus the error to fix in place; `undo` removes the whole block if
+    they would rather start over. Structural failure — the COMP, the DAT, a
+    parameter that does not exist — is rolled back the way `palette_load` does
+    it.
+    """
+    _guard_scopes(params, *_extension_targets(params))
+
+    path = params.get("path")
+    parent = params.get("parent")
+    name = params.get("name")
+    if path and (parent or name):
+        raise ValueError(
+            "extension_add takes either 'path' (an existing COMP) or "
+            "'parent' plus 'name' (a COMP to create), not both"
+        )
+    if not path and not (parent and name):
+        raise ValueError(
+            "extension_add requires 'path', or 'parent' and 'name' together"
+        )
+
+    class_name = params.get("class_name")
+    if not class_name or not str(class_name).isidentifier():
+        raise ValueError(
+            "extension_add requires 'class_name' as a Python identifier, got %r"
+            % (class_name,)
+        )
+    code = params.get("code")
+    if not code:
+        raise ValueError("extension_add requires 'code' defining the class")
+    index = int(params.get("index") or 0)
+    if index < 0:
+        raise ValueError("extension_add needs a non-negative 'index', got %d" % index)
+    extension_name = params.get("extension_name") or ""
+    if extension_name and not str(extension_name).isidentifier():
+        raise ValueError(
+            "'extension_name' becomes an attribute of ext, so it must be a "
+            "Python identifier, got %r" % (extension_name,)
+        )
+    promote = bool(params.get("promote", True))
+
+    # Resolve and refuse before opening the block, so a wrong target costs no
+    # undo entry — same order as palette_load.
+    if path:
+        comp = _resolve(path)
+        # The capability check rather than the family name: measured, a
+        # noiseTOP has no ext0object parameter at all, and this is the exact
+        # parameter about to be written.
+        if getattr(comp.par, "ext0object", None) is None:
+            raise TypeError(
+                "%s (%s) has no Extensions page, so it cannot hold a Python "
+                "extension — aim at a COMP" % (comp.path, comp.OPType)
+            )
+        parent_comp = None
+    else:
+        parent_comp = _resolve(parent)
+        if not hasattr(parent_comp, "create"):
+            raise TypeError(
+                "%s (%s) is not a COMP and cannot hold a new component"
+                % (parent_comp.path, parent_comp.OPType)
+            )
+        comp = None
+
+    expr = _extension_expr(class_name, class_name)
+    pars = {
+        "ext%dobject" % index: expr,
+        "ext%dname" % index: extension_name,
+        "ext%dpromote" % index: promote,
+    }
+
+    ui.undo.startBlock("td-atlas extension %s" % class_name)
+    created_comp = False
+    try:
+        if comp is None:
+            comp = parent_comp.create(baseCOMP, name)
+            created_comp = True
+            position = params.get("position")
+            if position:
+                comp.nodeX, comp.nodeY = float(position[0]), float(position[1])
+
+        dat = comp.op("./%s" % class_name)
+        if dat is None:
+            dat = comp.create(textDAT, class_name)
+        elif dat.family != "DAT":
+            raise TypeError(
+                "%s already holds a %s named '%s', and the extension needs a "
+                "DAT of that name — rename it, or use a different class name"
+                % (comp.path, dat.OPType, class_name)
+            )
+        dat.text = code
+
+        # Grow the sequence before writing to a block that may not exist yet.
+        try:
+            blocks = comp.seq.ext.numBlocks
+            if blocks < index + 1:
+                comp.seq.ext.numBlocks = index + 1
+        except Exception as exc:
+            raise ValueError(
+                "%s cannot hold extension %d: %s" % (comp.path, index, exc)
+            )
+
+        _apply_pars(comp, pars)
+        comp.par.reinitextensions.pulse()
+    except Exception:
+        ui.undo.endBlock()
+        try:
+            ui.undo.undo()
+        except Exception:
+            pass
+        raise
+    ui.undo.endBlock()
+
+    resolved = extension_name or class_name
+    extensions = list(comp.extensions or [])
+    obj = extensions[index] if index < len(extensions) else None
+    result = {
+        "path": comp.path,
+        "dat": dat.path,
+        "createdComp": created_comp,
+        "index": index,
+        "extension": resolved,
+        "promote": promote,
+        "set": {"ext%dobject" % index: expr, **{
+            k: v for k, v in pars.items() if not k.endswith("object")
+        }},
+        "ok": obj is not None,
+        "object": _clip(repr(obj)) if obj is not None else None,
+        "error": None,
+        "reachable": None,
+    }
+    if obj is None:
+        # Nothing on the COMP reports this, so re-run the expression to get the
+        # message TouchDesigner only wrote to the textport.
+        try:
+            comp.evalExpression(expr)
+            result["error"] = (
+                "the extension did not initialise, and re-evaluating %s "
+                "raised nothing — no message is available" % expr
+            )
+        except Exception as exc:
+            result["error"] = "%s: %s" % (type(exc).__name__, _clip(exc))
+        return result
+
+    try:
+        result["reachable"] = getattr(comp.ext, resolved) is not None
+    except Exception as exc:
+        result["reachable"] = False
+        result["error"] = "extension built but ext.%s is unreachable: %s" % (
+            resolved,
+            _clip(exc),
+        )
+    return result
+
 METHODS = {
     "ping": m_ping,
     "exec": m_exec,
@@ -1508,6 +1726,7 @@ METHODS = {
     "op_types": m_op_types,
     "perf": m_perf,
     "health_sample": m_health_sample,
+    "extension_add": m_extension_add,
     "claim_scope": m_claim_scope,
     "release_scope": m_release_scope,
     "scopes": m_scopes,

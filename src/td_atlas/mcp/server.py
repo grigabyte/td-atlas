@@ -9,6 +9,7 @@ TouchDesigner traceback.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from pathlib import Path
@@ -1106,6 +1107,145 @@ def td_scopes() -> str:
             f"  {claim['path']} — '{claim['owner']}' since {claim['claimedAt']}, "
             f"until {claim['expiresAt']} ({claim['expiresIn']:g} s left)"
         )
+    return _warn(client) + "\n".join(lines)
+
+
+@mcp.tool()
+@guarded
+def td_extension_add(
+    class_name: str,
+    code: str,
+    path: str = "",
+    parent: str = "",
+    name: str = "",
+    extension_name: str = "",
+    promote: bool = True,
+    index: int = 0,
+    owner: str = "",
+) -> str:
+    """Attach a Python class to a COMP as an extension, in one call.
+
+    Reach for this instead of td_exec whenever a component needs methods or
+    state of its own. Done by hand it is five steps — create the COMP, create
+    the DAT, write the text, set three parameters on the Extensions page,
+    re-initialise — and the last one fails silently: measured on 2025.32460, a
+    wrong Extension Object expression or a class that raises in `__init__`
+    leaves the COMP reporting no error, no warning, and `extensionsReady` True,
+    with the real message only in the textport. This tool reads the result back
+    off the COMP and hands you that message.
+
+    Aim it either at `path` (an existing COMP) or at `parent` plus `name` (a
+    baseCOMP to create) — not both. `code` must define `class <class_name>`,
+    conventionally taking `ownerComp` and capitalising anything meant to be
+    called from outside: with `promote` on, capitalised members are callable
+    straight on the COMP, and every member is reachable as
+    `op(...).ext.<name>.<member>` regardless.
+
+    The class name doubles as the name of the textDAT holding the code, which
+    is what the generated Extension Object expression points at
+    (`op('./Name').module.Name(me)`). `extension_name` renames the extension
+    for `ext` lookups without touching the class. `index` picks which
+    extension slot to write; the wiki says a COMP has four, the sequence took
+    six here.
+
+    The code is parsed on this host before anything is sent, so a typo costs
+    no round trip. That check is not a guarantee TouchDesigner accepts it:
+    this host's Python may be newer than TouchDesigner's embedded 3.11, so
+    3.12+ syntax passes here and fails there — which is caught, but only by
+    the read-back above. Pass the same `owner` you claimed the area with, or
+    your own claim refuses this write.
+    """
+    if not class_name.isidentifier():
+        return (
+            f"error: {class_name!r} is not a Python identifier, so it cannot "
+            f"name a class.\n{hint('extension_class_missing')}"
+        )
+    if extension_name and not extension_name.isidentifier():
+        return (
+            f"error: extension_name {extension_name!r} is not a Python "
+            f"identifier — it becomes an attribute of `ext`.\n"
+            f"{hint('extension_class_missing')}"
+        )
+    if bool(path) == bool(parent and name):
+        return (
+            "error: aim this at either an existing COMP (path=) or a COMP to "
+            "create (parent= and name=), not both and not neither.\n"
+            f"{hint('extension_target')}"
+        )
+    if not code.strip():
+        return (
+            "error: 'code' is empty, so there is no class to attach.\n"
+            f"{hint('extension_class_missing')}"
+        )
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        return (
+            f"error: the extension code does not parse: {exc.msg} at line "
+            f"{exc.lineno}. Nothing was sent.\n{hint('extension_syntax')}"
+        )
+    classes = [n.name for n in tree.body if isinstance(n, ast.ClassDef)]
+    if class_name not in classes:
+        found = ", ".join(classes) or "none"
+        return (
+            f"error: the code defines no top-level class {class_name!r} "
+            f"(found: {found}). TouchDesigner reads the class as a module "
+            f"attribute, so a nested or renamed class cannot be reached. "
+            f"Nothing was sent.\n{hint('extension_class_missing')}"
+        )
+
+    client = bridge()
+    try:
+        result = client.call(
+            "extension_add",
+            path=path or None,
+            parent=parent or None,
+            name=name or None,
+            class_name=class_name,
+            code=code,
+            extension_name=extension_name,
+            promote=promote,
+            index=index,
+            owner=owner,
+        )
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+
+    verb = "built" if result["createdComp"] else "attached"
+    lines = [
+        f"{verb} extension {result['extension']} on {result['path']} "
+        f"(slot {result['index']}, code in {result['dat']})"
+    ]
+    for par, value in result["set"].items():
+        lines.append(f"  {par} = {value!r}")
+    if result["ok"]:
+        lines.append(f"  initialised: {result['object']}")
+        if promote:
+            lines.append(
+                f"  call it as op('{result['path']}').<CapitalisedMember>() or "
+                f"op('{result['path']}').ext.{result['extension']}.<member>()"
+            )
+        else:
+            lines.append(
+                f"  not promoted, so reach it as "
+                f"op('{result['path']}').ext.{result['extension']}.<member>()"
+            )
+        if result.get("error"):
+            lines.append(f"  WARNING: {result['error']}")
+        return _warn(client) + "\n".join(lines)
+
+    lines.append(
+        f"  NOT INITIALISED — the parameters are set but the extension is "
+        f"None. TouchDesigner reported this nowhere; the message below comes "
+        f"from re-evaluating the expression:"
+    )
+    lines.append(f"  {result['error']}")
+    lines.append(
+        f"  the code is in {result['dat']}: fix it and repeat this call, or "
+        f"td_undo to remove the whole block."
+    )
+    lines.append(hint("extension_init_failed"))
     return _warn(client) + "\n".join(lines)
 
 

@@ -271,6 +271,56 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_palette",),
     ),
+    # Python extensions on a COMP.
+    "extension_syntax": Recovery(
+        cause=(
+            "the extension code does not parse — it was compiled on this host "
+            "first, so nothing reached TouchDesigner"
+        ),
+        action=(
+            "fix the line named above; note that this host parses with its own "
+            "Python while TouchDesigner runs an embedded 3.11, so 3.12+ syntax "
+            "gets past this check and fails on the far side instead"
+        ),
+        resume=("td_python_api",),
+    ),
+    "extension_class_missing": Recovery(
+        cause=(
+            "the code does not define a top-level class under the name the "
+            "extension is being built from"
+        ),
+        action=(
+            "TouchDesigner reaches the class as an attribute of the DAT's "
+            "module, so it must be at the top level and spelled exactly as "
+            "class_name — a nested or renamed class cannot be reached"
+        ),
+        resume=("td_docs",),
+    ),
+    "extension_target": Recovery(
+        cause=(
+            "the call named both an existing COMP and a COMP to create, or "
+            "neither"
+        ),
+        action=(
+            "pass path= for a COMP that is already there, or parent= with "
+            "name= to have one created — exactly one of the two"
+        ),
+        resume=("td_network",),
+    ),
+    "extension_init_failed": Recovery(
+        cause=(
+            "the Extensions parameters were set, but instantiating the class "
+            "raised, so the COMP carries no extension — and TouchDesigner "
+            "reports that nowhere except the textport"
+        ),
+        action=(
+            "the message above is the exception, recovered by re-evaluating "
+            "the Extension Object expression; repair the class in the DAT "
+            "named above and repeat the call, which overwrites both the code "
+            "and the parameters"
+        ),
+        resume=("td_extension_add", "td_op_info"),
+    ),
     # Reading .toe/.tox from disk.
     "project_unreadable": Recovery(
         cause="the file could not be unpacked as a TouchDesigner project",
