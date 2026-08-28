@@ -10,10 +10,32 @@ import base64
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from ..component import handler as _handler
 from ..config import DEFAULT_PORT, load_config, load_session
+
+# Oldest bridge protocol this client still talks to (with a warning telling
+# the artist to update). Bump only when a client-side change actually needs
+# behaviour a pre-bump bridge cannot provide.
+MIN_PROTOCOL_VERSION = 1
+
+# The version this client was built against. This is *imported*, not copied,
+# from `component/handler.py` — the single owner of PROTOCOL_VERSION — so the
+# two sides cannot drift apart silently by someone editing one file and
+# forgetting the other. Importing it is safe on the host: handler.py's
+# module-level code is plain stdlib (base64/io/json/traceback), and every
+# reference to TouchDesigner's injected globals (`op`, `app`, `me`, ...) lives
+# inside function bodies that only run when the bridge itself calls them, not
+# at import time.
+EXPECTED_PROTOCOL_VERSION = _handler.PROTOCOL_VERSION
+
+_UPGRADE_BRIDGE = (
+    "Update the bridge: re-run the 'td-atlas install' bootstrap line in "
+    "TouchDesigner's textport, or run 'td-atlas reload'."
+)
+_UPGRADE_HOST = "Update the td-atlas package on this host to match."
 
 
 class BridgeError(RuntimeError):
@@ -28,7 +50,12 @@ class BridgeError(RuntimeError):
 
 
 class BridgeUnavailable(RuntimeError):
-    """TouchDesigner is not reachable at all."""
+    """TouchDesigner is not reachable, or its bridge cannot be used as-is.
+
+    A protocol mismatch outside the supported range is raised as this too:
+    from the caller's point of view a bridge speaking an incompatible
+    protocol is exactly as unusable as one that never answered.
+    """
 
 
 @dataclass
@@ -39,6 +66,10 @@ class BridgeClient:
     token: str = ""
     host: str = "127.0.0.1"
     timeout: float = 30.0
+    # Set once, on the first call this instance makes (see
+    # `_ensure_protocol_checked`); never re-checked on later calls.
+    version_warning: str | None = field(default=None, init=False, repr=False)
+    _protocol_checked: bool = field(default=False, init=False, repr=False)
 
     @classmethod
     def discover(cls, timeout: float = 30.0) -> BridgeClient:
@@ -57,10 +88,63 @@ class BridgeClient:
 
     # -- transport ---------------------------------------------------------
 
+    def _ensure_protocol_checked(self, timeout: float | None = None) -> None:
+        """Verify the bridge's protocol version, once, before real traffic.
+
+        Runs on the first call this instance makes, for any method — the
+        guard flag is set *before* the recursive `ping` call below, so that
+        call re-enters here, finds itself already checked, and proceeds
+        straight to the transport instead of looping. If the ping itself
+        fails (TouchDesigner unreachable), the flag is put back to unchecked:
+        a transport failure is not a version check, and this instance may
+        well be asked again later once TouchDesigner is up — that later call
+        must still get its one real check, not silently skip it forever. The
+        failure itself is left for the real call to raise, so the caller
+        sees the ordinary connectivity error rather than a confusing one
+        from this side check.
+        """
+        if self._protocol_checked:
+            return
+        self._protocol_checked = True
+        try:
+            info = self.call("ping", timeout=timeout)
+        except (BridgeUnavailable, BridgeError):
+            self._protocol_checked = False
+            return
+        self._evaluate_protocol(info.get("protocol"))
+
+    def _evaluate_protocol(self, version: Any) -> None:
+        # `version` comes straight off the wire: a corrupted or outdated
+        # handler could send anything JSON allows in this field, not just an
+        # int — a string, a float, a list. Treat anything that isn't a plain
+        # number the same as a missing version rather than let `<` raise
+        # TypeError. bool is an int subclass but isn't a protocol number, so
+        # it's excluded explicitly.
+        if isinstance(version, bool) or not isinstance(version, (int, float)):
+            version = None
+        if version is None or version < MIN_PROTOCOL_VERSION:
+            reported = "no protocol version" if version is None else f"protocol {version}"
+            raise BridgeUnavailable(
+                f"The running bridge reports {reported}, below the minimum "
+                f"{MIN_PROTOCOL_VERSION} this client supports. {_UPGRADE_BRIDGE}"
+            )
+        if version > EXPECTED_PROTOCOL_VERSION:
+            raise BridgeUnavailable(
+                f"The running bridge speaks protocol {version}, newer than "
+                f"the {EXPECTED_PROTOCOL_VERSION} this client expects. "
+                f"{_UPGRADE_HOST}"
+            )
+        if version < EXPECTED_PROTOCOL_VERSION:
+            self.version_warning = (
+                f"bridge protocol {version} is older than this client's "
+                f"{EXPECTED_PROTOCOL_VERSION}. {_UPGRADE_BRIDGE}"
+            )
+
     def call(
         self, method: str, timeout: float | None = None, **params: Any
     ) -> Any:
         """Invoke a bridge method, raising on transport or handler failure."""
+        self._ensure_protocol_checked(timeout=timeout or self.timeout)
         body = json.dumps({"method": method, "params": params}).encode()
         request = urllib.request.Request(
             self.url,

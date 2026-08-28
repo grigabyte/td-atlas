@@ -109,15 +109,19 @@ reports.
 ```bash
 uv pip install -e .
 td-atlas build          # offline index
-td-atlas install        # stage the bridge, print the bootstrap line
+td-atlas install        # stage the bridge, print the bootstrap and MCP lines
 ```
 
-Paste the printed line into TouchDesigner's textport (Dialogs → Textport and
-DATs), once per project:
+`td-atlas install` prints two things to paste. First, into TouchDesigner's
+textport (Dialogs → Textport and DATs), once per project:
 
 ```python
 exec(open('/Users/you/.td-atlas/bootstrap.py').read())
 ```
+
+Second, a `claude mcp add` line for your MCP client — see below. Pass
+`--write-mcp-json DIR` to additionally write (or merge into) `DIR/.mcp.json`
+with that same entry.
 
 Then complete the index with runtime facts:
 
@@ -127,8 +131,13 @@ td-atlas probe
 
 ## As an MCP server
 
+Run `td-atlas install` and paste the `claude mcp add …` line it prints — it
+points at the current interpreter by absolute path, so it keeps working
+regardless of the MCP client's own working directory or whether any
+virtualenv is activated. Wiring it in by hand looks like:
+
 ```bash
-claude mcp add td-atlas -- /path/to/td-atlas/.venv/bin/td-atlas mcp
+claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 ```
 
 23 tools in three groups — see `skills/touchdesigner/references/tools.md`.

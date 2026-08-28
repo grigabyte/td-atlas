@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,210 @@ COMPONENT_DIR = Path(__file__).parent / "component"
 
 def _say(message: str) -> None:
     print(message, file=sys.stderr)
+
+
+# -- MCP client wiring --------------------------------------------------
+
+def mcp_command() -> list[str]:
+    """The argv that launches the MCP server, robust to cwd and activation.
+
+    An MCP client starts the server with no shell profile sourced and no
+    virtualenv activated, often from a working directory that has nothing to
+    do with this project — so a relative path, a bare "td-atlas" relying on
+    PATH, or a path into ".venv/bin" (which breaks the moment that venv is
+    rebuilt or the interpreter it points at is removed) are all fragile.
+
+    The absolute path to the *current* interpreter (``sys.executable``,
+    unmodified) plus "-m td_atlas.cli mcp" survives both: it needs no
+    activation and no PATH lookup. Do not resolve the symlink: a venv's
+    `bin/python` is normally a symlink to a base interpreter, and CPython
+    only finds that venv's `pyvenv.cfg` (and therefore its site-packages,
+    where the editable install lives) by looking next to the path it was
+    *invoked as* — not next to where the symlink points. Measured directly:
+    launching via the venv path returns a working MCP `initialize` reply;
+    launching the same command with the symlink resolved to the Homebrew
+    base interpreter fails immediately with `ModuleNotFoundError: No module
+    named 'td_atlas'`, because that interpreter never finds the venv's
+    pyvenv.cfg and never sees its site-packages at all. So this string does
+    not survive the base interpreter being deleted — nothing printed here
+    could; that is `td-atlas status`'s job. Once this package is published,
+    `uvx td-atlas mcp` becomes the sturdier choice (no local venv at all) —
+    not offered yet because there is nothing to fetch.
+    """
+    return [sys.executable, "-m", "td_atlas.cli", "mcp"]
+
+
+def mcp_connection_line(server_name: str = "td-atlas") -> str:
+    return "claude mcp add " + server_name + " -- " + " ".join(mcp_command())
+
+
+def write_mcp_json(directory: Path, server_name: str = "td-atlas") -> Path:
+    """Add (or update) the td-atlas server entry in DIRECTORY/.mcp.json.
+
+    Any other servers already listed, and any other top-level keys, are left
+    untouched. Running this twice does not duplicate the entry — it just
+    rewrites the same key.
+    """
+    path = directory / ".mcp.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{path} exists but is not valid JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"{path} exists but its top level is not a JSON object")
+    else:
+        data = {}
+
+    servers = data.setdefault("mcpServers", {})
+    if not isinstance(servers, dict):
+        raise ValueError(f"{path}: 'mcpServers' exists but is not a JSON object")
+
+    command = mcp_command()
+    servers[server_name] = {"command": command[0], "args": command[1:]}
+
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    return path
+
+
+def broken_env_diagnosis(prefix: Path) -> str | None:
+    """Explain a virtualenv whose base interpreter has gone missing.
+
+    PREFIX is normally `sys.prefix`: the root of the environment the running
+    interpreter belongs to. A venv created by `uv venv`/`python -m venv`
+    records the interpreter it was built from in `pyvenv.cfg`'s `home` key;
+    if that directory (or the python binary inside it) no longer exists, the
+    venv's own `python` symlink is dangling and every invocation of this
+    package from it will fail with a cryptic ModuleNotFoundError rather than
+    naming the real cause. Returns None when there is nothing wrong, or no
+    pyvenv.cfg to check (a system interpreter, or a `uv tool run` environment
+    — absence of a venv is not itself a fault).
+    """
+    cfg_path = prefix / "pyvenv.cfg"
+    if not cfg_path.exists():
+        return None
+    try:
+        text = cfg_path.read_text()
+    except OSError:
+        return None
+
+    home = None
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() == "home":
+            home = value.strip()
+            break
+    if home is None:
+        return None
+
+    home_dir = Path(home)
+    if home_dir.exists():
+        return None
+
+    return (
+        f"the base interpreter this environment was built from is gone "
+        f"({home_dir} does not exist) — {prefix} is a broken virtualenv. "
+        "Recreate it and reinstall: `uv venv && uv pip install -e .`"
+    )
+
+
+def broken_editable_install_diagnosis(
+    site_packages: Path,
+    sys_path: list[str] | None = None,
+    package: str = "td_atlas",
+    env: dict[str, str] | None = None,
+) -> str | None:
+    """Catch a `.pth`-based editable install whose path never reaches sys.path.
+
+    Measured live on this machine (uv 0.12.3, Python 3.14.6, a `uv venv`
+    virtualenv): `site-packages/_editable_impl_td_atlas.pth` correctly names
+    the project's `src` directory, yet a fresh interpreter launched from that
+    same venv raises `ModuleNotFoundError: No module named 'td_atlas'` —
+    `import td_atlas` fails even directly at the REPL. `sys.path` printed
+    from that interpreter does not contain the directory the `.pth` file
+    names. `site-packages` also holds a `_virtualenv.pth` (`import
+    _virtualenv`), sorted after the editable one; whether that import is
+    what drops the path again during site processing is not confirmed here —
+    that would take instrumenting CPython's `site` module, which this task
+    did not do. What is confirmed, and is what this check tests: the `.pth`
+    file exists, names a real directory, and that directory is absent from
+    `sys.path`.
+
+    This is exactly the failure an MCP client hits silently: it launches the
+    server fresh, with no PYTHONPATH and a working directory that is not
+    this project's, and gets a process that exits on
+    ModuleNotFoundError before it can say anything coherent. This check
+    only fires when it can actually inspect a live discrepancy — a process
+    that cannot import the package at all cannot run this check on itself.
+
+    One trap this specifically guards against: the workaround for the bug
+    (`PYTHONPATH=<src>`) puts the *same* directory the `.pth` names onto
+    `sys.path`, which would make a naive "is it on sys.path" check report
+    all-clear on the one invocation where the underlying `.pth` wiring is
+    still broken. So a target found on `sys.path` only because it came from
+    `PYTHONPATH` still gets flagged — it proves the `.pth` mechanism itself
+    is not doing the job, even though this particular process happens to
+    work around it.
+    """
+    if not site_packages.is_dir():
+        return None
+    pth_files = sorted(site_packages.glob(f"*{package}*.pth"))
+    if not pth_files:
+        return None
+
+    active = sys.path if sys_path is None else sys_path
+    active_resolved = {str(Path(p).resolve()) for p in active if p}
+
+    active_env = os.environ if env is None else env
+    env_path = active_env.get("PYTHONPATH", "")
+    pythonpath_resolved = {
+        str(Path(p).resolve()) for p in env_path.split(os.pathsep) if p
+    }
+
+    for pth in pth_files:
+        try:
+            lines = pth.read_text().splitlines()
+        except OSError:
+            continue
+        for raw in lines:
+            line = raw.strip()
+            if not line or line.startswith("#") or line.startswith("import "):
+                continue
+            target = Path(line)
+            if not target.is_absolute():
+                target = site_packages / target
+            if not target.exists():
+                continue
+            resolved_target = str(target.resolve())
+            if resolved_target in pythonpath_resolved:
+                return (
+                    f"{pth} declares {target}, and it is only importable "
+                    f"right now because PYTHONPATH puts it on sys.path "
+                    f"directly — the .pth-based editable install of "
+                    f"'{package}' did not take effect on its own. A launch "
+                    f"without that PYTHONPATH set (as an MCP client does) "
+                    f"will raise ModuleNotFoundError. Reinstall to force "
+                    f"the .pth to be rewritten: `uv pip install -e . "
+                    f"--reinstall`; if that does not hold, the cause is "
+                    f"upstream in how this environment processes site "
+                    f".pth files, not in td-atlas itself."
+                )
+            if resolved_target in active_resolved:
+                return None  # this .pth entry is actually wired in
+            return (
+                f"{pth} declares {target}, but that directory is not on "
+                f"sys.path in this process — the editable install of "
+                f"'{package}' did not take effect; running it from a "
+                f"different working directory or with a different launcher "
+                f"(as an MCP client does) will raise ModuleNotFoundError. "
+                "Reinstall to force the .pth to be rewritten: "
+                "`uv pip install -e . --reinstall`; if that does not hold, "
+                "the cause is upstream in how this environment processes "
+                "site .pth files, not in td-atlas itself."
+            )
+    return None
 
 
 # -- commands ---------------------------------------------------------------
@@ -54,6 +259,21 @@ def cmd_install(args: argparse.Namespace) -> int:
             print("\n(copied to clipboard)")
         except subprocess.SubprocessError:
             pass
+
+    print()
+    print("To use td-atlas as an MCP server, run:")
+    print()
+    print("    " + mcp_connection_line())
+    print()
+
+    if args.write_mcp_json:
+        target = Path(args.write_mcp_json)
+        try:
+            written = write_mcp_json(target)
+        except ValueError as exc:
+            _say(f"error: {exc}")
+            return 1
+        print(f"wrote the td-atlas MCP server entry to {written}")
     return 0
 
 
@@ -99,6 +319,8 @@ def cmd_probe(args: argparse.Namespace) -> int:
     except BridgeUnavailable as exc:
         _say(f"error: {exc}")
         return 1
+    if client.version_warning:
+        _say(f"warning: {client.version_warning}")
 
     _say(f"connected to {info['product']} {info['build']} (project {info['project']})")
     stats = probe_mod.run(client, store, chunk_size=args.chunk, progress=_say)
@@ -138,12 +360,22 @@ def cmd_reload(_args: argparse.Namespace) -> int:
         if isinstance(exc, BridgeError) and exc.traceback:
             _say(exc.traceback)
         return 1
+    if client.version_warning:
+        _say(f"warning: {client.version_warning}")
     sys.stdout.write(result.get("stdout") or "")
     print("bridge reloaded")
     return 0
 
 
 def cmd_status(_args: argparse.Namespace) -> int:
+    import sysconfig
+
+    diagnosis = broken_env_diagnosis(Path(sys.prefix))
+    if diagnosis is None:
+        site_packages = Path(sysconfig.get_path("purelib"))
+        diagnosis = broken_editable_install_diagnosis(site_packages)
+    if diagnosis:
+        print(f"environment   : broken — {diagnosis}")
     try:
         install = discover()
         print(f"TouchDesigner : {install.version} at {install.root}")
@@ -175,6 +407,8 @@ def cmd_status(_args: argparse.Namespace) -> int:
             f"(project '{info['project']}', {info['fps']} fps, "
             f"build {info['build']})"
         )
+        if client.version_warning:
+            _say(f"warning: {client.version_warning}")
     except BridgeError as exc:
         # Reached TouchDesigner but it refused us — almost always a token that
         # no longer matches the one baked into the running bridge.
@@ -183,12 +417,12 @@ def cmd_status(_args: argparse.Namespace) -> int:
             f"the request ({exc.type}: {exc.message}). Re-run the bootstrap "
             f"line in TouchDesigner to pick up the current token."
         )
-    except BridgeUnavailable:
+    except BridgeUnavailable as exc:
         if session or cfg.config_path().exists():
-            print(
-                f"bridge        : staged on port {client.port}, not responding. "
-                f"Run the bootstrap line in TouchDesigner's textport."
-            )
+            # `exc` already carries the exact fix — a plain connectivity
+            # problem or, when the bridge's protocol version is out of
+            # range, the precise upgrade instruction for that case.
+            print(f"bridge        : {exc}")
         else:
             print("bridge        : not installed (run 'td-atlas install')")
     return 0
@@ -308,6 +542,28 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_release_tox(args: argparse.Namespace) -> int:
+    """Build the bridge as a .tox the user can drag into a network."""
+    from .project import ExpandError
+    from .project.release import DEFAULT_OUTPUT, build_tox
+
+    try:
+        path = build_tox(args.output or DEFAULT_OUTPUT)
+    except ExpandError as exc:
+        _say(str(exc))
+        return 1
+
+    config = cfg.load_config()
+    port = config.get("port", cfg.DEFAULT_PORT)
+    print("Bridge component written to", path.resolve())
+    print()
+    print(f"Drag it into a TouchDesigner network. The Web Server DAT binds "
+          f"port {port}.")
+    print("The handler ships without a token, so the bridge accepts any local")
+    print("caller; run `td-atlas install` for the token-authenticated bridge.")
+    return 0
+
+
 def cmd_project(args: argparse.Namespace) -> int:
     """Read, search, diff and repack .toe/.tox files without TouchDesigner."""
     from .project import ExpandError, collapse, expand, index_resolver, load_file
@@ -394,7 +650,21 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("install", help="stage the bridge and print the bootstrap line")
     p.add_argument("--port", type=int, default=None)
     p.add_argument("--no-auth", action="store_true", help="disable token auth")
+    p.add_argument(
+        "--write-mcp-json",
+        metavar="DIR",
+        help="also add the td-atlas server to DIR/.mcp.json (merged, not overwritten)",
+    )
     p.set_defaults(func=cmd_install)
+
+    p = sub.add_parser(
+        "release-tox", help="build the bridge as a drag-and-drop .tox"
+    )
+    p.add_argument(
+        "-o", "--output", default=None,
+        help="where to write the component (default release/TdAtlas.tox)",
+    )
+    p.set_defaults(func=cmd_release_tox)
 
     p = sub.add_parser("build", help="build the offline index from a TD install")
     p.add_argument("--install-path", help="TouchDesigner application directory")

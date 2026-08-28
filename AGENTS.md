@@ -43,13 +43,16 @@ or derive the real mapping from TouchDesigner.
 
 ```bash
 uv pip install -e . pytest
-pytest                       # 67 tests, ~0.2 s
+pytest                       # 91 tests, ~0.2 s
 ```
 
-Only `test_project.py::test_expands_and_reads_a_shipped_example` needs a
-TouchDesigner installation; it skips without one. Everything else, including
-the whole health-check suite, runs on synthetic fixtures. **Keep it that way** —
-tests that need a running TouchDesigner cannot be trusted to run.
+`test_project.py::test_expands_and_reads_a_shipped_example` and both tests in
+`test_release.py` need a TouchDesigner installation — the latter two shell out
+to `toecollapse` and `toeexpand` from the bundle — and skip without one; that's
+3 of the 91. The other 88, including the whole health-check suite, run on
+synthetic fixtures with no installation needed. **None of the 91 need a
+running TouchDesigner instance** — keep it that way; tests that need one
+cannot be trusted to run.
 
 Rebuilding the index after changing an extractor:
 
@@ -72,8 +75,13 @@ TouchDesigner's embedded **Python 3.11**, not the host interpreter. Constraints:
 - No 3.12+ syntax.
 - Every request runs on TouchDesigner's main thread during a cook. A handler
   that blocks freezes the application; keep work bounded.
-- These files are *data* to the host — `component/__init__.py` deliberately
-  imports nothing, because importing them outside TouchDesigner fails.
+- `component/__init__.py` still deliberately imports nothing, and
+  `bootstrap.py` is useless outside TouchDesigner. `handler.py` is the one
+  exception: the host imports it on purpose, to read `PROTOCOL_VERSION`
+  without keeping a second copy of it in sync. That only works because its
+  module-level code stays plain stdlib, with every touch of TouchDesigner's
+  injected globals (`op`, `app`, `me`, ...) pushed inside function bodies —
+  keep it that way, since the host import depends on it, not just habit.
 
 Probe snippets in `atoms/probe.py` are `%`-formatted templates. A literal `%`
 inside one must be written `%%`.

@@ -46,7 +46,24 @@ def store() -> AtomStore:
 
 
 def bridge() -> BridgeClient:
+    # Deliberately not cached (unlike store() above): discover() re-reads the
+    # session file every time, which is how a tool call notices TouchDesigner
+    # having restarted on a different port. A cached client would also cache
+    # its protocol check forever — exactly the silent staleness this
+    # contract exists to catch, since the process this runs in is long-lived
+    # and an artist can reopen a project with an older bridge at any time.
+    # The "once per client, not per call" cache lives on BridgeClient itself
+    # (bridge/client.py), scoped to the one instance each call gets here.
     return BridgeClient.discover()
+
+
+def _warn(client: BridgeClient) -> str:
+    """A 'warning: ...' line to prefix onto a tool's text result, or ''.
+
+    Plain text, not part of any structured field, so it cannot break a
+    caller's parsing of the rest of the response.
+    """
+    return f"warning: {client.version_warning}\n" if client.version_warning else ""
 
 
 def _fmt_param(row: dict[str, Any]) -> str:
@@ -279,22 +296,24 @@ def td_status() -> str:
     except RuntimeError as exc:
         db_note = f"index: {exc}"
 
+    client = bridge()
     try:
-        info = bridge().ping()
+        info = client.ping()
     except (BridgeUnavailable, BridgeError) as exc:
         return f"{db_note}\nbridge: unavailable — {exc}"
     return (
-        f"{db_note}\nbridge: connected to {info['product']} {info['build']}, "
-        f"project '{info['project']}' in {info['projectFolder']}, "
-        f"{info['fps']} fps, frame {info['frame']}"
+        f"{_warn(client)}{db_note}\nbridge: connected to {info['product']} "
+        f"{info['build']}, project '{info['project']}' in "
+        f"{info['projectFolder']}, {info['fps']} fps, frame {info['frame']}"
     )
 
 
 @mcp.tool()
 def td_network(path: str = "/project1", depth: int = 1) -> str:
     """List the operators inside a component and how they are wired."""
+    client = bridge()
     try:
-        result = bridge().network(path=path, depth=depth)
+        result = client.network(path=path, depth=depth)
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
 
@@ -317,14 +336,15 @@ def td_network(path: str = "/project1", depth: int = 1) -> str:
                 walk(node["children"], indent + 2)
 
     walk(result["children"], 2)
-    return "\n".join(lines)
+    return _warn(client) + "\n".join(lines)
 
 
 @mcp.tool()
 def td_op_info(path: str) -> str:
     """Inspect one operator in the running project: type, wiring, live parameter values."""
+    client = bridge()
     try:
-        info = bridge().op_info(path)
+        info = client.op_info(path)
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
 
@@ -343,7 +363,7 @@ def td_op_info(path: str) -> str:
         value = par.get("expr") if mode == "EXPRESSION" else par.get("value")
         marker = "" if par.get("isDefault") else "  *"
         lines.append(f"  {name} = {value!r} ({mode.lower()}){marker}")
-    return "\n".join(lines)
+    return _warn(client) + "\n".join(lines)
 
 
 @mcp.tool()
@@ -407,8 +427,9 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
                 + "\n\n".join(problems)
             )
 
+    client = bridge()
     try:
-        result = bridge().batch(operations, undo_name=undo_name)
+        result = client.batch(operations, undo_name=undo_name)
     except BridgeError as exc:
         return (
             f"batch failed and was rolled back — {exc.type}: {exc.message}\n"
@@ -421,7 +442,7 @@ def td_build(operations: list[dict], undo_name: str = "agent edit") -> str:
     for item in result["results"]:
         if isinstance(item, dict) and "path" in item:
             lines.append(f"  {item['path']} ({item.get('type', '')})")
-    return "\n".join(lines)
+    return _warn(client) + "\n".join(lines)
 
 
 @mcp.tool()
@@ -439,12 +460,13 @@ def td_set_params(path: str, pars: dict, op_type: str = "") -> str:
                 return check.render()
         except RuntimeError:
             pass
+    client = bridge()
     try:
-        result = bridge().call("par_set", path=path, pars=pars)
+        result = client.call("par_set", path=path, pars=pars)
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
     applied = ", ".join(f"{k}={v!r}" for k, v in result["applied"].items())
-    return f"{result['path']}: {applied}"
+    return f"{_warn(client)}{result['path']}: {applied}"
 
 
 @mcp.tool()
@@ -485,10 +507,12 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
     """
     from ..bridge.health import check
 
+    client = bridge()
     try:
-        return check(bridge(), path=path, interval=interval).render()
+        result = check(client, path=path, interval=interval).render()
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
+    return _warn(client) + result
 
 
 @mcp.tool()
@@ -565,18 +589,19 @@ def td_errors() -> str:
     Node errors are shown as colours in the TouchDesigner UI and are otherwise
     invisible to you; check this after building something.
     """
+    client = bridge()
     try:
-        result = bridge().errors()
+        result = client.errors()
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
     if not result["count"]:
-        return "No operators are reporting errors or warnings."
+        return _warn(client) + "No operators are reporting errors or warnings."
     lines = [f"{result['count']} operator(s) reporting problems:"]
     for node in result["nodes"]:
         detail = node["errors"] or node["warnings"]
         kind = "ERROR" if node["errors"] else "warning"
         lines.append(f"  [{kind}] {node['path']} ({node['type']}): {detail}")
-    return "\n".join(lines)
+    return _warn(client) + "\n".join(lines)
 
 
 @mcp.tool()
@@ -588,8 +613,9 @@ def td_exec(code: str) -> str:
     `result`, is returned. Reach for the structured tools first — this blocks
     TouchDesigner's main thread while it runs.
     """
+    client = bridge()
     try:
-        result = bridge().exec(code)
+        result = client.exec(code)
     except BridgeError as exc:
         return f"{exc.type}: {exc.message}\n{exc.traceback or ''}"
     except BridgeUnavailable as exc:
@@ -601,7 +627,7 @@ def td_exec(code: str) -> str:
         parts.append("stderr: " + result["stderr"].rstrip())
     if result.get("result") is not None:
         parts.append(json.dumps(result["result"], indent=2, default=str))
-    return "\n".join(parts) or "(no output)"
+    return _warn(client) + ("\n".join(parts) or "(no output)")
 
 
 # -- project file tools -----------------------------------------------------
@@ -691,12 +717,13 @@ def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     if destination.exists():
         destination.unlink()
 
+    client = bridge()
     try:
-        result = bridge().call("save_tox", path=path, file=str(destination))
+        result = client.call("save_tox", path=path, file=str(destination))
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
     saved = result.get("saved") or destination
-    return f"saved {path} to {saved}"
+    return f"{_warn(client)}saved {path} to {saved}"
 
 
 @mcp.tool()
@@ -729,12 +756,16 @@ def td_example(op_type: str, depth: int = 3) -> str:
 @mcp.tool()
 def td_undo(redo: bool = False) -> str:
     """Undo (or redo) the last change, including whole td_build batches."""
+    client = bridge()
     try:
-        result = bridge().call("redo" if redo else "undo")
+        result = client.call("redo" if redo else "undo")
     except (BridgeUnavailable, BridgeError) as exc:
         return f"error: {exc}"
     stack = result.get("redoStack" if redo else "undoStack") or []
-    return f"{'redone' if redo else 'undone'}; stack now: {stack[-5:] or 'empty'}"
+    return (
+        f"{_warn(client)}{'redone' if redo else 'undone'}; "
+        f"stack now: {stack[-5:] or 'empty'}"
+    )
 
 
 def main() -> None:
