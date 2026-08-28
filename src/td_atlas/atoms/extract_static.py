@@ -15,7 +15,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from ..install import TDInstall
 from .htmltext import html_to_text, page_categories, page_title
@@ -93,6 +93,11 @@ def _first_sentences(text: str, limit: int = 320) -> str | None:
         if line and not line.startswith("#") and len(line) > 30:
             return line[:limit]
     return None
+
+
+def _page_id(relative: PurePath) -> str:
+    """The stored name of a mirrored wiki page, always '/'-separated."""
+    return relative.with_suffix("").as_posix()
 
 
 def _normalize(name: str) -> str:
@@ -333,7 +338,11 @@ def extract(
         say(f"parsing {len(pages)} wiki pages...")
         batch: list[dict] = []
         for i, page in enumerate(pages):
-            page_id = str(page.relative_to(help_root).with_suffix(""))
+            # as_posix, not str: a wiki title containing a slash was
+            # mirrored as a subdirectory, and the page id has to read back as
+            # the title did ('TCP/IP_DAT'). On Windows str() would store a
+            # backslash there and no name-derived candidate would match it.
+            page_id = _page_id(page.relative_to(help_root))
             html = page.read_text(encoding="utf-8", errors="replace")
             text = html_to_text(html)
             articles[page_id] = text

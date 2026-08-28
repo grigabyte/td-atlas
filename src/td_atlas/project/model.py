@@ -8,7 +8,7 @@ matters most — the Python and GLSL held inside DATs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from .expand import Expansion
 from .formats import (
@@ -107,6 +107,17 @@ class Project:
         return self.build.get("build", "unknown")
 
 
+def _node_path(relative: PurePath) -> str:
+    """Turn a path relative to the expanded root into an operator path.
+
+    Operator paths are always '/'-separated — that is TouchDesigner's own
+    notation, not the filesystem's — so the separator cannot come from
+    str(), which on Windows would yield '/project1\\noise1' and break every
+    lookup, parent walk and grep that follows.
+    """
+    return "/" + relative.as_posix()
+
+
 def _read(path: Path) -> str | None:
     try:
         return path.read_text(encoding="utf-8", errors="replace")
@@ -150,8 +161,7 @@ def load(expansion: Expansion, resolver: TypeResolver | None = None) -> Project:
 
     def build_node(n_file: Path) -> Node:
         stem = n_file.with_suffix("")
-        rel = stem.relative_to(root)
-        path = "/" + str(rel)
+        path = _node_path(stem.relative_to(root))
 
         node_data = read_node(_read(n_file) or "")
         entry = Node(path=path, name=stem.name, node=node_data)

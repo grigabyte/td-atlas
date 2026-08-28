@@ -121,14 +121,6 @@ def _candidates_windows() -> list[Path]:
     return [p for p in found if p.is_dir()]
 
 
-def _candidates_linux() -> list[Path]:
-    found: list[Path] = []
-    for base in (Path("/opt"), Path.home()):
-        if base.is_dir():
-            found.extend(sorted(base.glob("TouchDesigner*")))
-    return [p for p in found if p.is_dir()]
-
-
 def _build(root: Path) -> TDInstall | None:
     """Turn a candidate install root into a TDInstall, if it looks valid."""
     system = platform.system()
@@ -137,11 +129,16 @@ def _build(root: Path) -> TDInstall | None:
         executable = root / "Contents" / "MacOS" / "TouchDesigner"
         version = _version_from_macos_bundle(root)
     else:
-        # Windows and Linux keep the resource tree beside the binary.
-        tfs = next(
-            (p for p in (root / "Config", root / "Samples") if p.exists()), None
-        )
-        tfs = root if tfs else root
+        # Windows keeps the resource tree beside the binary rather than inside
+        # a bundle, so the install root *is* the tfs root — but only when the
+        # resource tree is actually there. Without this check any directory
+        # whose name merely started with "TouchDesigner" was accepted as an
+        # install and the failure surfaced much later, as a missing help file.
+        # UNVERIFIED on a live Windows machine: the layout is taken from
+        # Derivative's published install tree, not measured here.
+        if not any((root / name).is_dir() for name in ("Config", "Samples")):
+            return None
+        tfs = root
         exe_names = ("TouchDesigner.exe", "TouchDesigner")
         executable = next(
             (root / "bin" / n for n in exe_names if (root / "bin" / n).exists()),
@@ -184,12 +181,15 @@ def discover(explicit: str | Path | None = None) -> TDInstall:
             )
         return install
 
+    # No Linux finder: TouchDesigner is not released for Linux, and the
+    # package no longer claims that platform. An unknown system searches
+    # nowhere and says so; an explicit path still goes through _build on any
+    # system, which is the honest escape hatch for a layout we have not seen.
     finders = {
         "Darwin": _candidates_macos,
         "Windows": _candidates_windows,
-        "Linux": _candidates_linux,
     }
-    candidates = finders.get(platform.system(), _candidates_linux)()
+    candidates = finders.get(platform.system(), lambda: [])()
     installs = [i for i in (_build(c) for c in candidates) if i is not None]
     if not installs:
         raise InstallNotFound(

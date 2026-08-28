@@ -257,13 +257,25 @@ def cmd_install(args: argparse.Namespace) -> int:
     print(f"Port {config['port']}, auth", "disabled" if args.no_auth else "on")
     if not args.no_auth:
         print("A token was generated; the client reads it from the same file.")
+        if sys.platform == "win32":
+            print(
+                f"On Windows the token file ({cfg.config_path()}) is not "
+                "narrowed to you:\n"
+                "    chmod reaches only the read-only attribute there, so the "
+                "file is readable\n"
+                "    by anything that can read your user profile directory."
+            )
     print("Re-running the same line upgrades an existing bridge in place.")
 
-    if sys.platform == "darwin" and shutil.which("pbcopy"):
+    # The payload is the ASCII exec line, so `clip` needs no encoding care.
+    # UNVERIFIED on a live Windows machine; a failure here is swallowed and
+    # the line is already printed above, so the worst case is no clipboard.
+    clipboard = {"darwin": ["pbcopy"], "win32": ["clip"]}.get(sys.platform)
+    if clipboard and shutil.which(clipboard[0]):
         try:
-            subprocess.run(["pbcopy"], input=line.encode(), check=True)
+            subprocess.run(clipboard, input=line.encode(), check=True)
             print("\n(copied to clipboard)")
-        except subprocess.SubprocessError:
+        except (subprocess.SubprocessError, OSError):
             pass
 
     print()

@@ -137,6 +137,11 @@ def _ensure_home():
     whatever umask that TouchDesigner happened to inherit. The chmod is
     re-applied every time rather than passed as a mode, since `makedirs` will
     not touch an existing directory.
+
+    POSIX only. On Windows `os.chmod` touches only the read-only attribute,
+    so the 0700 below narrows nothing; what keeps other accounts out there is
+    the ACL on the user profile directory, which this project neither sets
+    nor has measured.
     """
     home = _home()
     os.makedirs(os.path.join(home, "instances"), exist_ok=True)

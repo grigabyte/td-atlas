@@ -21,8 +21,15 @@ DEFAULT_PORT = 9977
 
 
 def home() -> Path:
-    """The td-atlas state directory, overridable for tests."""
-    return Path(os.environ.get("TD_ATLAS_HOME", Path.home() / ".td-atlas"))
+    """The td-atlas state directory, overridable for tests.
+
+    An empty TD_ATLAS_HOME counts as unset — the same rule the two sides
+    inside TouchDesigner follow (`component/handler.py`, `component/
+    bootstrap.py`). With `get(name, default)` an empty value produced
+    Path(""), i.e. the process's working directory, so the three would have
+    disagreed about where the bridge lives over an empty string alone.
+    """
+    return Path(os.environ.get("TD_ATLAS_HOME") or Path.home() / ".td-atlas")
 
 
 def config_path() -> Path:
@@ -68,6 +75,14 @@ def ensure_home() -> Path:
     directory's permissions would have depended on which side arrived first.
     Nothing secret lives in the directory itself — the token is in its own
     0600 file — but the answer must not vary with arrival order.
+
+    POSIX only. On Windows `os.chmod` reaches nothing but the read-only
+    attribute (documented CPython behaviour): the call below neither fails
+    nor narrows anything, and other accounts on the machine are kept out of
+    ~/.td-atlas only by whatever ACL the user profile directory already
+    carries. That ACL is the default on a single-user Windows box, but this
+    project has not measured it and does not set it — see README on which
+    platforms are verified.
     """
     path = home()
     path.mkdir(parents=True, exist_ok=True)
@@ -90,6 +105,10 @@ def load_config() -> dict:
 def save_config(config: dict) -> None:
     ensure_home()
     config_path().write_text(json.dumps(config, indent=2) + "\n")
+    # The token is a bearer credential for a local socket, so the file is
+    # narrowed to its owner. POSIX only: on Windows this sets the read-only
+    # attribute and nothing else, and the file is readable by any account
+    # that can already read the user's profile directory.
     config_path().chmod(0o600)
 
 

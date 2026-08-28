@@ -106,6 +106,15 @@ reports.
 
 ## Install
 
+**Platforms.** Everything here was developed and measured on macOS. Windows is
+supported by intent but **unverified**: no Windows machine was involved. The
+install-discovery layout follows Derivative's published install tree rather
+than measurement; `toeexpand`'s path separators are inferred from its macOS
+output; the clipboard copy (`clip`) has never been run. And one thing is known
+to be weaker there — the token file is narrowed with `chmod`, which on Windows
+sets only the read-only attribute and does not keep other accounts on the
+machine out. Linux is not supported: TouchDesigner is not released for it.
+
 ```bash
 uv pip install -e .
 td-atlas build          # offline index

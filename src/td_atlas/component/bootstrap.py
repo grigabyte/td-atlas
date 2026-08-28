@@ -21,11 +21,21 @@ HANDLER_DAT = "handler"
 SERVER_DAT = "bridge"
 DEFAULT_PORT = 9977
 
-_HOME = os.path.expanduser("~/.td-atlas")
+def _home():
+    """Where the host staged this bridge. Same rule as handler.py's `_home`.
+
+    Read on every call rather than frozen at exec time, and honouring
+    TD_ATLAS_HOME, because the host may point elsewhere: with a stale
+    ~/.td-atlas beside a live TD_ATLAS_HOME, a constant here read the old
+    handler.py and installed a previous version of the bridge silently — the
+    install looked fine and only surfaced later as a protocol mismatch. An
+    empty value counts as unset, as it does in handler.py and config.py.
+    """
+    return os.environ.get("TD_ATLAS_HOME") or os.path.expanduser("~/.td-atlas")
 
 
 def _load_config():
-    path = os.path.join(_HOME, "config.json")
+    path = os.path.join(_home(), "config.json")
     try:
         with open(path, "r") as handle:
             return json.load(handle)
@@ -34,7 +44,7 @@ def _load_config():
 
 
 def _read_handler_source():
-    path = os.path.join(_HOME, "handler.py")
+    path = os.path.join(_home(), "handler.py")
     with open(path, "r") as handle:
         return handle.read()
 
@@ -51,11 +61,14 @@ def _write_session(port, token, component_path):
         "pid": os.getpid(),
     }
     try:
-        os.makedirs(_HOME, exist_ok=True)
-        path = os.path.join(_HOME, "session.json")
+        home = _home()
+        os.makedirs(home, exist_ok=True)
+        path = os.path.join(home, "session.json")
         with open(path, "w") as handle:
             json.dump(session, handle, indent=2)
         # The token is a bearer credential for a socket on this machine.
+        # POSIX only: on Windows this sets the read-only attribute and does
+        # not keep other accounts out — see config.py's `ensure_home`.
         os.chmod(path, 0o600)
     except Exception as exc:
         print("[td-atlas] could not write session file: %s" % exc)

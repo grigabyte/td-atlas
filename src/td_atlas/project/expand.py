@@ -13,7 +13,7 @@ import platform
 import shutil
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from ..config import home
 from ..install import InstallNotFound, TDInstall, discover
@@ -127,9 +127,23 @@ def expand(
     return Expansion(source, expanded, toc if toc.exists() else None, False)
 
 
+def _toc_entry(relative: PurePath) -> str:
+    """One line of a toeexpand table of contents.
+
+    Measured: every .toc toeexpand wrote in this project's cache separates
+    entries with '/' ('beatCHOP/example1.n'), so str() — which on Windows
+    would emit 'beatCHOP\\example1.n' — must not be used. A mismatch there is
+    silent: the template lines stop matching the files on disk, the original
+    ordering is lost, and the listing handed back to toecollapse is written
+    in a separator it was never seen to use.
+    UNVERIFIED: the '/' was measured in toeexpand's macOS output only.
+    """
+    return relative.as_posix()
+
+
 def _relative_files(root: Path) -> list[str]:
     return sorted(
-        str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()
+        _toc_entry(p.relative_to(root)) for p in root.rglob("*") if p.is_file()
     )
 
 
