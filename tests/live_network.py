@@ -191,19 +191,26 @@ def compare(live_root: dict, file_root: dict) -> dict:
 
 CUSTOM_PLACEMENT = "custom parameter placement"
 COMP_WIRE = "COMP input wiring"
-PANEL_WIRE = "panel COMP input wiring"
 FLOAT_FORMAT = "float text formatting"
 FLAG_VOCABULARY = "flag vocabulary"
 DEFAULT_PARM = "parameter at its default with a flags word"
 CUSTOM_DEFAULT = "custom parameter at its default"
 TOX_ROOT = "the .tox save's own root parameter"
 
-# Table DAT shape was a tenth class until 2026-08-29: the reader read the
-# `.table` header's row and column counts the wrong way round, so a 3x2 table
-# came back as 2x3. That was our bug, not a gap in what the text can carry, and
-# it is fixed in formats.read_table and rebuild.render_table together.
+# Two classes stood here until 2026-08-29, both of them our own bugs rather
+# than gaps in what the text can carry:
+#
+#   table DAT shape        - the reader read the `.table` header's row and
+#                            column counts the wrong way round, so a 3x2 table
+#                            came back as 2x3. Fixed in formats.read_table and
+#                            rebuild.render_table together.
+#   panel COMP input wiring - a panel COMP's wire to the COMP beside it is in
+#                            its `.n` `inputs` block, but live it hangs off
+#                            `inputCOMPConnectors` and `handler._inputs_data`
+#                            read only `inputConnectors`. Fixed by reading both
+#                            lists, each under its own connector index.
 CLASSES = (
-    CUSTOM_PLACEMENT, COMP_WIRE, PANEL_WIRE,
+    CUSTOM_PLACEMENT, COMP_WIRE,
     FLOAT_FORMAT, FLAG_VOCABULARY, DEFAULT_PARM, CUSTOM_DEFAULT, TOX_ROOT,
 )
 
@@ -259,9 +266,6 @@ def classify(diffs: list, root_path: str) -> dict:
         if field == "inputs":
             if file == [] and live:
                 out[COMP_WIRE].append(d)
-                continue
-            if live == [] and file:
-                out[PANEL_WIRE].append(d)
                 continue
         if head in ("parms", "custom_parms") and _float_equal(live, file):
             out[FLOAT_FORMAT].append(d)

@@ -71,11 +71,14 @@ def test_the_root_s_external_tox_switch_is_charged_to_the_save_not_to_the_text()
     assert deeper[ln.TOX_ROOT] == []
 
 
-def test_the_two_directions_of_missing_wiring_are_two_classes():
+def test_wiring_only_the_live_side_has_is_the_one_wiring_class_left():
     only_live = ln.classify([_diff("/d/c", "inputs", [[0, "a/out1"]], [])], "/d")
     assert len(only_live[ln.COMP_WIRE]) == 1
+    # The other direction was the panel wiring class until 2026-08-29, when
+    # the live gather learned to read `inputCOMPConnectors`. A wire the file
+    # has and the live side does not is now nobody's class.
     only_file = ln.classify([_diff("/d/c", "inputs", [], [[0, "spacer"]])], "/d")
-    assert len(only_file[ln.PANEL_WIRE]) == 1
+    assert len(only_file["unexplained"]) == 1
     # Wiring that differs in content, not in presence, is nobody's class.
     both = ln.classify([_diff("/d/c", "inputs", [[0, "a"]], [[0, "b"]])], "/d")
     assert len(both["unexplained"]) == 1
@@ -119,8 +122,8 @@ def test_a_flag_the_live_gather_does_not_know_is_the_vocabulary_class():
 
 
 def test_every_class_the_documentation_names_has_a_constant_here():
-    assert len(ln.CLASSES) == 8
-    assert len(set(ln.CLASSES)) == 8
+    assert len(ln.CLASSES) == 7
+    assert len(set(ln.CLASSES)) == 7
 
 
 def test_compare_counts_one_parameter_as_one_field_not_one_map_as_one_field():
@@ -199,8 +202,8 @@ def test_the_network_still_exercises_every_class_the_documentation_names(measure
 def test_most_of_the_two_texts_agree(measured):
     """The measured shape of the disagreement, so a regression is visible.
 
-    Measured on 2025.32460, macOS: 722 fields compared, 614 equal, 108 in the
-    nine classes. The assertion is deliberately loose about the exact numbers —
+    Measured on 2025.32460, macOS: 722 fields compared, 618 equal, 104 in the
+    seven classes. The assertion is deliberately loose about the exact numbers —
     a TouchDesigner build that ships a different annotate component moves them —
     and tight about the shape: the great majority of fields agree.
     """

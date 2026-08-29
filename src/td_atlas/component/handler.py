@@ -1297,14 +1297,14 @@ _TEXT_KEYS = ("source", "build", "path", "operator_count", "operators")
 _SKIPPED_ROOTS = ("local", "perform", "tdatlas")
 
 # What this text does NOT match, and why. It is printed from the live network;
-# `td-atlas project text` prints from the expanded file. Nine classes of
+# `td-atlas project text` prints from the expanded file. Seven classes of
 # difference are known, all of them measured on 2025.32460 on the network
 # `tests/live_network.py` builds (21 operators, and 24 more inside the
-# annotation component it loads) — 108 differing fields out of 722 compared,
+# annotation component it loads) — 104 differing fields out of 722 compared,
 # with nothing left over. The network is a test fixture and not a memory, so
 # any of these numbers can be taken again: `tests/test_live_text_diff.py`
 # builds it, saves it with `save_tox`, reads the file back and fails if a
-# field falls outside these nine.
+# field falls outside these seven.
 #
 #   fields  class                     mechanism
 #       80  custom parameter          `toeexpand` writes a custom parameter's
@@ -1332,11 +1332,6 @@ _SKIPPED_ROOTS = ("local", "perform", "tdatlas")
 #                                     word is not zero (measured: `iop1op 32
 #                                     ""`, `ext0name 256 ""`). `par.isDefault`
 #                                     drops it here.
-#        2  panel COMP input wiring   A panel COMP's parent wire is in its `.n`
-#                                     `inputs` block, but live it hangs off
-#                                     `inputCOMPConnectors`, and `_inputs_data`
-#                                     reads only `inputConnectors`. The file
-#                                     has the wire, this text does not.
 #        1  COMP input wiring         A COMP's operator input is stored in a
 #                                     `.network` file (`compinputs`), which the
 #                                     offline reader does not parse — see the
@@ -1356,10 +1351,19 @@ _SKIPPED_ROOTS = ("local", "perform", "tdatlas")
 #                                     artefact of measuring through `save_tox`,
 #                                     not of this text.
 #
-# Two of the nine are ours to fix rather than to live with — the table shape is
-# a plain reader bug, and the panel wiring is a connector this side does not
-# read. The other seven are the file and the live object genuinely holding
-# different things.
+# All seven are the file and the live object genuinely holding different
+# things. Two more stood here until 2026-08-29 and were ours to fix rather
+# than to live with: a table DAT's shape, which the reader transposed, and a
+# panel COMP's wire to the COMP beside it, which lives on
+# `inputCOMPConnectors` and which `_inputs_data` now reads alongside
+# `inputConnectors`.
+#
+# One gap the network does not reach and nothing above covers: a COMP with
+# both an operator input and a COMP wire (measured: `tableCOMP`, and any
+# container that grows an `inTOP` inside). The file splits the two — the COMP
+# wire into `.n` `inputs`, the operator input into `.network` `compinputs` —
+# while this side reports both, each at its own connector's index, so such a
+# node would differ by more than the "COMP input wiring" class describes.
 
 
 def _config_value(key, default=None):
@@ -1661,40 +1665,75 @@ def _inputs_data(target):
 
     A sibling by name, anything else by absolute path — which is what the
     reader on the host resolves against the node's own parent.
+
+    Two connector lists, because a COMP has two. `inputConnectors` is the
+    operator wiring every family has; `inputCOMPConnectors` is the left-hand
+    connector a panel or object COMP hangs off its parent panel or parent
+    object. Measured on 2025.32460: a COMP's `.n` `inputs` block holds the
+    *COMP* wire under the connector's own index (`inputs { 0 <sibling> }` for
+    a container wired to `spacer`), while its operator inputs go to a
+    `.network` file's `compinputs` block, which the offline reader does not
+    parse. Both lists carry their own index, and every COMP type in
+    2025.32460 has at most one COMP connector, so index 0 is the only one
+    measured; a COMP with both kinds wired (`tableCOMP`, or a container with
+    an `inTOP` inside) therefore reports two entries at index 0, one per
+    connector list.
     """
     out = []
     try:
-        connectors = target.inputConnectors
+        connectors = list(target.inputConnectors)
     except Exception:
+        connectors = []
+    try:
+        comp_connectors = list(target.inputCOMPConnectors)
+    except Exception:
+        comp_connectors = []
+    if not connectors and not comp_connectors:
         return out
     try:
         base = target.parent().path
     except Exception:
         base = ""
     prefix = (base.rstrip("/") + "/") if base else ""
-    for index, connector in enumerate(connectors):
-        for connection in connector.connections:
-            # `outOP` and not `owner`: for a wire coming out of a component the
-            # owner is the component, while the file names the node inside it.
-            # Measured on 2025.32460 — /project1/out1's source reports
-            # owner /project1/geo1 and outOP /project1/geo1/out1, and the .n
-            # file records `geo1/out1`. `owner` is the fallback, because every
-            # wire between plain operators leaves `outOP` empty.
-            source = None
-            try:
-                source = connection.outOP
-            except Exception:
+
+    def gather(connector_list, comp_wire):
+        for index, connector in enumerate(connector_list):
+            for connection in connector.connections:
+                # `outOP` and not `owner`: for a wire coming out of a component
+                # the owner is the component, while the file names the node
+                # inside it. Measured on 2025.32460 — /project1/out1's source
+                # reports owner /project1/geo1 and outOP /project1/geo1/out1,
+                # and the .n file records `geo1/out1`. `owner` is the fallback,
+                # because every wire between plain operators leaves `outOP`
+                # empty.
+                #
+                # A COMP wire is the other way round: the file names the source
+                # COMP itself (`inputs { 0 spacer }`), and every COMP
+                # connection measured leaves `outOP` empty anyway, so `owner`
+                # is what it asks for.
                 source = None
-            if source is None:
-                source = connection.owner
-            if source is None:
-                continue
-            path = source.path
-            # Relative to the consumer's own parent, which is what the reader
-            # on the host resolves against; anything outside stays absolute.
-            if prefix and path.startswith(prefix):
-                path = path[len(prefix):]
-            out.append([index, path])
+                if not comp_wire:
+                    try:
+                        source = connection.outOP
+                    except Exception:
+                        source = None
+                if source is None:
+                    try:
+                        source = connection.owner
+                    except Exception:
+                        source = None
+                if source is None:
+                    continue
+                path = source.path
+                # Relative to the consumer's own parent, which is what the
+                # reader on the host resolves against; anything outside stays
+                # absolute.
+                if prefix and path.startswith(prefix):
+                    path = path[len(prefix):]
+                out.append([index, path])
+
+    gather(connectors, False)
+    gather(comp_connectors, True)
     return out
 
 
