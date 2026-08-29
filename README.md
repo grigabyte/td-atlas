@@ -21,7 +21,8 @@ td-atlas is built on two observations:
 Two passes produce one SQLite index, exact for the build it was made from
 rather than scraped from a wiki describing some other release.
 
-**Static pass** — offline, no TouchDesigner process, about 12 seconds:
+**Static pass** — offline, no TouchDesigner process, 23–30 seconds measured
+on an M-series Mac:
 
 | Source in the app bundle | What it yields |
 | --- | --- |
@@ -37,6 +38,14 @@ and clamps, **menu options**, parameter pages and ordering, connector counts,
 and the 71 contracted type names TouchDesigner writes when it saves. Cooking is
 disabled on the sandbox so that creating a Video Device In TOP does not open a
 camera.
+
+The two passes do not add up to the table above, and `td-atlas status` reports
+the total rather than the static half: the runtime pass finds 13 operator types
+the help JSON does not describe and 7,667 parameters it does not list, so an
+index that has been probed holds **667 operators and 24,251 parameters** where
+the static pass alone holds 654 and 16,584. Those extra parameters are the
+reason the runtime pass exists — they are mostly the ones whose defaults and
+menu options are only knowable by asking a live instance.
 
 ## The bridge
 
