@@ -557,6 +557,14 @@ def test_a_network_at_the_cap_is_still_written(tmp_path):
     assert outcome["wrote"] is True
 
 
+def test_one_operator_over_the_cap_is_already_too_many(tmp_path):
+    # The cap is a limit, not a hint: the pair of tests around it pins both
+    # sides of the boundary, which "at the cap" alone does not.
+    outcome, _ = _capped(tmp_path, total=1001, max_ops=1000)
+    assert outcome["wrote"] is False
+    assert outcome["note"] == "skipped: 1001 ops over the 1000 cap"
+
+
 def test_no_cap_means_no_counting_at_all(tmp_path):
     outcome, calls = _capped(tmp_path, total=100000, max_ops=0)
     assert outcome["wrote"] is True
