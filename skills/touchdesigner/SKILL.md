@@ -134,6 +134,7 @@ td-atlas search "blur an image"
 td-atlas op noiseTOP --page Noise
 td-atlas render /project1/n1 -o out.png
 td-atlas project diff a.toe b.toe
+td-atlas project variant save a.toe --label try1   # branch, restore, compare
 td-atlas reload                     # upgrade the bridge in place
 ```
 

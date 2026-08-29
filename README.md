@@ -89,6 +89,8 @@ original, since everything happens on a copy in a cache.
 td-atlas project read  myproject.toe --path /project1 --params
 td-atlas project grep  myproject.toe "def onValueChange"
 td-atlas project diff  before.toe after.toe
+td-atlas project variant save myproject.toe --label before-the-rewire
+td-atlas project variant diff myproject.toe --label before-the-rewire --other after
 ```
 
 `grep` reaches code no file search can: the Python and GLSL inside DATs lives
@@ -149,7 +151,7 @@ virtualenv is activated. Wiring it in by hand looks like:
 claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 ```
 
-36 tools in three groups — see `skills/touchdesigner/references/tools.md`.
+40 tools in three groups — see `skills/touchdesigner/references/tools.md`.
 
 **Index** (offline): `td_search_operators`, `td_operator_schema`,
 `td_search_parameters`, `td_python_api`, `td_docs`, `td_glossary`,
@@ -216,7 +218,7 @@ unlocks the rest.
 | --- | --- |
 | [`skills/touchdesigner/SKILL.md`](skills/touchdesigner/SKILL.md) | Agents *using* the connector |
 | [`skills/touchdesigner/references/gotchas.md`](skills/touchdesigner/references/gotchas.md) | Every trap that produced no error |
-| [`skills/touchdesigner/references/tools.md`](skills/touchdesigner/references/tools.md) | All 36 MCP tools |
+| [`skills/touchdesigner/references/tools.md`](skills/touchdesigner/references/tools.md) | All 40 MCP tools |
 | [`AGENTS.md`](AGENTS.md) | Agents *contributing to* this repository |
 | [`docs/architecture.md`](docs/architecture.md) | How the three layers fit together, and why |
 | [`docs/formats.md`](docs/formats.md) | The reverse-engineered `.toe`/`.tox` format, with evidence |
@@ -277,7 +279,7 @@ td-atlas/
 │   │   ├── model.py            the operator tree and type resolution
 │   │   ├── diff.py             semantic comparison
 │   │   └── render.py           tree description and code search
-│   └── mcp/server.py       36 MCP tools over all three layers
+│   └── mcp/server.py       40 MCP tools over all three layers
 └── tests/                  three need an installation, none a running instance
 ```
 

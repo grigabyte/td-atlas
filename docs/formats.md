@@ -45,6 +45,25 @@ A node's path is its path within the tree, minus the extension. Per operator:
 | `.table` | Table DAT cells |
 | `.panel` | panel UI state (layout only) |
 
+### What each of those three forms costs
+
+Measured on this machine, with the atom index present, over three shipped
+palette components. Times are the wall clock of producing that form once from
+a warm expansion cache; sizes are bytes on disk.
+
+| Component | Operators | `.tox` on disk | Network text | Text gzipped | Expanded tree | Text alone | Text + `.tox` | Text + tree |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `Generators/checker.tox` | 21 | 3,942 | 17,955 | 2,326 | 238,448 | 0.001 s | 0.001 s | 0.008 s |
+| `Tools/battery.tox` | 35 | 3,870 | 25,315 | 2,567 | 22,551 | 0.002 s | 0.002 s | 0.012 s |
+| `Mapping/kantanMapper.tox` | 4,080 | 308,928 | 6,111,237 | 299,592 | 3,076,502 | 0.259 s | 0.260 s | 1.723 s |
+
+The number that decides things: **a `.toe` is a compressed container, so the
+readable text is about twenty times larger than the file it was printed
+from.** Keeping the original file alongside the text therefore costs roughly
+5% more and no measurable time, which is why `project/variants.py` stores
+both. The expanded tree adds half the text again — and 9,647 files for
+`kantanMapper` — for something `toeexpand` reproduces on demand.
+
 ## `.n` — nodes
 
 ```

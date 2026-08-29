@@ -1186,6 +1186,8 @@ def cmd_project(args: argparse.Namespace) -> int:
             # prose. Exit 2, not 1: the file was written.
             if changes.gaps:
                 return 2
+        elif args.action == "variant":
+            return _cmd_variant(args, resolver)
         elif args.action == "grep":
             project = load_file(args.file, resolver=resolver)
             matches = grep(project, args.pattern, regex=not args.fixed)
@@ -1231,6 +1233,70 @@ def _script_suffix(node) -> str:
     if "import " in text or "def " in text or "op(" in text:
         return ".py"
     return ".txt"
+
+
+def _cmd_variant(args: argparse.Namespace, resolver) -> int:
+    """Branch and compare: save a state, list them, go back, see the difference.
+
+    A variant keeps the network text next to a byte copy of the file it was
+    printed from, so restoring is a copy rather than a repack — see
+    `project/variants.py` for the measurement that settled that.
+    """
+    from .project import variants as store
+
+    try:
+        if args.variant_action == "save":
+            variant = store.save(
+                args.file,
+                args.label,
+                note=args.note or "",
+                path=args.path or None,
+                resolver=resolver,
+            )
+            print(variant.directory)
+            _say(
+                f"saved '{variant.label}': "
+                f"{variant.data['operator_count']} operators, "
+                f"{variant.data['text_bytes']} B of text plus a "
+                f"{variant.data['source_size']} B copy of "
+                f"{variant.data['copy_name']}"
+            )
+        elif args.variant_action == "list":
+            if args.file:
+                items = store.variants(args.file)
+                print(
+                    store.render_list(
+                        items, header=f"{Path(args.file).name}: {len(items)} variant(s)"
+                    )
+                )
+            else:
+                pairs = store.sources()
+                if not pairs:
+                    print("no variants saved")
+                for origin, items in pairs:
+                    print(store.render_list(items, header=f"{origin}:"))
+        elif args.variant_action == "restore":
+            target, variant = store.restore(args.file, args.label, args.output)
+            print(target)
+            drift = variant.drift()
+            _say(
+                f"restored '{variant.label}' from its own copy; "
+                f"the original at {variant.origin} is {drift} since the save"
+            )
+        elif args.variant_action == "diff":
+            result, one, two = store.compare(
+                args.file,
+                args.label,
+                args.other,
+                include_text=not args.no_text,
+                resolver=resolver,
+            )
+            print(result.render(show_moves=args.moves))
+            _say(f"\n{one.label} -> {two.label}: {result.summary()}")
+    except store.VariantError as exc:
+        _say(f"error: {exc}")
+        return 1
+    return 0
 
 
 def cmd_mcp(_args: argparse.Namespace) -> int:
@@ -1381,6 +1447,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--text", required=True, help="the edited JSON, or '-' for stdin"
     )
     a.add_argument("-o", "--output", required=True, help="where to write")
+
+    a = actions.add_parser(
+        "variant",
+        help="save, list, restore and compare states of one project",
+    )
+    variant_actions = a.add_subparsers(dest="variant_action", required=True)
+
+    v = variant_actions.add_parser("save", help="keep the current state")
+    v.add_argument("file", help="the .toe/.tox to save a state of")
+    v.add_argument("--label", required=True, help="a name for this state")
+    v.add_argument("--note", help="why this state is worth keeping")
+    v.add_argument("--path", help="dump only this subtree as text")
+
+    v = variant_actions.add_parser("list", help="what has been saved")
+    v.add_argument("file", nargs="?", help="one project, or omit for all")
+
+    v = variant_actions.add_parser("restore", help="write a saved state out")
+    v.add_argument("file", help="the project the state was saved from")
+    v.add_argument("--label", required=True)
+    v.add_argument(
+        "-o", "--output", required=True,
+        help="where to write; a directory keeps the original file name",
+    )
+
+    v = variant_actions.add_parser("diff", help="compare two saved states")
+    v.add_argument("file", help="the project both states were saved from")
+    v.add_argument("--label", required=True, help="the earlier state")
+    v.add_argument("--other", required=True, help="the later state")
+    v.add_argument("--moves", action="store_true", help="list moved-only nodes")
+    v.add_argument("--no-text", action="store_true", help="skip DAT text diffs")
 
     a = actions.add_parser("grep", help="search the code inside a project's DATs")
     a.add_argument("file")

@@ -399,6 +399,51 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_project_read",),
     ),
+    "variant_label_taken": Recovery(
+        cause=(
+            "a variant of that project is already saved under that label, and "
+            "saving never overwrites one"
+        ),
+        action=(
+            "pick a label that is free — td_variant_list names the ones in "
+            "use — or delete that variant's directory, which the message "
+            "above gives the path of"
+        ),
+        resume=("td_variant_list",),
+    ),
+    "variant_unknown": Recovery(
+        cause="no variant of that project is saved under that label",
+        action=(
+            "the message above lists the labels that do exist; variants are "
+            "grouped by the project's path, so a project that has moved since "
+            "the save has none under its new path"
+        ),
+        resume=("td_variant_list", "td_variant_save"),
+    ),
+    "variant_corrupt": Recovery(
+        cause=(
+            "the variant's own copy of the project no longer matches what its "
+            "manifest records, so restoring it would hand back something "
+            "other than what was saved"
+        ),
+        action=(
+            "nothing was written; the variant's text is still readable, so "
+            "take what is needed out of it, remove the variant directory and "
+            "save the state again from the project"
+        ),
+        resume=("td_variant_list",),
+    ),
+    "variant_output_exists": Recovery(
+        cause=(
+            "something already sits at that output path, and a restore writes "
+            "the file whole rather than merging into it"
+        ),
+        action=(
+            "name a path that does not exist yet, then compare the two with "
+            "td_project_diff before replacing anything of the user's"
+        ),
+        resume=("td_project_diff",),
+    ),
     "bad_label": Recovery(
         cause="the label would not be a usable filename",
         action="use only letters, digits, dot, dash and underscore",
@@ -451,7 +496,12 @@ def classify(exc: BaseException) -> Recovery:
         return HINTS["index_missing"]
 
     from ..project import ExpandError
+    from ..project.variants import VariantError
 
+    if isinstance(exc, VariantError):
+        # The key travels on the exception, so the refusal that raised it and
+        # the hint that answers it cannot drift apart over a reworded string.
+        return HINTS.get(getattr(exc, "key", ""), HINTS["variant_unknown"])
     if isinstance(exc, ExpandError):
         return HINTS["project_unreadable"]
     return HINTS["unmapped_error"].fill(type=type(exc).__name__)

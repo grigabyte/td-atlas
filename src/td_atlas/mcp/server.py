@@ -1037,6 +1037,111 @@ def td_project_write(file: str, text: str, output: str) -> str:
 
 @mcp.tool()
 @guarded
+def td_variant_save(file: str, label: str, note: str = "", path: str = "") -> str:
+    """Keep the current state of a .toe/.tox so it can be returned to and compared.
+
+    Take one before trying a direction, another after, and td_variant_diff
+    says exactly what the direction changed. Nothing of the user's is touched:
+    the variant is the network text plus a byte copy of the file, kept under
+    ~/.td-atlas/variants and grouped by the project's path.
+
+    That copy is what makes a restore exact — the text alone cannot rebuild a
+    .toe, and it is twenty times larger than the compressed file it was
+    printed from, so the copy costs about 5% more and removes the dependency.
+
+    `label` may hold letters, digits, dot, dash and underscore. A label
+    already in use is refused rather than overwritten. `path` narrows only the
+    stored text to a subtree; the copy is always the whole file.
+    """
+    from ..project import index_resolver
+    from ..project.variants import save
+
+    variant = save(
+        file, label, note=note, path=path or None, resolver=index_resolver()
+    )
+    return (
+        f"saved '{variant.label}' of {variant.origin.name}\n"
+        f"{variant.data['operator_count']} operators, "
+        f"{variant.data['text_bytes']} B of text, "
+        f"{variant.data['source_size']} B copy\n"
+        f"text: {variant.text_path}"
+    )
+
+
+@mcp.tool()
+@guarded
+def td_variant_list(file: str = "") -> str:
+    """List saved variants — of one .toe/.tox, or of every project that has any.
+
+    Each line carries when it was saved, how large it is, and whether the
+    original file has changed since. That last one is information rather than
+    a warning: a restore reads the variant's own copy, so a changed original
+    cannot affect it.
+    """
+    from ..project.variants import render_list, sources, variants
+
+    if file:
+        items = variants(file)
+        from pathlib import Path as _Path
+
+        head = f"{_Path(file).name}: {len(items)} variant(s)"
+        return render_list(items, header=head)
+    pairs = sources()
+    if not pairs:
+        return "no variants saved"
+    return "\n".join(render_list(items, header=f"{origin}:") for origin, items in pairs)
+
+
+@mcp.tool()
+@guarded
+def td_variant_restore(file: str, label: str, output: str) -> str:
+    """Write a saved variant back out as a .toe/.tox file.
+
+    A byte copy of what was saved, not a repack: nothing is collapsed, so
+    TouchDesigner's toecollapse never runs and never renames a user's file to
+    .bkp. `output` must not exist — hand back a new path and compare with
+    td_project_diff rather than replacing anything in place. A directory as
+    `output` keeps the name the file had when it was saved.
+    """
+    from ..project.variants import restore
+
+    target, variant = restore(file, label, output)
+    return (
+        f"restored '{variant.label}' to {target}\n"
+        f"the original at {variant.origin} is {variant.drift()} since the save"
+    )
+
+
+@mcp.tool()
+@guarded
+def td_variant_diff(
+    file: str,
+    before: str,
+    after: str,
+    show_moves: bool = False,
+    include_text: bool = True,
+) -> str:
+    """Compare two saved variants of the same project.
+
+    The same semantic comparison td_project_diff runs, aimed at two saved
+    states instead of two files: added, removed, retyped, rewired and
+    re-parameterised operators, plus a line diff of changed DAT code. Nodes
+    that only moved are counted separately so they cannot bury a real change.
+    """
+    from ..project import index_resolver
+    from ..project.variants import compare
+
+    result, one, two = compare(
+        file, before, after, include_text=include_text, resolver=index_resolver()
+    )
+    return (
+        f"{one.label} -> {two.label}: {result.summary()}\n\n"
+        f"{result.render(show_moves=show_moves)}"
+    )
+
+
+@mcp.tool()
+@guarded
 def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
     """Search the Python and GLSL held inside a project's DATs.
 
