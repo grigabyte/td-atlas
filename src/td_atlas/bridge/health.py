@@ -119,6 +119,26 @@ class Health:
     def ok(self) -> bool:
         return not any(f.severity == "error" for f in self.findings)
 
+    def summary(self) -> str:
+        """The whole verdict on one line, for the status panel inside TD.
+
+        The counts, not the findings: a panel is read at a glance from across
+        a room, and one line that says how many errors there are sends the
+        reader to `td_health` for the list. "Nothing wrong found" is the same
+        wording the full report uses, so the two never look like disagreement.
+        """
+        counts = []
+        for severity, word in (("error", "error"), ("warning", "warning"),
+                               ("note", "note")):
+            found = sum(1 for f in self.findings if f.severity == severity)
+            if found:
+                counts.append(f"{found} {word}{'s' if found != 1 else ''}")
+        verdict = ", ".join(counts) if counts else "nothing wrong found"
+        return (
+            f"{self.fps_actual:.0f}/{self.fps_target:.0f} fps, "
+            f"{self.cooking}/{self.nodes} cooking - {verdict}"
+        )
+
     def render(self) -> str:
         head = (
             f"{self.product or 'TouchDesigner'}"
@@ -132,8 +152,25 @@ class Health:
         return head + "\n" + "\n".join(f.render() for f in ordered)
 
 
+def _publish(client: BridgeClient, health: Health) -> None:
+    """Put the verdict on the bridge's own status panel. Best effort.
+
+    The verdict is decided here and not inside TouchDesigner — it needs two
+    samples an interval apart and the rules above — so the panel has to be
+    told. Every failure is swallowed: a bridge older than this method answers
+    404, and a health check must not fail because a display did not update.
+    """
+    try:
+        client.call("status_note", health=health.summary())
+    except Exception:
+        pass
+
+
 def check(
-    client: BridgeClient, path: str = "/project1", interval: float = 1.0
+    client: BridgeClient,
+    path: str = "/project1",
+    interval: float = 1.0,
+    publish: bool = True,
 ) -> Health:
     """Sample a subtree twice and report what is quietly broken."""
     first = client.call("health_sample", path=path)
@@ -338,4 +375,6 @@ def check(
             Finding("note", "non-realtime",
                     "Realtime is off: TouchDesigner renders every frame rather "
                     "than dropping to keep up with the clock"))
+    if publish:
+        _publish(client, health)
     return health

@@ -19,7 +19,10 @@ import os
 COMPONENT_NAME = "tdatlas"
 HANDLER_DAT = "handler"
 SERVER_DAT = "bridge"
+PANEL_TOP = "panel"
 DEFAULT_PORT = 9977
+
+
 
 def _home():
     """Where the host staged this bridge. Same rule as handler.py's `_home`.
@@ -129,6 +132,21 @@ def install():
     if server is None:
         server = container.create(webserverDAT, SERVER_DAT)
         server.nodeX, server.nodeY = 200, 0
+
+    # Read-only, and it never leaves this COMP: no interaction, no keyboard,
+    # no timer. It is repainted by the handler at the end of each request.
+    # Its shape comes from the handler rather than from a second copy here:
+    # project/release.py lays out the same node for the released .tox from the
+    # same constants, and a panel that differs between the two installs would
+    # be a difference nobody would think to look for.
+    shape = handler.module
+    panel = container.op(PANEL_TOP)
+    if panel is None:
+        panel = container.create(textTOP, PANEL_TOP)
+        panel.nodeX, panel.nodeY = 0, 200
+        panel.par.text = shape.PANEL_PLACEHOLDER
+    for name, value in shape.PANEL_PARS:
+        setattr(panel.par, name, value)
 
     server.par.callbacks = handler
     server.par.port = port

@@ -32,12 +32,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .. import config as cfg
+from ..component import handler as bridge_handler
 from ..install import InstallNotFound, TDInstall, discover
 from .expand import ExpandError, cache_dir, collapse
 
 COMPONENT_NAME = "tdatlas"
 HANDLER_DAT = "handler"
 SERVER_DAT = "bridge"
+PANEL_TOP = "panel"
 
 DEFAULT_OUTPUT = Path("release") / "TdAtlas.tox"
 
@@ -104,6 +106,18 @@ def write_tree(root: Path, port: int, install: TDInstall) -> list[str]:
         (f"{COMPONENT_NAME}/{HANDLER_DAT}.text", _payload(handler_source)),
         # The server, pointed at the handler by sibling name.
         (f"{COMPONENT_NAME}/{SERVER_DAT}.n", _node("DAT:webserver", 200, 0).encode()),
+        # The status panel. Laid out here as well as in component/bootstrap.py
+        # so that the drag-and-drop install and the textport install produce
+        # the same COMP; both take the parameters from `handler.PANEL_PARS`
+        # rather than being kept in step by hand.
+        (f"{COMPONENT_NAME}/{PANEL_TOP}.n", _node("TOP:text", 0, 200).encode()),
+        (
+            f"{COMPONENT_NAME}/{PANEL_TOP}.parm",
+            _parms(
+                [("text", bridge_handler.PANEL_PLACEHOLDER)]
+                + list(bridge_handler.PANEL_PARS)
+            ).encode(),
+        ),
         (
             f"{COMPONENT_NAME}/{SERVER_DAT}.parm",
             _parms(

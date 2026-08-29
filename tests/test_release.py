@@ -14,11 +14,14 @@ from pathlib import Path
 
 import pytest
 
+from td_atlas.component import handler as bridge_handler
 from td_atlas.project.release import (
     COMPONENT_NAME,
     HANDLER_DAT,
+    PANEL_TOP,
     SERVER_DAT,
     build_tox,
+    write_tree,
 )
 
 
@@ -65,6 +68,43 @@ def _reexpand(tox: Path, into: Path, install) -> Path:
     return expanded
 
 
+def test_the_laid_out_tree_carries_the_status_panel(tmp_path):
+    """Host-only: the panel's files are written, whatever toecollapse does.
+
+    Kept separate from the round trip below so that "the .tox has a panel" is
+    checked on a machine with no TouchDesigner on it too.
+    """
+    from td_atlas.install import TDInstall
+
+    root = tmp_path / "TdAtlas.tox.dir"
+    names = write_tree(root, PORT, TDInstall(Path("/nowhere"), Path("/nowhere/tfs"), "2025.0", None))
+
+    assert f"{COMPONENT_NAME}/{PANEL_TOP}.n" in names
+    assert f"{COMPONENT_NAME}/{PANEL_TOP}.parm" in names
+    assert (root / COMPONENT_NAME / f"{PANEL_TOP}.n").read_text().splitlines()[0] == (
+        "TOP:text"
+    )
+    parms = (root / COMPONENT_NAME / f"{PANEL_TOP}.parm").read_text()
+    values = dict(
+        line.split(" 0 ", 1)
+        for line in parms.splitlines()
+        if line.strip() and line.strip() != "?"
+    )
+    assert values["text"] == bridge_handler.PANEL_PLACEHOLDER
+    assert values == dict(
+        [("text", bridge_handler.PANEL_PLACEHOLDER)]
+        + list(bridge_handler.PANEL_PARS)
+    )
+
+
+def test_the_shipped_placeholder_fits_what_a_parm_line_can_hold():
+    """One ASCII line, no leading or trailing space — see `_parms`."""
+    text = bridge_handler.PANEL_PLACEHOLDER
+    assert text.strip() == text and text
+    assert "\n" not in text and "\r" not in text
+    assert text.isascii()
+
+
 @needs_td
 def test_builds_a_tox_that_expands_back_into_the_bridge(
     tmp_path, isolated_home
@@ -89,6 +129,21 @@ def test_builds_a_tox_that_expands_back_into_the_bridge(
     assert (tree / f"{COMPONENT_NAME}.n").read_text().splitlines()[0] == "COMP:base"
     assert handler_n.read_text().splitlines()[0] == "DAT:text"
     assert bridge_n.read_text().splitlines()[0] == "DAT:webserver"
+
+    # The status panel survived the round trip through toecollapse, as a
+    # Text TOP carrying the parameters bootstrap.py gives its own copy.
+    panel_n = tree / COMPONENT_NAME / f"{PANEL_TOP}.n"
+    assert panel_n.exists()
+    assert panel_n.read_text().splitlines()[0] == "TOP:text"
+    panel_parms = (tree / COMPONENT_NAME / f"{PANEL_TOP}.parm").read_text()
+    panel_values = dict(
+        line.split(" 0 ", 1)
+        for line in panel_parms.splitlines()
+        if line.strip() and line.strip() != "?"
+    )
+    assert panel_values["text"] == bridge_handler.PANEL_PLACEHOLDER
+    for name, value in bridge_handler.PANEL_PARS:
+        assert panel_values[name] == value
 
     # The server is wired to the handler, on the configured port, active.
     parms = (tree / COMPONENT_NAME / f"{SERVER_DAT}.parm").read_text()
@@ -126,4 +181,5 @@ def test_the_built_tox_reads_as_a_project(tmp_path, isolated_home):
     by_name = {node.name: node for node in project.walk()}
     assert by_name[HANDLER_DAT].op_type == "textDAT"
     assert by_name[SERVER_DAT].op_type == "webserverDAT"
+    assert by_name[PANEL_TOP].op_type == "textTOP"
     assert by_name[HANDLER_DAT].text.startswith('"""The td-atlas RPC handler.')

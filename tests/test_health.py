@@ -10,12 +10,16 @@ from td_atlas.bridge import health as health_mod
 
 
 class FakeClient:
-    """Replays two prepared health samples."""
+    """Replays two prepared health samples, and records what was published."""
 
     def __init__(self, samples):
         self.samples = list(samples)
+        self.published = []
 
-    def call(self, method, **_kw):
+    def call(self, method, **kw):
+        if method == "status_note":
+            self.published.append(kw.get("health"))
+            return {"stored": True}
         assert method == "health_sample"
         return self.samples.pop(0)
 
@@ -360,3 +364,56 @@ def test_prints_what_each_new_section_costs():
 
     assert "shader-compile" in kinds(shader_result)
     assert "script-errors" in kinds(script_result)
+
+
+# -- the one-line verdict the bridge's status panel shows -------------------
+
+def test_a_clean_check_summarises_as_nothing_wrong_found():
+    nodes = [node("/project1/a", 10), node("/project1/b", 10)]
+    after = [node("/project1/a", 70), node("/project1/b", 70)]
+    result = health_mod.check(FakeClient([sample(0, nodes), sample(60, after)]))
+    assert result.summary() == "60/60 fps, 2/2 cooking - nothing wrong found"
+
+
+def test_the_summary_counts_findings_by_severity_and_never_lists_them():
+    result = health_mod.Health(
+        findings=[
+            health_mod.Finding("error", "x", "boom", ["/project1/a"]),
+            health_mod.Finding("error", "y", "boom", []),
+            health_mod.Finding("warning", "z", "hmm", []),
+        ],
+        fps_target=60.0, fps_actual=30.0, nodes=9, cooking=4,
+    )
+    line = result.summary()
+    assert line == "30/60 fps, 4/9 cooking - 2 errors, 1 warning"
+    assert "\n" not in line and "/project1/a" not in line
+
+
+def test_the_verdict_is_pushed_to_the_bridge_so_the_panel_can_show_it():
+    nodes = [node("/project1/a", 10)]
+    after = [node("/project1/a", 70)]
+    client = FakeClient([sample(0, nodes), sample(60, after)])
+    result = health_mod.check(client)
+    assert client.published == [result.summary()]
+
+
+def test_nothing_is_pushed_when_the_caller_asks_for_no_publishing():
+    client = FakeClient([sample(0, [node("/project1/a", 10)]),
+                         sample(60, [node("/project1/a", 70)])])
+    health_mod.check(client, publish=False)
+    assert client.published == []
+
+
+def test_a_bridge_that_does_not_know_the_method_does_not_fail_the_check():
+    """An older bridge answers 404; the verdict still comes back."""
+
+    class Refusing(FakeClient):
+        def call(self, method, **kw):
+            if method == "status_note":
+                raise RuntimeError("no method 'status_note'")
+            return super().call(method, **kw)
+
+    client = Refusing([sample(0, [node("/project1/a", 10)]),
+                       sample(60, [node("/project1/a", 70)])])
+    result = health_mod.check(client)
+    assert result.ok and client.published == []

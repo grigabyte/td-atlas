@@ -775,6 +775,252 @@ def m_scopes(_params):
     return {"count": len(live), "scopes": live, "expired": expired, "now": now}
 
 
+# -- status panel -----------------------------------------------------------
+
+# A Text TOP inside the bridge COMP so the person whose project an agent is
+# editing can see, without asking anything, that the bridge is up and what it
+# just did. Read-only by construction: no interaction, no keyboard, no timer,
+# and nothing outside /tdatlas is touched.
+#
+# The state it renders lives in a Table DAT beside the claims table and not in
+# a module-level dict, for the reason decision 22 records: this module's body
+# is re-executed between requests, so a module variable is rebuilt and the
+# panel would forget the previous call every time.
+#
+# Updated once per authenticated request, at the end of it, and never on a
+# timer. Measured on 2025.32460, N=300: reading the table's rows costs 8.9 us
+# and writing the Text TOP's `text` parameter 1.8 us, so a whole update cycle
+# is tens of microseconds against a 16 700 us frame. A request has already
+# interrupted the frame by the time this runs, which is why per-request is the
+# chosen frequency: it costs a frame nothing that the request was not already
+# costing, and an idle bridge updates nothing at all.
+#
+# The price is a clock that stops while nobody is talking to the bridge, so
+# every time on the panel is an absolute wall clock time, never "3 s ago" —
+# a stale absolute time reads as stale, a stale relative one lies.
+#
+# Neither the panel nor the table is created from the request path. Both the
+# textport install (bootstrap.py) and the released .tox carry the Text TOP;
+# the table is made on first use like the claims table. Measured on the same
+# build: creating an operator from a script, writing a DAT cell and writing a
+# parameter all leave `ui.undo.undoStack` at the length they found it, so none
+# of this lands on the artist's undo stack.
+
+PANEL_TOP = "panel"
+STATUS_TABLE = "tdatlas_status"
+
+# The panel's shape, held here because three places need the same answer and
+# only this module is importable from all three: bootstrap.py reads it off the
+# installed Text DAT (`handler.module`), project/release.py imports it to lay
+# out the released .tox, and the tests import it on the host. Only what a
+# default Text TOP does not already give — it comes up centred and 256 square.
+# Word wrap is on because the health verdict has no fixed length: measured on
+# the live 2025.32460 panel, "61/60 fps, 7/11 cooking - 1 error, 1 warning,
+# 1 note  at 18:37:43" runs past 760 px at this font size, and a clipped
+# verdict would read as a shorter one rather than as a cut-off one.
+PANEL_PARS = (
+    ("alignx", "left"),
+    ("aligny", "top"),
+    ("fontsizex", "15"),
+    ("wordwrap", "1"),
+    ("positionunit", "pixels"),
+    ("positionx", "10"),
+    ("positiony", "-6"),
+    ("outputresolution", "custom"),
+    ("resolutionw", "760"),
+    ("resolutionh", "140"),
+)
+# ASCII and one line: this exact string is written into the released .tox's
+# .parm file, whose grammar has no room for a newline and whose encoding
+# handling this project has not measured.
+PANEL_PLACEHOLDER = "td-atlas panel - waiting for the first request"
+_STATUS_HEADER = ("key", "value")
+
+# Every line's label column, so the values sit under each other.
+_PANEL_LABEL = 11
+
+
+def _parse_status_rows(rows):
+    """The table's cells as a flat mapping. Pure, and never raises.
+
+    Unlike the claims table this is not filtered by pid: what it holds is a
+    display, not a permission, and a stale line saved inside a .toe is
+    replaced by the first request rather than acted upon.
+    """
+    state = {}
+    for row in rows:
+        cells = [str(cell) for cell in row]
+        if len(cells) < 2 or cells[0] == _STATUS_HEADER[0]:
+            continue
+        state[cells[0]] = cells[1]
+    return state
+
+
+def _format_status_rows(state):
+    """The header plus one row per key, in a stable order. Pure."""
+    rows = [list(_STATUS_HEADER)]
+    for key in sorted(state):
+        value = str(state[key])
+        # Tabs and newlines are the Table DAT's own separators; a value
+        # carrying either would come back as extra cells or extra rows.
+        value = value.replace("\t", " ").replace("\r", " ").replace("\n", " ")
+        rows.append([key, value])
+    return rows
+
+
+def _clock(stamp):
+    """A stored epoch as a wall clock time, or '' when there is nothing.
+
+    Local time, because the only reader is the person sitting at this machine.
+    """
+    try:
+        seconds = float(stamp)
+    except (TypeError, ValueError):
+        return ""
+    if seconds <= 0:
+        return ""
+    return time.strftime("%H:%M:%S", time.localtime(seconds))
+
+
+def _panel_line(label, value):
+    return label.ljust(_PANEL_LABEL) + value
+
+
+def render_panel(state):
+    """The panel's text, from the stored state alone. Pure.
+
+    Four lines, in the order a glance wants them: what this is and where it
+    listens, who called it last and when, how big the edit in flight is, and
+    the last health verdict. A field nobody has written yet says so rather
+    than showing a zero, which would read as a measurement.
+    """
+    port = str(state.get("port") or "?")
+    protocol = str(state.get("protocol") or PROTOCOL_VERSION)
+    lines = ["td-atlas    port %s    protocol %s" % (port, protocol)]
+
+    method = str(state.get("method") or "")
+    if method:
+        owner = str(state.get("owner") or "")
+        call = method + ("  by " + owner if owner else "  unattributed")
+        when = _clock(state.get("at"))
+        if when:
+            call += "  at " + when
+        if str(state.get("outcome") or "") == "error":
+            call += "  FAILED"
+        lines.append(_panel_line("last call", call))
+    else:
+        lines.append(_panel_line("last call", "nothing yet"))
+
+    lines.append(_panel_line("batch", str(state.get("batch") or "none yet")))
+
+    verdict = str(state.get("health") or "")
+    if verdict:
+        when = _clock(state.get("healthAt"))
+        lines.append(_panel_line("health", verdict + ("  at " + when if when else "")))
+    else:
+        lines.append(_panel_line("health", "not checked yet"))
+    return "\n".join(lines)
+
+
+def _bridge_holder():
+    """The COMP the bridge lives in, or None off the host.
+
+    Same rule as `_scope_table`: only NameError is caught, so a real failure
+    to reach a COMP is not swallowed into "there is no panel".
+    """
+    try:
+        return me.parent()
+    except NameError:
+        return None
+
+
+def _status_table(create=False):
+    """The Table DAT holding the panel's state, or None when there is none."""
+    holder = _bridge_holder()
+    if holder is None:
+        return None
+    table = holder.op(STATUS_TABLE)
+    if table is None and create:
+        table = holder.create(tableDAT, STATUS_TABLE)
+        table.clear()
+        table.appendRow(list(_STATUS_HEADER))
+        # Parked below the claims table, out of the way of the DATs a person
+        # came here to read.
+        table.nodeY = -450
+    return table
+
+
+def _read_status():
+    table = _status_table()
+    if table is None:
+        return {}
+    return _parse_status_rows(table.rows())
+
+
+def _note_status(**fields):
+    """Merge `fields` into the stored state and repaint the panel.
+
+    Never raises: a panel that cannot be drawn must not turn a working request
+    into a failed one. It is a display.
+    """
+    try:
+        table = _status_table(create=True)
+        if table is None:
+            return None
+        state = _parse_status_rows(table.rows())
+        for key, value in fields.items():
+            state[key] = "" if value is None else str(value)
+        table.clear()
+        for row in _format_status_rows(state):
+            table.appendRow(row)
+        _paint_panel(state)
+        return state
+    except Exception as exc:
+        print("[td-atlas] status panel not updated: %s" % exc)
+        return None
+
+
+def _paint_panel(state):
+    """Write the rendered text onto the Text TOP, if the COMP carries one."""
+    holder = _bridge_holder()
+    if holder is None:
+        return
+    panel = holder.op(PANEL_TOP)
+    if panel is None:
+        return
+    panel.par.text = render_panel(state)
+
+
+def _note_request(dat, name, params, outcome):
+    """Record the call that just ran. One table write, one parameter write."""
+    try:
+        port = int(dat.par.port.eval())
+    except Exception:
+        port = ""
+    _note_status(
+        port=port,
+        protocol=PROTOCOL_VERSION,
+        method=name,
+        owner=_caller_owner(params or {}),
+        at=repr(time.time()),
+        outcome=outcome,
+    )
+
+
+def m_status_note(params):
+    """Put a line on the panel that only the host can know.
+
+    The health verdict is decided on the host — it needs two samples a second
+    apart and the rules in bridge/health.py — so the bridge cannot compute it
+    and is told it instead. Nothing else here accepts host-supplied text.
+    """
+    verdict = params.get("health")
+    if not isinstance(verdict, str) or not verdict.strip():
+        raise ValueError("status_note needs 'health', a one-line verdict")
+    state = _note_status(health=verdict.strip(), healthAt=repr(time.time()))
+    return {"panel": render_panel(state or {}), "stored": bool(state)}
+
+
 # -- serialisation ----------------------------------------------------------
 
 def _jsonable(value, depth=0):
@@ -1235,6 +1481,12 @@ def m_batch(params):
     # actually committed is the difference — read, never assumed; see the
     # rollback below.
     baseline = _undo_depth()
+    # The panel is repainted at the end of the request, not here: the frame
+    # does not render while this runs, so a mid-batch repaint would cost a
+    # parameter write nobody could ever see. The table write is kept because
+    # it survives — a TouchDesigner that dies mid-batch leaves the size of the
+    # edit that was in flight behind in the network.
+    _note_status(batch="%d ops running" % len(steps))
     ui.undo.startBlock(name)
     # Counted so a step that closes the block from under this one can give the
     # level back rather than leave the endBlock below to fail; see _UNDO_HELD.
@@ -1282,10 +1534,12 @@ def m_batch(params):
             except Exception:
                 pass
         del _BATCH_NOTES[:]
+        _note_status(batch="%d ops rolled back" % len(steps))
         raise
     _UNDO_HELD[0] -= 1
     del _BATCH_NOTES[:]
     ui.undo.endBlock()
+    _note_status(batch="%d ops applied" % len(steps))
     return {"applied": len(results), "results": results}
 
 
@@ -2452,6 +2706,7 @@ METHODS = {
     "claim_scope": m_claim_scope,
     "release_scope": m_release_scope,
     "scopes": m_scopes,
+    "status_note": m_status_note,
 }
 
 
@@ -2518,7 +2773,13 @@ def onHTTPRequest(dat, request, response):
                 404,
             )
 
-        result = method(payload.get("params") or {})
+        params = payload.get("params") or {}
+        try:
+            result = method(params)
+        except Exception:
+            _note_request(dat, name, params, "error")
+            raise
+        _note_request(dat, name, params, "ok")
         return _reply(response, {"ok": True, "result": result})
 
     except Exception as exc:
