@@ -40,6 +40,7 @@ COMPONENT_NAME = "tdatlas"
 HANDLER_DAT = "handler"
 SERVER_DAT = "bridge"
 PANEL_TOP = "panel"
+SAVE_DAT = "onsave"
 
 DEFAULT_OUTPUT = Path("release") / "TdAtlas.tox"
 
@@ -117,6 +118,21 @@ def write_tree(root: Path, port: int, install: TDInstall) -> list[str]:
                 [("text", bridge_handler.PANEL_PLACEHOLDER)]
                 + list(bridge_handler.PANEL_PARS)
             ).encode(),
+        ),
+        # The save subscription, laid out here as well as in
+        # component/bootstrap.py for the same reason the panel is: the two
+        # installs must produce the same COMP, and both take the DAT's text
+        # and parameters from the handler rather than keeping a copy.
+        (f"{COMPONENT_NAME}/{SAVE_DAT}.n", _node("DAT:execute", 200, 200).encode()),
+        (
+            f"{COMPONENT_NAME}/{SAVE_DAT}.parm",
+            _parms(
+                [("language", "python")] + list(bridge_handler.SAVE_PARS)
+            ).encode(),
+        ),
+        (
+            f"{COMPONENT_NAME}/{SAVE_DAT}.text",
+            _payload(bridge_handler.SAVE_SHIM.encode()),
         ),
         (
             f"{COMPONENT_NAME}/{SERVER_DAT}.parm",

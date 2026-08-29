@@ -148,6 +148,19 @@ def install():
     for name, value in shape.PANEL_PARS:
         setattr(panel.par, name, value)
 
+    # The save subscription. An Execute DAT with `projectpostsave` on, whose
+    # text is a shim that calls the handler beside it — the shape, like the
+    # panel's, comes from the handler so that this install and the released
+    # .tox cannot drift apart. It is created switched on; whether it writes
+    # anything is decided at save time by config.json, not here.
+    onsave = container.op(shape.SAVE_DAT)
+    if onsave is None:
+        onsave = container.create(executeDAT, shape.SAVE_DAT)
+        onsave.nodeX, onsave.nodeY = 200, 200
+    onsave.text = shape.SAVE_SHIM
+    for name, value in shape.SAVE_PARS:
+        setattr(onsave.par, name, value)
+
     server.par.callbacks = handler
     server.par.port = port
     server.par.active = False

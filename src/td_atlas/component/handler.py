@@ -828,7 +828,10 @@ PANEL_PARS = (
     ("positiony", "-6"),
     ("outputresolution", "custom"),
     ("resolutionw", "760"),
-    ("resolutionh", "140"),
+    # Room for five lines and a wrapped health verdict: item 19 added a line
+    # about the text written beside the .toe, and at this font size the four
+    # original lines already used 140 px once the verdict wrapped.
+    ("resolutionh", "180"),
 )
 # ASCII and one line: this exact string is written into the released .tox's
 # .parm file, whose grammar has no room for a newline and whose encoding
@@ -919,6 +922,17 @@ def render_panel(state):
         lines.append(_panel_line("health", verdict + ("  at " + when if when else "")))
     else:
         lines.append(_panel_line("health", "not checked yet"))
+
+    # A fifth line, and only once a save has actually happened. Not "off" from
+    # the start: the four lines above are what the panel has always said, and a
+    # bridge whose artist never saves must not grow a line telling them about a
+    # feature they did not ask about. Once a save has run, the line is there
+    # either way — a switched-off externalisation that says nothing would leave
+    # somebody who did turn it on with no way to tell it apart from a failure.
+    written = str(state.get("text") or "")
+    if written:
+        when = _clock(state.get("textAt"))
+        lines.append(_panel_line("text", written + ("  at " + when if when else "")))
     return "\n".join(lines)
 
 
@@ -1019,6 +1033,716 @@ def m_status_note(params):
         raise ValueError("status_note needs 'health', a one-line verdict")
     state = _note_status(health=verdict.strip(), healthAt=repr(time.time()))
     return {"panel": render_panel(state or {}), "stored": bool(state)}
+
+
+# -- the network text written beside the .toe on save -----------------------
+
+# When the artist saves, the bridge writes the network out as the same JSON
+# `td-atlas project text` produces on the host, into a file beside the .toe.
+# The point is history: a text the artist never has to ask for is a text that
+# is in git after every save, and a .toe alone diffs as one opaque blob.
+#
+# How TouchDesigner announces a save — measured, not read. The offline index's
+# Execute DAT article does not mention saving at all, but the parameter table
+# dumped from this build carries `projectpresave`/`projectpostsave`, so the
+# mechanism was confirmed on the running 2025.32460: an Execute DAT with
+# `projectpostsave` on fires `onProjectPostSave()` for a scripted
+# `project.save(path)`, with no arguments and no keywords, and `project.name`
+# and `project.folder` already naming the file that was just written. Post and
+# not pre for two reasons: the file exists by then, so the text lands beside
+# something real, and a post-save failure cannot reach the save it follows.
+#
+# Cost. Everything here runs in the save callback, where parameter reads are
+# cheap: measured on 2025.32460 inside `onProjectPostSave`, reading the value
+# of every non-default parameter of 76 operators costs 0.84 ms, 0.14 us per
+# parameter. (The same loop measured through the bridge's own request handler
+# reports 96-120 us per parameter — a request runs inside a cook, and that
+# number is an artefact of the measuring context, not of the API. Both
+# numbers are in the report for item 19; only the callback one is the cost
+# this feature actually pays.)
+
+TEXT_SUFFIX = ".network.json"
+
+# The Execute DAT that carries the subscription. Created by both installs
+# (component/bootstrap.py and project/release.py) and never from a request:
+# the same rule the panel follows.
+SAVE_DAT = "onsave"
+
+# Its parameters — only what a default Execute DAT does not already give.
+SAVE_PARS = (
+    ("active", "1"),
+    ("projectpostsave", "1"),
+)
+
+# The Execute DAT's text. It holds no logic on purpose: the logic belongs in
+# this module, which the host imports and tests, and a shim that has to be
+# edited in step with it would be a second copy to keep honest. Every callback
+# an Execute DAT can fire is defined, because TouchDesigner's own default text
+# defines them all and a missing one is a NameError in the artist's log.
+SAVE_SHIM = '''# td-atlas: write the network text beside the .toe after a save.
+# The work is in the handler Text DAT beside this one; this only calls it, and
+# swallows nothing itself — `on_project_post_save` never raises.
+
+
+def onProjectPostSave():
+    me.parent().op('handler').module.on_project_post_save()
+
+
+def onProjectPreSave():
+    pass
+
+
+def onStart():
+    pass
+
+
+def onCreate():
+    pass
+
+
+def onExit():
+    pass
+
+
+def onFrameStart(frame):
+    pass
+
+
+def onFrameEnd(frame):
+    pass
+
+
+def onPlayStateChange(state):
+    pass
+
+
+def onDeviceChange():
+    pass
+'''
+
+# The switch. Off unless the config says otherwise, because writing a file into
+# the artist's own project folder is the one thing this project does that it
+# cannot take back, and nobody asked for it at install time. Turning it on is
+# one key in ~/.td-atlas/config.json — the file `td-atlas install` already
+# writes — and the panel says at every glance which way it is set, so an artist
+# who wants it never has to wonder whether it is working.
+#
+# Not a custom parameter on the COMP: both installs re-apply their parameters
+# on every upgrade, so a custom parameter would silently reset the artist's
+# choice the next time they reinstalled. config.json survives that.
+TEXT_ON_SAVE_KEY = "text_on_save"
+
+# The cap, and the reason there is one. Measured on 2025.32460, three saves
+# each, of the same session with a palette component loaded beside /project1:
+#
+#   operators   the save without it   the text on top of it
+#          12            10-14 ms                1-8 ms
+#         717          1250-1690 ms            148-172 ms
+#        4093           339-385 ms           1124-1241 ms
+#
+# The text costs ~0.25-0.30 ms per operator, and TouchDesigner's own save cost
+# does not follow the operator count at all — so on a big network the text is
+# not a percentage of the save, it is a multiple of it: at 4093 operators a
+# 0.35 s save becomes a 1.5 s one. (The first write after the handler text is
+# replaced runs 2-3x the rest, because the module body is re-executed; every
+# number above is the steady state after it.)
+#
+# The threshold: the text may add about half a second to a save and no more.
+# At the measured rate that is two thousand operators, which is where the cap
+# sits. Half a second because a save is already a moment the artist waits
+# through — the measured saves here run from 0.34 to 1.7 s — and because it
+# stays under the second at which a wait stops reading as part of the action.
+# The cap is not a promise about wall clock time on another machine; it is
+# this machine's measurement turned into a number the artist can see and move.
+#
+# Over the cap nothing is written and the panel says so with both numbers, so
+# it is never a silent no-op, and the cap is a config key for an artist who
+# would rather wait. Rejected alternatives: writing it anyway (the contract
+# asks for a threshold, and a 2.5 s Ctrl+S is exactly what nobody would
+# report as a bug in this feature), and spreading the walk over the frames
+# after the save (the text would then describe a network that has already
+# moved on from the file it is named after).
+TEXT_MAX_OPS_KEY = "text_on_save_max_ops"
+DEFAULT_MAX_OPS = 2000
+
+# The keys the top level of this format always carries. A file that does not
+# parse as JSON, or parses without them, belongs to somebody else and is never
+# overwritten — the artist's project folder is not ours to tidy.
+_TEXT_KEYS = ("source", "build", "path", "operator_count", "operators")
+
+# Roots the text deliberately leaves out, and why:
+#   /ui, /sys        - not in the .toe at all; both are external .tox files
+#                      inside the TouchDesigner installation (measured: their
+#                      `externaltox` parameter names a file under
+#                      /Applications/TouchDesigner.app, every other root's is
+#                      empty). Excluded by that measured rule, not by name.
+#   /local, /perform - TouchDesigner's own scaffolding, not the artist's
+#                      network. Measured on 2025.32460: /local carries 55 live
+#                      operators of which the .toe stores 13, because built-in
+#                      components (timeCOMP, /local/midi, /local/maps/master)
+#                      have children live that are not written to the file. A
+#                      text that listed them would diverge from the file by
+#                      more nodes than the file holds.
+#   /tdatlas         - the bridge itself, including the whole of this module as
+#                      the text of a DAT. Nobody wants that in their project's
+#                      git history.
+_SKIPPED_ROOTS = ("local", "perform", "tdatlas")
+
+
+def _config_value(key, default=None):
+    """One value out of ~/.td-atlas/config.json. Never raises."""
+    try:
+        with open(_config_path(), "r") as handle:
+            config = json.load(handle)
+    except Exception:
+        return default
+    if not isinstance(config, dict):
+        return default
+    return config.get(key, default)
+
+
+def text_on_save_enabled():
+    """Whether the artist has asked for the text. Off unless told otherwise."""
+    return bool(_config_value(TEXT_ON_SAVE_KEY, False))
+
+
+def text_max_ops():
+    """How many operators the text will cover before it gives up. See above."""
+    value = _config_value(TEXT_MAX_OPS_KEY, DEFAULT_MAX_OPS)
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_OPS
+    # Zero or below means no cap: an artist who says so has said it on
+    # purpose, and the alternative reading — "write nothing, ever" — is what
+    # the switch above is for.
+    return value
+
+
+# -- the JSON printer -------------------------------------------------------
+#
+# A copy of `td_atlas/project/serialize.py`'s printer, because that module
+# lives on the host and nothing outside TouchDesigner's standard library can be
+# imported here. The two are held together by a test rather than by care:
+# `tests/test_externalise.py` prints the host's own fixture projects through
+# both and asserts the bytes are equal, so a change to one that the other does
+# not follow fails the suite.
+
+_INLINE_LIMIT = 100
+_BLOCK_KEYS = frozenset(
+    ("text", "table", "parms", "custom_parms", "children", "operators")
+)
+
+
+def split_text(text):
+    """DAT text as the array of lines that goes into the JSON.
+
+    `split("\\n")`, never `splitlines()`: only the former is the exact inverse
+    of `"\\n".join`.
+    """
+    return text.split("\n")
+
+
+def _scalar(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _inline(value):
+    text = json.dumps(value, ensure_ascii=False, separators=(", ", ": "))
+    if len(text) <= _INLINE_LIMIT and "\n" not in text:
+        return text
+    return None
+
+
+def _emit(value, level, key, out):
+    pad = "  " * level
+    if not isinstance(value, (dict, list)):
+        out.append(_scalar(value))
+        return
+    if not value:
+        out.append("{}" if isinstance(value, dict) else "[]")
+        return
+    if key not in _BLOCK_KEYS:
+        compact = _inline(value)
+        if compact is not None:
+            out.append(compact)
+            return
+    if isinstance(value, dict):
+        out.append("{\n")
+        items = list(value.items())
+        for index, (name, item) in enumerate(items):
+            out.append("%s  %s: " % (pad, _scalar(name)))
+            _emit(item, level + 1, name, out)
+            out.append(",\n" if index < len(items) - 1 else "\n")
+        out.append(pad + "}")
+        return
+    out.append("[\n")
+    for index, item in enumerate(value):
+        out.append(pad + "  ")
+        _emit(item, level + 1, None, out)
+        out.append(",\n" if index < len(value) - 1 else "\n")
+    out.append(pad + "]")
+
+
+def dumps(data):
+    """Plain data as JSON with this project's line policy."""
+    out = []
+    _emit(data, 0, None, out)
+    out.append("\n")
+    return "".join(out)
+
+
+# -- where the text goes ----------------------------------------------------
+
+
+def sidecar_name(project_name):
+    """The text's file name for a project file name. Pure.
+
+    `atlas-live.3.toe` -> `atlas-live.network.json`. The version suffix
+    TouchDesigner adds on save is stripped on purpose: measured on 2025.32460,
+    every `project.save(path)` leaves `project.name` one version higher than
+    the last, so a name carrying the version would leave a new text file
+    behind after every single save and diff against nothing. One project, one
+    text, rewritten in place — the history is git's job, and `network.json` is
+    the name this project already uses for it (see project/variants.py).
+    """
+    stem = project_name
+    for suffix in (".toe", ".tox"):
+        if stem.lower().endswith(suffix):
+            stem = stem[: -len(suffix)]
+            break
+    head, dot, tail = stem.rpartition(".")
+    if dot and tail.isdigit():
+        stem = head
+    return (stem or "project") + TEXT_SUFFIX
+
+
+def is_our_text(existing):
+    """Does this file's content look like a text this bridge wrote? Pure.
+
+    The guard on never clobbering somebody else's file. Deliberately shallow:
+    it asks whether the bytes parse as a JSON object carrying this format's
+    top-level keys, and nothing about who wrote it — a text written by
+    `td-atlas project text` on the host is the same format and is ours to
+    replace, while anything else in the artist's folder is not.
+    """
+    try:
+        data = json.loads(existing)
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    return all(key in data for key in _TEXT_KEYS)
+
+
+def write_text_atomic(path, text):
+    """Write `text` to `path` so that no reader ever sees a half-written file.
+
+    Into a temporary file in the same directory, then `os.replace`, which is
+    atomic on POSIX and on Windows. Same directory because a replace across
+    filesystems is not a rename and not atomic. The temporary is removed in a
+    `finally`, so a failure anywhere leaves either the previous file or
+    nothing — never a stump, and never a stray `.tmp` beside the artist's
+    project.
+
+    No `fsync`: this trades durability across a power cut, which the .toe
+    beside it does not have either, for not stalling the save. What it does
+    guarantee is what matters here — a reader sees one whole file or the
+    other, never a partial one.
+    """
+    folder = os.path.dirname(path) or "."
+    temp = os.path.join(folder, ".%s.%d.tmp" % (os.path.basename(path), os.getpid()))
+    try:
+        with open(temp, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+        os.replace(temp, path)
+    finally:
+        try:
+            if os.path.exists(temp):
+                os.remove(temp)
+        except OSError:
+            pass
+    return path
+
+
+# -- reading the live network -----------------------------------------------
+
+
+def _parm_string(par):
+    """One parameter value as the string the expanded .toe would hold.
+
+    Measured against `toeexpand`'s own `.parm` files for the same project:
+    of 89 non-default parameters, 76 matched a bare `str()` and the remaining
+    13 were all toggles, which the file writes as `on`/`off` rather than as
+    True/False. Floats are written without a trailing `.0` because that is how
+    the file writes them (`end 2`, not `end 2.0`).
+    """
+    value = par.val
+    if par.style == "Toggle":
+        return "on" if value else "off"
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, float):
+        if value == int(value) and abs(value) < 1e15:
+            return str(int(value))
+        return repr(value)
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _parm_data(par):
+    """A parameter as a bare string, or a map when the line carries more.
+
+    The same shape `project/serialize.py` emits: the constant is kept beside
+    an expression because the file keeps it — it is what the parameter falls
+    back to when the expression is switched off.
+    """
+    mode = str(par.mode).rsplit(".", 1)[-1]
+    out = {}
+    # On the *stored text*, not on the mode. Measured on 2025.32460:
+    # `/project1/moviefilein1.index` reports ParMode.CONSTANT while carrying
+    # the expression "me.time.frame", and the .parm line toeexpand writes for
+    # it has the expression bit set — so a reader of the file sees an
+    # expression where the live mode says constant. Keying off the mode
+    # silently dropped that expression, which is exactly the kind of
+    # confidently-wrong answer this project refuses; keying off the text keeps
+    # it and matches the file.
+    expr = par.expr or ""
+    bind = par.bindExpr or ""
+    if expr or mode == "EXPRESSION":
+        out["expr"] = expr
+    if bind or mode == "BIND":
+        out["bind"] = bind
+    if not out:
+        return _parm_string(par)
+    out["value"] = _parm_string(par)
+    return out
+
+
+# The flags the `.n` file records, and the live attribute each is read from.
+# Sparse, like the file: only what differs from the flag's default is written.
+# `parlanguage` is the odd one — measured across a 705-operator palette
+# component, every Python node carries `parlanguage 0` and every Tscript node
+# carries nothing at all, so the marker is "0" and the condition is `python`.
+_FLAG_WHEN_ON = (
+    ("parlanguage", "python", "0"),
+    ("viewer", "viewer", "1"),
+    ("display", "display", "on"),
+    ("render", "render", "on"),
+    ("bypass", "bypass", "on"),
+    ("lock", "lock", "on"),
+    ("current", "current", "on"),
+    ("picked", "selected", "on"),
+    ("pickable", "pickable", "on"),
+    ("cloneImmune", "cloneImmune", "on"),
+    # `activate` is the COMP's active-viewer flag: measured on the expanded
+    # project, /project1/geo1 carries `activate on` in its .n file and is the
+    # one node whose live `activeViewer` is True.
+    ("activate", "activeViewer", "on"),
+    # A CHOP exporting its channels: measured on the same component, the .n
+    # file of an exporting math CHOP carries `export on`.
+    ("export", "export", "on"),
+)
+
+
+def _flags_data(target):
+    flags = {}
+    for name, attribute, marker in _FLAG_WHEN_ON:
+        if getattr(target, attribute, None):
+            flags[name] = marker
+    return dict(sorted(flags.items()))
+
+
+def _dat_owns_its_text(target):
+    """Does this DAT hold its own text, or compute it every cook?
+
+    The .toe stores content only for the DATs that own it; a Select DAT, a
+    Null, an Info, a Merge carry whatever they cooked last time and the file
+    keeps none of it. Writing that into the text would put a diff in front of
+    the artist on every save for something they did not touch — an Info DAT's
+    shader compile log, a Null's copy of its input — which is the opposite of
+    what a text in git is for.
+
+    The rule is measured, not guessed: across 211 DATs in a 705-operator
+    palette component, no DAT *type* was mixed — every operator of a given
+    type either always had its content in the file or never did. The types
+    that had it are `text`, `table` and the six callback families whose names
+    end in `exec`; the fourteen that never did are all either filters
+    (`isFilter` was True for 49 of 49 unstored ones) or generators whose
+    content is an output (`select`, `info`, `in`, `out`, `script`, `eval`,
+    `examine`, `keyboardin`, `renderpick`, `chopto`, `sopto`, `insert`).
+    `endswith("exec")` rather than the six names, so a callback DAT type this
+    sample did not contain is covered too.
+
+    The named gap: a DAT type outside this rule that *does* own its text loses
+    it in the sidecar. That is an under-report against a file that still has
+    it, which is the direction this project prefers to be wrong in.
+    """
+    kind = getattr(target, "type", "") or ""
+    return kind in ("text", "table") or kind.endswith("exec")
+
+
+def _inputs_data(target):
+    """Wiring as [index, source], the source named the way the file names it.
+
+    A sibling by name, anything else by absolute path — which is what the
+    reader on the host resolves against the node's own parent.
+    """
+    out = []
+    try:
+        connectors = target.inputConnectors
+    except Exception:
+        return out
+    try:
+        base = target.parent().path
+    except Exception:
+        base = ""
+    prefix = (base.rstrip("/") + "/") if base else ""
+    for index, connector in enumerate(connectors):
+        for connection in connector.connections:
+            # `outOP` and not `owner`: for a wire coming out of a component the
+            # owner is the component, while the file names the node inside it.
+            # Measured on 2025.32460 — /project1/out1's source reports
+            # owner /project1/geo1 and outOP /project1/geo1/out1, and the .n
+            # file records `geo1/out1`. `owner` is the fallback, because every
+            # wire between plain operators leaves `outOP` empty.
+            source = None
+            try:
+                source = connection.outOP
+            except Exception:
+                source = None
+            if source is None:
+                source = connection.owner
+            if source is None:
+                continue
+            path = source.path
+            # Relative to the consumer's own parent, which is what the reader
+            # on the host resolves against; anything outside stays absolute.
+            if prefix and path.startswith(prefix):
+                path = path[len(prefix):]
+            out.append([index, path])
+    return out
+
+
+def live_node_data(target, children=True):
+    """One live operator in the shape `project/serialize.py` prints.
+
+    The absolute path is deliberately absent, exactly as it is there: it is
+    the concatenation of the enclosing names, and writing it into every node
+    would make renaming one component rewrite a line for every operator under
+    it.
+    """
+    data = {
+        "name": target.name,
+        "type": target.OPType,
+        "family": target.family,
+    }
+    data["tile"] = [
+        float(target.nodeX),
+        float(target.nodeY),
+        float(target.nodeWidth),
+        float(target.nodeHeight),
+    ]
+    data["flags"] = _flags_data(target)
+    try:
+        data["color"] = [round(channel, 6) for channel in target.color]
+    except Exception:
+        data["color"] = None
+    data["inputs"] = _inputs_data(target)
+
+    parms = {}
+    custom = {}
+    for par in target.pars():
+        try:
+            if par.isCustom:
+                custom[par.name] = _parm_data(par)
+            elif not par.isDefault:
+                parms[par.name] = _parm_data(par)
+        except Exception:
+            continue
+    data["parms"] = dict(sorted(parms.items()))
+    data["custom_parms"] = dict(sorted(custom.items()))
+    pages = []
+    try:
+        pages = [page.name for page in target.customPages]
+    except Exception:
+        pages = []
+    if pages:
+        data["custom_pages"] = pages
+
+    text = None
+    table = None
+    if getattr(target, "isDAT", False) and _dat_owns_its_text(target):
+        try:
+            if target.isTable:
+                table = [[str(cell) for cell in row] for row in target.rows()]
+            else:
+                text = target.text
+        except Exception:
+            text = None
+    data["text"] = split_text(text) if text is not None else None
+    data["table"] = table
+
+    if children:
+        kids = []
+        if getattr(target, "isCOMP", False):
+            for child in target.children:
+                kids.append(live_node_data(child))
+        data["children"] = kids
+    return data
+
+
+def _text_roots():
+    """The root components the text covers. See `_SKIPPED_ROOTS` for the rest."""
+    roots = []
+    for child in root.children:
+        if child.name in _SKIPPED_ROOTS:
+            continue
+        external = ""
+        try:
+            external = child.par.externaltox.eval() or ""
+        except Exception:
+            external = ""
+        if external:
+            continue
+        roots.append(child)
+    return roots
+
+
+def live_op_count():
+    """How many operators the text would cover, without reading one parameter."""
+    def count(target):
+        total = 1
+        if getattr(target, "isCOMP", False):
+            for child in target.children:
+                total += count(child)
+        return total
+
+    return sum(count(target) for target in _text_roots())
+
+
+def live_project_data(source):
+    """The whole covered network as plain data, ready for the printer."""
+    nodes = [live_node_data(target) for target in _text_roots()]
+
+    def count(node):
+        total = 1
+        for child in node.get("children") or ():
+            total += count(child)
+        return total
+
+    return {
+        "source": source,
+        "build": {"build": app.build, "version": app.version},
+        "path": "/",
+        "operator_count": sum(count(node) for node in nodes),
+        "operators": nodes,
+    }
+
+
+# -- the callback -----------------------------------------------------------
+
+
+def externalise(folder, project_name, enabled, gather, write, exists, read,
+                count=None, max_ops=0):
+    """Decide and do, with every side effect handed in. Pure control flow.
+
+    Split out from `on_project_post_save` so the whole decision — switched
+    off, a foreign file in the way, a writer that raises — is testable on the
+    host with no TouchDesigner anywhere. Returns the line the panel shows.
+    Raises nothing: a save must not be able to fail because of this.
+    """
+    if not enabled:
+        return {"wrote": False, "note": "off"}
+    try:
+        target = os.path.join(folder, sidecar_name(project_name))
+        # The cap first, and the file check second. Both are cheap next to the
+        # walk, but only one of them is cheap next to the other: the ownership
+        # check parses whatever is already at the target, and measured on
+        # 2025.32460 a 6.9 MB text left by a previous save cost ~140 ms to
+        # read and parse — paid on every save, including the ones that then
+        # decline to write anything. Over the cap nothing is written, so
+        # nothing needs to be read.
+        if count is not None and max_ops > 0:
+            # Counted before the walk that reads parameters, because the
+            # counting is the cheap half: measured on 2025.32460, walking the
+            # tree without touching a parameter costs 0.06 ms for 76
+            # operators against 0.5 ms per operator for the text itself.
+            total = count()
+            if total > max_ops:
+                return {
+                    "wrote": False,
+                    "note": "skipped: %d ops over the %d cap" % (total, max_ops),
+                }
+        if exists(target):
+            try:
+                existing = read(target)
+            except Exception:
+                existing = None
+            if existing is None or not is_our_text(existing):
+                return {
+                    "wrote": False,
+                    "note": "refused: %s is not ours" % os.path.basename(target),
+                }
+        data = gather()
+        write(target, dumps(data))
+        return {
+            "wrote": True,
+            "path": target,
+            "operators": data.get("operator_count", 0),
+            "note": "%s  %d ops" % (os.path.basename(target), data.get("operator_count", 0)),
+        }
+    except BaseException as exc:
+        # BaseException and not Exception. The contract for item 19 is that a
+        # save cannot fail because of this "ни при каких условиях", and the
+        # three that sit outside Exception are exactly the ones a big network
+        # can produce: MemoryError is an Exception, but SystemExit from a
+        # writer that calls something drastic and KeyboardInterrupt from the
+        # textport are not, and neither is a reason to fail a save that has
+        # already finished. Nothing here loops, so there is no interrupt for
+        # the artist to lose.
+        return {"wrote": False, "note": "failed: %s: %s" % (type(exc).__name__, exc)}
+
+
+def _read_file(path):
+    with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        return handle.read()
+
+
+def on_project_post_save():
+    """What the Execute DAT calls. Never raises, whatever happens below.
+
+    The save has already finished by the time this runs, so nothing here can
+    cost the artist their file — but an exception escaping a callback puts a
+    dialog and a red node in front of somebody who only pressed Ctrl+S, so
+    the outermost frame catches everything, including the panel write.
+    """
+    started = time.time()
+    try:
+        name = project.name
+        folder = project.folder
+        outcome = externalise(
+            folder,
+            name,
+            text_on_save_enabled(),
+            lambda: live_project_data(name),
+            write_text_atomic,
+            os.path.exists,
+            _read_file,
+            live_op_count,
+            text_max_ops(),
+        )
+    except BaseException as exc:  # see `externalise` for why not Exception
+        outcome = {"wrote": False, "note": "failed: %s: %s" % (type(exc).__name__, exc)}
+    try:
+        note = outcome["note"]
+        if outcome.get("wrote"):
+            note += "  in %d ms" % int((time.time() - started) * 1000)
+        _note_status(text=note, textAt=repr(time.time()))
+    except BaseException:
+        pass
+    return outcome
 
 
 # -- serialisation ----------------------------------------------------------

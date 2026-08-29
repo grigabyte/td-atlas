@@ -106,6 +106,38 @@ flags word marks expression mode, and the 71 saved-name aliases come from
 instantiating every type and comparing what TouchDesigner writes with what it
 reports.
 
+## The network text, written on save
+
+The bridge can write the network out as text beside the `.toe` every time the
+artist saves, so a project gets a diffable history in git without anybody
+remembering to ask for one. It is **off by default** — writing a file into
+somebody's own project folder is not something to start doing unasked — and
+turning it on is one key in `~/.td-atlas/config.json`:
+
+```json
+{ "text_on_save": true }
+```
+
+The file is `<project>.network.json` beside the `.toe`, in the same format
+`td-atlas project text` produces. The version number TouchDesigner adds on
+each save is stripped, so one project keeps one text and git holds the
+history. The write is atomic (a temporary in the same directory, then a
+rename), and a file already at that name that is not one of ours is never
+overwritten — the bridge refuses and says so on its status panel.
+
+Measured on 2025.32460, the text costs about 0.25–0.30 ms per operator, so
+networks are covered up to a cap of 2000 operators — beyond that the save
+would grow by more than half a second and the bridge writes nothing, again
+saying so on the panel. Raise it with `"text_on_save_max_ops"` if you would
+rather wait.
+
+The text covers the artist's own root components. TouchDesigner's `/local` and
+`/perform`, the bridge's own `/tdatlas`, and the external `.tox` roots `/ui`
+and `/sys` are left out. Where it differs from the text read back from the
+saved `.toe` — component wiring, custom parameter placement, a few node flags
+— the differences are measured and listed in `tests/test_externalise.py` and
+in the handler's own comments.
+
 ## Install
 
 **Platforms.** Everything here was developed and measured on macOS. Windows is
