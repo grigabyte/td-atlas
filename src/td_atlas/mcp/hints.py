@@ -507,6 +507,26 @@ def classify(exc: BaseException) -> Recovery:
     return HINTS["unmapped_error"].fill(type=type(exc).__name__)
 
 
+def from_record(error_type: str = "", reason: str = "") -> Recovery:
+    """The recovery for a failure read back out of the call journal.
+
+    `classify` needs a live exception. The journal outlives the process that
+    saw one, so it keeps the two fields the table is actually keyed on — the
+    exception's type, and for a transport failure its `reason` — and this is
+    the same lookup performed on those instead. Keeping them apart matters:
+    every `BridgeUnavailable` has the same type and four different repairs.
+    """
+    if reason:
+        return HINTS.get(reason, HINTS["bridge_unreachable"])
+    if error_type == "BridgeUnavailable":
+        return HINTS["bridge_unreachable"]
+    if error_type in MAPPED_BRIDGE_ERRORS:
+        return HINTS[error_type]
+    if error_type:
+        return HINTS["unmapped_bridge_error"].fill(type=error_type)
+    return HINTS["unmapped_error"].fill(type="Error")
+
+
 def failure(exc: BaseException, head: str | None = None) -> str:
     """A tool's whole failure text: what it already said, plus the hint.
 

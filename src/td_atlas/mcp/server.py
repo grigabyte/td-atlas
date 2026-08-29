@@ -18,11 +18,12 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP, Image
 
 from .. import config as cfg
+from .. import journal
 from ..atoms.store import AtomStore
 from ..atoms.validate import validate_params
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
 from ..component.handler import NODE_FLAGS
-from .hints import IndexMissing, failure, guarded, hint
+from .hints import IndexMissing, failure, from_record, guarded, hint
 
 
 def _package_version() -> str:
@@ -348,6 +349,52 @@ def td_status() -> str:
         f"{info['build']}, project '{info['project']}' in "
         f"{info['projectFolder']}, {info['fps']} fps, frame {info['frame']}"
     )
+
+
+@mcp.tool()
+@guarded
+def td_log(
+    limit: int = 20,
+    failures: bool = False,
+    summary: bool = False,
+    method: str = "",
+) -> str:
+    """Your own trail: every bridge call this host has made, and how it went.
+
+    Reach for this when something is wrong and you do not know what you did —
+    an operator is missing, a parameter is not what you set, the artist says
+    "it broke after you touched it". `td_status` shows only the last call and
+    the next one overwrites it; this is the whole session, and it survives
+    TouchDesigner being closed and reopened, so it also answers "what happened
+    yesterday".
+
+    Also reach for it before repeating a call that failed. `failures=True`
+    gives the refusals alone, each with the text it refused with, and the
+    repair for the most recent one — repeating a call that a scope claim or a
+    missing path already refused will refuse again for the same reason.
+
+    `summary=True` answers a different question: over everything recorded,
+    which methods refuse and which are slow. Use it to notice a pattern you
+    are inside of — the same method failing five times means the approach is
+    wrong, not the call.
+
+    Not everything is here, and the gap matters: only calls that reached the
+    bridge are recorded. The offline tools (td_project_read, td_docs,
+    td_search_operators) never dial it and leave no trace, so an empty
+    journal means no live work, not no work.
+    """
+    calls = journal.read(
+        limit=None if summary else max(0, int(limit)),
+        failures_only=bool(failures),
+        method=method or "",
+    )
+    if summary:
+        return journal.format_summary(journal.summarise(calls))
+    text = journal.format_calls(calls)
+    if failures and calls:
+        last = calls[-1]
+        text += "\n\n" + from_record(last.error, last.reason).render()
+    return text
 
 
 @mcp.tool()

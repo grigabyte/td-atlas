@@ -28,6 +28,13 @@ but does nothing". It is the only tool that catches these.
 4. **Look at the result** with `td_render`, and at motion with a contact sheet.
 5. **Run `td_health`.**
 
+When a call refuses and you do not know why, or the artist says something
+broke while you were working: **`td_log(failures=True)`** is your own trail —
+every bridge call this host made, with the text each refusal came back with.
+`td_log(summary=True)` says which method has been failing repeatedly, which is
+the signal that the approach is wrong rather than the call. It outlives the
+TouchDesigner session, so it also answers "what happened yesterday".
+
 ## Finding the right operator
 
 `td_search_operators("displace an image with noise")` — plain language works.

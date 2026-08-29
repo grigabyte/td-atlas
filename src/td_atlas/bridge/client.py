@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 
+from .. import journal
 from ..component import handler as _handler
 from ..config import (
     DEFAULT_PORT,
@@ -213,7 +215,56 @@ class BridgeClient:
     def call(
         self, method: str, timeout: float | None = None, **params: Any
     ) -> Any:
-        """Invoke a bridge method, raising on transport or handler failure."""
+        """Invoke a bridge method, raising on transport or handler failure.
+
+        Every call passes through here, which is why the journal is written
+        here and not in each of the tools: one place to keep honest, and the
+        duration it records is the one the caller actually waited, transport
+        included. See `td_atlas/journal.py` for why the record lives on the
+        host rather than inside TouchDesigner.
+        """
+        started = time.perf_counter()
+        try:
+            result = self._call(method, timeout=timeout, **params)
+        except BridgeError as exc:
+            self._journal(method, params, started, exc,
+                          error_type=exc.type, message=exc.message)
+            raise
+        except BridgeUnavailable as exc:
+            self._journal(method, params, started, exc,
+                          error_type="BridgeUnavailable",
+                          reason=exc.reason, message=str(exc))
+            raise
+        self._journal(method, params, started, None)
+        return result
+
+    def _journal(
+        self,
+        method: str,
+        params: dict,
+        started: float,
+        exc: BaseException | None,
+        error_type: str = "",
+        reason: str = "",
+        message: str = "",
+    ) -> None:
+        journal.record(
+            method,
+            ok=exc is None,
+            seconds=time.perf_counter() - started,
+            params=params,
+            port=self.port,
+            error_type=error_type,
+            error_reason=reason,
+            error_message=message,
+            # Belt as well as braces: the token this client holds is scrubbed
+            # even if the config on disk has since been rewritten.
+            token=self.token,
+        )
+
+    def _call(
+        self, method: str, timeout: float | None = None, **params: Any
+    ) -> Any:
         self._ensure_protocol_checked(timeout=timeout or self.timeout)
         body = json.dumps({"method": method, "params": params}).encode()
         request = urllib.request.Request(

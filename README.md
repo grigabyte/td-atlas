@@ -87,6 +87,45 @@ raised an error. It also distinguishes a genuinely dead network from a paused
 timeline or a backgrounded window, where the frame clock is frozen and there is
 no evidence either way.
 
+## The call journal
+
+The status panel inside TouchDesigner holds the *last* call and the next one
+overwrites it. That answers "is the bridge alive"; it does not answer "the
+agent broke something yesterday, what was it". `~/.td-atlas/calls.jsonl` does:
+one line per bridge call, written by the host, outliving the session.
+
+```
+$ td-atlas log --failures
+08-29 22:23:51  FAIL  op_info             16.6ms  /project1/does_not_exist
+        LookupError: no operator at path '/project1/does_not_exist'
+08-29 22:23:51  FAIL  par_set             16.5ms  /tdatlas/jrn_noise
+        AttributeError: /tdatlas/jrn_noise (noiseTOP) has no parameter 'nosuchpar'
+
+$ td-atlas log --summary
+11 calls, 5 failed (45%)   08-29 22:23 to 08-29 22:23
+
+where it fails
+  op_create          1 of 2
+  par_set            1 of 2
+  exec               1 of 1
+```
+
+`td_log` is the same thing for an agent, so it can read its own trail rather
+than repeat a call that already refused.
+
+Written by the host and not by the bridge, deliberately. A Table DAT inside
+TouchDesigner dies with the process, and keeping it would mean saving the
+project — which is a Save As that moves the artist's file. A file written from
+inside a frame was measured at 124–200 us, three to five times the whole panel
+repaint. On the host the append costs 41.6 us of nobody's frame, next to a
+round trip that already cost 16 ms.
+
+Bounded at 1 MiB — about 5,300 calls, measured — with the oldest lines dropped
+first. Parameters are not logged: only the method, the outcome, the duration,
+the path, the caller and a batch's step count. A DAT's text and a whole
+network stay out of it, and the bridge token is scrubbed from every line
+before it is written.
+
 ## Reading projects offline
 
 TouchDesigner ships `toeexpand`, which unpacks a `.toe`/`.tox` into a tree of
@@ -219,7 +258,7 @@ virtualenv is activated. Wiring it in by hand looks like:
 claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 ```
 
-40 tools in three groups — see `skills/touchdesigner/references/tools.md`.
+41 tools in three groups — see `skills/touchdesigner/references/tools.md`.
 
 **Index** (offline): `td_search_operators`, `td_operator_schema`,
 `td_search_parameters`, `td_python_api`, `td_docs`, `td_glossary`,
@@ -286,7 +325,7 @@ unlocks the rest.
 | --- | --- |
 | [`skills/touchdesigner/SKILL.md`](skills/touchdesigner/SKILL.md) | Agents *using* the connector |
 | [`skills/touchdesigner/references/gotchas.md`](skills/touchdesigner/references/gotchas.md) | Every trap that produced no error |
-| [`skills/touchdesigner/references/tools.md`](skills/touchdesigner/references/tools.md) | All 40 MCP tools |
+| [`skills/touchdesigner/references/tools.md`](skills/touchdesigner/references/tools.md) | All 41 MCP tools |
 | [`AGENTS.md`](AGENTS.md) | Agents *contributing to* this repository |
 | [`docs/architecture.md`](docs/architecture.md) | How the three layers fit together, and why |
 | [`docs/formats.md`](docs/formats.md) | The reverse-engineered `.toe`/`.tox` format, with evidence |
@@ -328,6 +367,7 @@ td-atlas/
 │   ├── install.py          locate a TouchDesigner installation
 │   ├── config.py           the ~/.td-atlas handshake between host and TD
 │   ├── cli.py              command line, parity with the MCP tools
+│   ├── journal.py          the append-only trail of bridge calls
 │   ├── atoms/              the offline index
 │   │   ├── extract_static.py   pass over the app bundle
 │   │   ├── probe.py            runtime pass, incl. type-alias derivation

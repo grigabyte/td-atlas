@@ -924,6 +924,32 @@ def _clock(stamp):
     return time.strftime("%H:%M:%S", time.localtime(seconds))
 
 
+def _tally_failures(state, outcome, pid):
+    """Update the session's refusal count in `state`, in place. Pure.
+
+    Tied to the pid for the same reason the claims table is (decision 22): the
+    status table can be saved inside a .toe, and a count carried over from
+    another run would tell the artist their fresh session had already failed
+    seven times. A pid that does not match the running one resets the count
+    rather than continuing it, so "this session" means what it says.
+
+    Only failures are counted. The panel already names the last call and
+    whether it failed; what a glance cannot get from that is whether the
+    failure was the first or the twelfth, which is the difference between a
+    typo and an agent stuck in a loop.
+    """
+    try:
+        stored = int(state.get("fails") or 0)
+    except (TypeError, ValueError):
+        stored = 0
+    count = stored if str(state.get("failsPid") or "") == str(pid) else 0
+    if outcome == "error":
+        count += 1
+    state["fails"] = str(count)
+    state["failsPid"] = str(pid)
+    return count
+
+
 def _panel_line(label, value):
     return label.ljust(_PANEL_LABEL) + value
 
@@ -1007,7 +1033,19 @@ def render_panel(state):
     """
     port = str(state.get("port") or "?")
     protocol = str(state.get("protocol") or PROTOCOL_VERSION)
-    lines = _hard_split("td-atlas    port %s    protocol %s" % (port, protocol))
+    head = "td-atlas    port %s    protocol %s" % (port, protocol)
+    # On the first line rather than on a fifth of its own: the panel has
+    # exactly PANEL_ROWS rows and the fifth is already spoken for by the
+    # network text (see below), so a new row would push a real line off the
+    # bottom. Absent at zero — a counter reading 0 is noise, and the reader
+    # needs to notice it only when it is not.
+    try:
+        fails = int(state.get("fails") or 0)
+    except (TypeError, ValueError):
+        fails = 0
+    if fails > 0:
+        head += "    %d failed" % fails
+    lines = _hard_split(head)
 
     method = str(state.get("method") or "")
     if method:
@@ -1079,11 +1117,18 @@ def _read_status():
     return _parse_status_rows(table.rows())
 
 
-def _note_status(**fields):
+def _note_status(_amend=None, **fields):
     """Merge `fields` into the stored state and repaint the panel.
 
     Never raises: a panel that cannot be drawn must not turn a working request
     into a failed one. It is a display.
+
+    `_amend` is a callback given the merged state before it is written, for
+    the one field that cannot be computed without reading what is already
+    there — the session's failure count. It rides inside the read the write
+    already does, so a counter that has to look at its own previous value
+    still costs the frame exactly one table read and one table write, the same
+    as before (decision 30: 42.8 us for the whole cycle).
     """
     try:
         table = _status_table(create=True)
@@ -1092,6 +1137,8 @@ def _note_status(**fields):
         state = _parse_status_rows(table.rows())
         for key, value in fields.items():
             state[key] = "" if value is None else str(value)
+        if _amend is not None:
+            _amend(state)
         table.clear()
         for row in _format_status_rows(state):
             table.appendRow(row)
@@ -1119,7 +1166,9 @@ def _note_request(dat, name, params, outcome):
         port = int(dat.par.port.eval())
     except Exception:
         port = ""
+    pid = os.getpid()
     _note_status(
+        _amend=lambda state: _tally_failures(state, outcome, pid),
         port=port,
         protocol=PROTOCOL_VERSION,
         method=name,

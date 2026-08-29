@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import config as cfg
+from . import journal
 from .atoms import probe as probe_mod
 from .atoms.extract_static import extract
 from .atoms.store import AtomStore
@@ -1299,6 +1300,32 @@ def _cmd_variant(args: argparse.Namespace, resolver) -> int:
     return 0
 
 
+def cmd_log(args: argparse.Namespace) -> int:
+    """Read the call journal back: the trail, the refusals, or the summary.
+
+    Reads a file and talks to nothing, so it works after TouchDesigner has
+    been closed — which is the case it exists for.
+    """
+    calls = journal.read(
+        limit=None if args.summary else args.number,
+        failures_only=args.failures,
+        method=args.method or "",
+    )
+    if args.summary:
+        print(journal.format_summary(journal.summarise(calls)))
+        return 0
+    print(journal.format_calls(calls))
+    if args.failures and calls:
+        # The refusals are the half a reader stops at, so the repair advice
+        # is put next to them rather than left for them to go looking for.
+        from .mcp import hints
+
+        last = calls[-1]
+        print()
+        print(hints.from_record(last.error, last.reason).render())
+    return 0
+
+
 def cmd_mcp(_args: argparse.Namespace) -> int:
     from .mcp.server import main as mcp_main
 
@@ -1500,6 +1527,25 @@ def build_parser() -> argparse.ArgumentParser:
     a = actions.add_parser("scripts", help="extract every DAT's contents to disk")
     a.add_argument("file")
     a.add_argument("-o", "--output", required=True)
+
+    p = sub.add_parser(
+        "log",
+        help="the trail of bridge calls: what was asked, what refused",
+    )
+    p.add_argument(
+        "-n", "--number", type=int, default=20,
+        help="how many of the most recent calls to show (default 20)",
+    )
+    p.add_argument(
+        "--failures", action="store_true",
+        help="only the calls that were refused, with the repair for the last one",
+    )
+    p.add_argument(
+        "--summary", action="store_true",
+        help="where the tool fails most and what was slowest, over the whole journal",
+    )
+    p.add_argument("--method", default="", help="only this bridge method")
+    p.set_defaults(func=cmd_log, uses_selector=False)
 
     p = sub.add_parser("mcp", help="run the MCP server on stdio")
     p.set_defaults(func=cmd_mcp, uses_selector=False)
