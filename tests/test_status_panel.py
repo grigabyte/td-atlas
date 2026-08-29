@@ -25,7 +25,11 @@ def _values(text):
 
 def test_an_untouched_panel_says_so_rather_than_showing_zeroes():
     text = h.render_panel({"port": "9977"})
-    assert text.splitlines()[0] == "td-atlas    port 9977    protocol 3"
+    # The number is not this test's business — that the line carries the
+    # bridge's own protocol version is.
+    assert text.splitlines()[0] == (
+        "td-atlas    port 9977    protocol %d" % h.PROTOCOL_VERSION
+    )
     values = _values(text)
     assert values["last call"] == "nothing yet"
     assert values["batch"] == "none yet"

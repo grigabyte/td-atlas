@@ -17,7 +17,7 @@ import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 
 # The shared secret, read from ~/.td-atlas/config.json when the server starts —
 # see _load_token(). It is not baked into this text: a released .tox is one file
@@ -1475,6 +1475,21 @@ def m_batch(params):
     agent's work with Ctrl+Z like any other edit.
     """
     steps = params.get("ops") or []
+    # `undo` and `redo` are public methods, so nothing stopped an agent from
+    # putting them inside a batch — and the live acceptance measured what
+    # happens then: two of them in a row reach past the batch's own entries
+    # and take one that existed before it, which the rollback below cannot
+    # give back (the difference goes negative and max(0, ...) hides it).
+    # A batch is one atomic edit; walking the artist's history from inside it
+    # is not an operation, it is the opposite of one.
+    for index, step in enumerate(steps):
+        if step.get("method") in ("undo", "redo"):
+            raise ValueError(
+                "step %d: '%s' cannot be a batch step — it walks the undo "
+                "history the batch is being recorded into, and two of them "
+                "reach past the batch to an edit made before it. Call it on "
+                "its own, after the batch." % (index, step.get("method"))
+            )
     name = params.get("undo_name") or "td-atlas batch"
     results = []
     # The length of the stack before anything is opened. What this batch has
@@ -1508,7 +1523,14 @@ def m_batch(params):
             results.append(method(step_params))
     except Exception:
         _UNDO_HELD[0] -= 1
-        ui.undo.endBlock()
+        try:
+            ui.undo.endBlock()
+        except Exception:
+            # Measured: when a step has already closed the block, this raises
+            # "Cannot end non existent undo operation" — and letting it out
+            # replaces the failure the caller needs to see with a complaint
+            # about bookkeeping.
+            pass
         # Exactly the entries this batch put on the stack, counted by reading
         # it rather than by predicting it: an empty block is thrown away on
         # endBlock, so a batch that failed on its first step has committed

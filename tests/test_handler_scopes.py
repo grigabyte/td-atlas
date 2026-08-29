@@ -577,3 +577,13 @@ def test_the_batch_tool_carries_the_owner_all_the_way_to_the_bridge(monkeypatch)
     )
 
     assert sent["batch"]["owner"] == "agent-a"
+
+
+def test_undo_cannot_be_a_batch_step():
+    """The live acceptance measured what two of them do: they reach past the
+    batch's own entries and take an edit made before it, which the rollback
+    cannot give back — the difference goes negative and max(0, ...) hides it.
+    """
+    for method in ("undo", "redo"):
+        with pytest.raises(ValueError, match="cannot be a batch step"):
+            handler.m_batch({"ops": [{"method": method, "params": {}}]})
