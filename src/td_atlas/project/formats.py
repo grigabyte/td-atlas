@@ -53,12 +53,19 @@ def read_payload(data: bytes) -> str:
 def read_table(data: bytes) -> list[list[str]]:
     """Extract a Table DAT's cells from a `.table` file.
 
-    Layout after the prologue's `1\\n*`: four uint32 (?, columns, rows, ?),
-    then each cell as a uint32 tag followed by a uint32 length and its bytes.
+    Layout after the prologue's `1\\n*`: four uint32 (?, rows, columns, ?),
+    then each cell as a uint32 tag followed by a uint32 length and its bytes,
+    row by row.
+
+    The order of those two words was reversed here until 2026-08-29, so every
+    table came back transposed: a live 3x2 table read as 2x3 with the cells
+    resequenced. Nothing caught it, because the writer in project/rebuild.py
+    repeated the same swap and the round trip closed over both. Measured
+    against a live Table DAT saved to a .tox: rows first.
     """
     if len(data) < 11 or not _MAGIC.match(data):
         raise FormatError("not a toeexpand table file")
-    _unknown, cols, rows, _pad = struct.unpack(">4I", data[3:19])
+    _unknown, rows, cols, _pad = struct.unpack(">4I", data[3:19])
     cells: list[str] = []
     offset = 19
     while offset + 8 <= len(data):

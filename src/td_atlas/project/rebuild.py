@@ -233,7 +233,10 @@ def render_table(rows: list[list[str]], source: bytes | None = None) -> bytes:
     )
     cols = max((len(row) for row in rows), default=0)
     out = bytearray(head)
-    out += struct.pack(">4I", unknown, cols, len(rows), pad)
+    # Rows first, then columns — the order formats.read_table reads. Both
+    # sides had it reversed until 2026-08-29 and agreed with each other, which
+    # is why the round trip never noticed.
+    out += struct.pack(">4I", unknown, len(rows), cols, pad)
     for row in rows:
         padded = list(row) + [""] * (cols - len(row))
         for cell in padded:

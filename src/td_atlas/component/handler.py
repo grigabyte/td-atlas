@@ -1337,13 +1337,6 @@ _SKIPPED_ROOTS = ("local", "perform", "tdatlas")
 #                                     `inputCOMPConnectors`, and `_inputs_data`
 #                                     reads only `inputConnectors`. The file
 #                                     has the wire, this text does not.
-#        2  Table DAT shape           The `.table` header's second word is the
-#                                     row count and its third the column count;
-#                                     `formats.read_table` reads them the other
-#                                     way round, so a 3x2 table comes back as
-#                                     2x3 with the cells in the same order.
-#                                     Measured on two tables whose live shape
-#                                     was known. A reader bug, not a gap.
 #        1  COMP input wiring         A COMP's operator input is stored in a
 #                                     `.network` file (`compinputs`), which the
 #                                     offline reader does not parse — see the

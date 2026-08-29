@@ -81,16 +81,19 @@ def test_the_two_directions_of_missing_wiring_are_two_classes():
     assert len(both["unexplained"]) == 1
 
 
-def test_a_table_is_the_shape_class_only_when_the_cells_are_the_same():
-    same_cells = ln.classify(
+def test_a_transposed_table_is_no_longer_explained_away():
+    """It was a class of its own until the reader was fixed.
+
+    The `.table` header's row and column counts were read the wrong way round,
+    so a 3x2 table came back as 2x3 with the cells in the same order — and the
+    round trip never noticed, because the writer repeated the same swap. Now a
+    table that differs in shape is a real difference again, not a known class.
+    """
+    transposed = ln.classify(
         [_diff("/d/t", "table", [["a", "b"], ["c", "d"]], [["a", "b", "c", "d"]])],
         "/d",
     )
-    assert len(same_cells[ln.TABLE_SHAPE]) == 1
-    other_cells = ln.classify(
-        [_diff("/d/t", "table", [["a", "b"]], [["a", "z"]])], "/d"
-    )
-    assert len(other_cells["unexplained"]) == 1
+    assert len(transposed["unexplained"]) == 1
 
 
 def test_a_float_written_with_an_exponent_is_the_formatting_class():
@@ -116,8 +119,8 @@ def test_a_flag_the_live_gather_does_not_know_is_the_vocabulary_class():
 
 
 def test_every_class_the_documentation_names_has_a_constant_here():
-    assert len(ln.CLASSES) == 9
-    assert len(set(ln.CLASSES)) == 9
+    assert len(ln.CLASSES) == 8
+    assert len(set(ln.CLASSES)) == 8
 
 
 def test_compare_counts_one_parameter_as_one_field_not_one_map_as_one_field():
