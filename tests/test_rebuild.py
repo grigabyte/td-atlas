@@ -409,6 +409,31 @@ def test_changing_an_operator_type_is_a_named_gap(tmp_path):
     assert (root / "project1" / "text1.n").read_text().startswith("DAT:text")
 
 
+def test_a_dump_made_without_the_index_is_not_read_as_a_type_change(tmp_path):
+    """`type` is the canonical name only when the atom index was present.
+
+    A dump made with the index says `differenceTOP` where the file says
+    `diffTOP`, and carries the contraction in `saved_type`. Comparing the
+    resolved names reports every contracted operator as a type change the
+    moment one side of the trip has an index and the other does not.
+    """
+    root = _tree(tmp_path)
+    n_file = root / "project1" / "text1.n"
+    n_file.write_text(n_file.read_text().replace("DAT:text", "DAT:parexec"))
+
+    # What a dump made *with* the index looks like.
+    resolved = _text_of(root)
+    dat = resolved["operators"][0]["children"][0]
+    dat["type"] = "parameterexecuteDAT"
+    dat["saved_type"] = "parexecDAT"
+    assert rebuild.apply_text(root, resolved, _loaded(root)).gaps == []
+
+    # And what the same file dumps to *without* one.
+    plain = _text_of(root)
+    assert plain["operators"][0]["children"][0]["type"] == "parexecDAT"
+    assert rebuild.apply_text(root, plain, _loaded(root)).gaps == []
+
+
 def test_a_subtree_dump_does_not_delete_the_rest_of_the_file(tmp_path):
     """A dump made with `--path` names part of the file, not all of it."""
     from td_atlas.project.serialize import project_data
@@ -517,3 +542,63 @@ def test_an_edit_survives_the_round_trip_on_a_shipped_component(tmp_path):
     assert changes.gaps == []
     assert changes.touched > 0
     assert to_text(load_file(out, refresh=True)) == wanted
+
+
+@needs_td
+def test_the_cli_writes_the_file_and_reports_a_gap_in_its_exit_code(tmp_path, capsys):
+    """`td-atlas project write`, including the stdin path and the gap branch.
+
+    Exit 2, not 1: the file *was* written, but it does not say everything the
+    text said, and a script has to be able to tell those two apart without
+    reading prose.
+    """
+    import sys
+
+    from td_atlas.cli import main
+    from td_atlas.project.model import load_file
+    from td_atlas.project.serialize import dumps, to_text
+
+    source = _palette("checker.tox")
+    if source is None:
+        pytest.skip("palette not present")
+
+    data = json.loads(to_text(load_file(source)))
+    data["operators"][0]["tile"] = [1.0] + data["operators"][0]["tile"][1:]
+    edited = tmp_path / "edited.json"
+    edited.write_text(dumps(data))
+
+    out = tmp_path / source.name
+    assert main(["project", "write", str(source), "--text", str(edited),
+                 "-o", str(out)]) == 0
+    assert to_text(load_file(out, refresh=True)) == edited.read_text()
+
+    fresh = json.loads(json.dumps(data["operators"][0]["children"][0]))
+    fresh["name"] = "brandnew"
+    data["operators"][0]["children"].append(fresh)
+    gapped = tmp_path / "gap.json"
+    gapped.write_text(dumps(data))
+
+    code = main(["project", "write", str(source), "--text", str(gapped),
+                 "-o", str(tmp_path / "gap.tox")])
+    assert code == 2
+    assert "adds an operator" in capsys.readouterr().err
+
+
+def test_the_mcp_tool_refuses_to_overwrite_an_existing_file(tmp_path):
+    """Repacking writes the file whole, so it must never land on one of the
+    user's — the same rule `expand.py` follows for `toecollapse`'s `.bkp`."""
+    from td_atlas.mcp.server import td_project_write
+
+    existing = tmp_path / "there.tox"
+    existing.write_bytes(b"not mine to lose")
+    reply = td_project_write(str(tmp_path / "any.tox"), "{}", str(existing))
+    assert "already exists" in reply
+    assert existing.read_bytes() == b"not mine to lose"
+
+
+def test_the_mcp_tool_names_the_tool_that_makes_a_usable_dump(tmp_path):
+    from td_atlas.mcp.server import td_project_write
+
+    reply = td_project_write(str(tmp_path / "a.tox"), "{}", str(tmp_path / "b.tox"))
+    assert "not a network dump" in reply
+    assert "td_project_text" in reply

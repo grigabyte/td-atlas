@@ -515,10 +515,17 @@ def _apply_node(root: Path, stem: Path, data: dict, node: Node | None,
             f"lines have never been measured (see formats.read_custom_parms), "
             f"so this file is not written."
         )
-    if data.get("type") and data["type"] != node.op_type:
+    # Compared against what the *file* holds, not against the resolved name:
+    # `type` is canonical only when the dump was made with the atom index
+    # present, and `saved_type` carries the contraction whenever the two
+    # differ. Comparing the resolved names instead reports every contracted
+    # operator in the file as a type change whenever one side of the trip had
+    # an index and the other did not — 5 of them in `checker.tox` alone.
+    saved = data.get("saved_type") or data.get("type")
+    if saved and node.node.op_type and saved != node.node.op_type:
         changes.gaps.append(
             f"{where}: the text changes the operator type from "
-            f"'{node.op_type}' to '{data['type']}'. Replacing an operator is "
+            f"'{node.node.op_type}' to '{saved}'. Replacing an operator is "
             f"not implemented; only its parameters, wiring, placement, flags "
             f"and contents can be written back."
         )
