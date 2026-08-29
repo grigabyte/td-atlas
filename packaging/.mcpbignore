@@ -1,0 +1,15 @@
+# The staging tree comes from `git archive`, so this file is a second fence,
+# not the first one. The uv server type specifically forbids shipping a
+# resolved environment: a bundle must carry pyproject.toml and let the host
+# resolve, never server/lib or server/venv.
+.venv/
+server/lib/
+server/venv/
+uv.lock
+__pycache__/
+*.py[cod]
+*.db
+*.db-wal
+*.db-shm
+config.json
+.DS_Store

@@ -1,0 +1,16 @@
+{
+  "name": "td-atlas",
+  "description": "The td-atlas TouchDesigner skill, published from the connector's own repository so the skill and the tools it documents move together.",
+  "owner": {
+    "name": "grigabyte",
+    "url": "https://github.com/grigabyte"
+  },
+  "plugins": [
+    {
+      "name": "touchdesigner",
+      "source": "./",
+      "description": "The td-atlas skill: how to find the right operator, the exact parameter names, and the traps TouchDesigner reports as nothing at all.",
+      "category": "creative"
+    }
+  ]
+}

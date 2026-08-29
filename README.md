@@ -178,11 +178,37 @@ real time — dormant branches, CPU operators hiding in a menu, feedback loops
 that converge to grey, an audio codec that reports success and writes no file,
 a licence that halves your resolution without saying so.
 
-Install it where your agent looks for skills:
+It installs as a plugin rather than by copying the directory, so that updating
+it is one command instead of a second `cp` nobody remembers to run. This
+repository is its own marketplace:
+
+```
+/plugin marketplace add grigabyte/td-atlas
+/plugin install touchdesigner@td-atlas
+```
+
+Later, `/plugin marketplace update` pulls in whatever the skill has learned.
+
+## As a bundle
+
+`.mcpb` is an MCP Bundle: a zip holding a local MCP server plus a
+`manifest.json` describing it, which a supporting client installs when you
+open the file. Build one from a clean checkout:
 
 ```bash
-cp -r skills/touchdesigner ~/.claude/skills/
+.venv/bin/python scripts/build_mcpb.py
 ```
+
+It writes `dist/td-atlas-<version>.mcpb`, regenerates `packaging/manifest.json`
+from `pyproject.toml`, and writes `dist/server.json` — the submission for the
+official MCP registry, carrying the SHA-256 of the bundle built beside it.
+Publishing is a separate, deliberate step: `scripts/publish.sh`.
+
+Two things the bundle does not carry, and cannot: the index, which is built on
+your machine from your installation and holds machine-specific values, and the
+bridge, which needs `td-atlas install` and one pasted line. So a bundle install
+gives you the project-file tools immediately and tells you which command
+unlocks the rest.
 
 ## Documentation
 
@@ -218,7 +244,14 @@ td-atlas/
 ├── docs/
 │   ├── architecture.md     the three layers and the reasoning
 │   └── formats.md          the undocumented .toe format, measured
-├── skills/touchdesigner/   the agent skill
+├── .claude-plugin/         this repository as a plugin, and as its marketplace
+│   ├── plugin.json
+│   └── marketplace.json
+├── packaging/manifest.json the MCPB manifest, generated from pyproject.toml
+├── scripts/
+│   ├── build_mcpb.py       build the bundle and the registry submission
+│   └── publish.sh          the one step that sends anything outward
+├── skills/touchdesigner/   the agent skill, installed as the plugin above
 │   ├── SKILL.md
 │   └── references/{gotchas,tools}.md
 ├── src/td_atlas/

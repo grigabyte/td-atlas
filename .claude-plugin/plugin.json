@@ -1,0 +1,11 @@
+{
+  "name": "touchdesigner",
+  "displayName": "TouchDesigner Atlas",
+  "description": "The td-atlas skill: how to find the right operator, the exact parameter names, and the traps TouchDesigner reports as nothing at all.",
+  "version": "0.1.0",
+  "author": { "name": "grigabyte", "url": "https://github.com/grigabyte" },
+  "homepage": "https://github.com/grigabyte/td-atlas",
+  "repository": "https://github.com/grigabyte/td-atlas",
+  "license": "MIT",
+  "keywords": ["touchdesigner", "mcp", "creative-coding", "generative-art"]
+}

@@ -78,6 +78,37 @@ td-atlas reload              # push handler changes into a running instance
 sources and has the running bridge replace its own handler, so there is no need
 to return to the textport.
 
+## Packaging
+
+```bash
+.venv/bin/python scripts/build_mcpb.py     # bundle + registry submission
+```
+
+Two rules it enforces, both of which a hand-maintained manifest breaks inside
+one release:
+
+- **`packaging/manifest.json` is generated, not edited.** Everything it shares
+  with the package is read from `pyproject.toml`, including the platform list —
+  which is why the classifiers are the one place to state that Windows is
+  unverified. `tests/test_packaging.py` fails when the committed copy drifts.
+- **Only tracked files are packed.** The staging tree comes from `git archive`,
+  so the index and the bridge token — both untracked, both machine-specific —
+  are absent by construction rather than by an exclusion list that would have
+  to be kept current. The build checks the packed listing against an allowlist
+  regardless.
+
+The bundle uses the `uv` server type, so it ships source and `pyproject.toml`
+and lets the host resolve dependencies. A `python`-type bundle would have to
+carry `mcp`'s compiled `pydantic-core` wheel, which is built for one CPU and
+one Python minor and cannot be produced reproducibly from a clean checkout.
+The launch string stays the one `cli.mcp_command()` settled on — `-m
+td_atlas.cli mcp`; only the interpreter differs, because a bundle has no
+`sys.executable` of the user's to point at.
+
+`scripts/publish.sh` is the only thing here that sends anything outward, and
+nothing calls it. It needs a built bundle whose SHA-256 matches
+`dist/server.json`, since clients verify that hash before installing.
+
 ## Code that runs inside TouchDesigner
 
 `src/td_atlas/component/handler.py` and `bootstrap.py` execute in
