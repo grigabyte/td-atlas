@@ -809,29 +809,68 @@ def m_scopes(_params):
 PANEL_TOP = "panel"
 STATUS_TABLE = "tdatlas_status"
 
-# The panel's shape, held here because three places need the same answer and
-# only this module is importable from all three: bootstrap.py reads it off the
-# installed Text DAT (`handler.module`), project/release.py imports it to lay
-# out the released .tox, and the tests import it on the host. Only what a
+# The panel's geometry, measured rather than assumed. Every number below was
+# read off the live 2025.32460 panel by rendering strings into it and looking
+# at which pixels carried ink (`numpyArray`, alpha > 0.05):
+#
+#   font Courier New, fontsizex 15   advance exactly 12.0 px per character —
+#                                    'i', '.', '0' and 'W' all advance the
+#                                    same 12 px, which is what makes a line's
+#                                    width a function of its length at all
+#   line advance                     24 px (ink of successive lines starts at
+#                                    y = 11, 35, 59, 83, 107 from the top)
+#   first line                       ink from y = 11 to y = 22
+#
+# The font is pinned, and that is the whole reason a host-side test of this
+# panel can exist. The panel used to inherit TouchDesigner's default Verdana,
+# which is proportional: measured on the same panel at the same size, 40 'i'
+# span 197 px and 40 'W' span 749 px — a factor of four. Under a proportional
+# font no line length is a width, `_panel_line`'s `ljust` does not line the
+# columns up either, and the only way to find out whether the text fits is to
+# look at it. Courier New because it is the one fixed-pitch face present by
+# default on both platforms this project claims (macOS and Windows); a font
+# TouchDesigner cannot find falls back silently, which is the failure this
+# pinning accepts.
+PANEL_FONT = "Courier New"
+PANEL_FONT_SIZE = 15
+PANEL_PX_PER_CHAR = 12
+PANEL_PX_PER_LINE = 24
+# Where the first line's ink starts and ends, below the top edge.
+PANEL_INK_TOP = 11
+PANEL_INK_BOTTOM = 22
+PANEL_X = 10
+PANEL_WIDTH = 760
+# Eight lines: the five the renderer always writes plus three for values that
+# do not fit on one — the health verdict is regularly two, and a failed or
+# refused save note can be. 200 px is what eight lines need by the numbers
+# above, rounded up from 191.
+PANEL_HEIGHT = 200
+
+# How much text fits, from the geometry alone. `_wrap_value` and the tests
+# both use these, so the panel cannot grow a line that does not fit without
+# something going red.
+PANEL_COLUMNS = (PANEL_WIDTH - PANEL_X) // PANEL_PX_PER_CHAR
+PANEL_ROWS = (PANEL_HEIGHT - PANEL_INK_BOTTOM) // PANEL_PX_PER_LINE + 1
+
+# The panel's parameters, held here because three places need the same answer
+# and only this module is importable from all three: bootstrap.py reads it off
+# the installed Text DAT (`handler.module`), project/release.py imports it to
+# lay out the released .tox, and the tests import it on the host. Only what a
 # default Text TOP does not already give — it comes up centred and 256 square.
-# Word wrap is on because the health verdict has no fixed length: measured on
-# the live 2025.32460 panel, "61/60 fps, 7/11 cooking - 1 error, 1 warning,
-# 1 note  at 18:37:43" runs past 760 px at this font size, and a clipped
-# verdict would read as a shorter one rather than as a cut-off one.
+# Word wrap stays on as a backstop only: `render_panel` breaks its own lines at
+# PANEL_COLUMNS and never hands TouchDesigner a line long enough to wrap.
 PANEL_PARS = (
     ("alignx", "left"),
     ("aligny", "top"),
-    ("fontsizex", "15"),
+    ("font", PANEL_FONT),
+    ("fontsizex", str(PANEL_FONT_SIZE)),
     ("wordwrap", "1"),
     ("positionunit", "pixels"),
-    ("positionx", "10"),
+    ("positionx", str(PANEL_X)),
     ("positiony", "-6"),
     ("outputresolution", "custom"),
-    ("resolutionw", "760"),
-    # Room for five lines and a wrapped health verdict: item 19 added a line
-    # about the text written beside the .toe, and at this font size the four
-    # original lines already used 140 px once the verdict wrapped.
-    ("resolutionh", "180"),
+    ("resolutionw", str(PANEL_WIDTH)),
+    ("resolutionh", str(PANEL_HEIGHT)),
 )
 # ASCII and one line: this exact string is written into the released .tox's
 # .parm file, whose grammar has no room for a newline and whose encoding
@@ -889,6 +928,70 @@ def _panel_line(label, value):
     return label.ljust(_PANEL_LABEL) + value
 
 
+def _wrap_value(label, value):
+    """One labelled line as the lines it actually occupies. Pure.
+
+    Broken here rather than left to the Text TOP's own word wrap, for two
+    reasons measured on the live panel: TouchDesigner breaks only at spaces, so
+    a long unbroken token (a path, a file name) is *clipped* instead of
+    wrapped; and a wrap nobody counted is a wrap that can push the last line
+    off the bottom, which is what the health verdict was doing.
+
+    Continuations are indented under the value column, so the label still
+    reads as belonging to all of them.
+    """
+    room = PANEL_COLUMNS - _PANEL_LABEL
+    indent = " " * _PANEL_LABEL
+    words = str(value).split(" ")
+    lines = []
+    current = ""
+    for word in words:
+        candidate = word if not current else current + " " + word
+        if len(candidate) <= room:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        # A single word longer than the column is cut, not dropped: the
+        # alternative is a line TouchDesigner clips without saying so.
+        while len(word) > room:
+            lines.append(word[:room])
+            word = word[room:]
+        current = word
+    lines.append(current)
+    return [_panel_line(label, lines[0])] + [indent + line for line in lines[1:]]
+
+
+def _hard_split(line):
+    """A line with no label, cut to the panel's width. Pure.
+
+    The first line's numbers come out of the status table, and a table saved
+    inside a .toe can hold anything a person typed into it, so even that line
+    is not trusted to be short.
+    """
+    line = str(line)
+    if len(line) <= PANEL_COLUMNS:
+        return [line]
+    return [line[i:i + PANEL_COLUMNS] for i in range(0, len(line), PANEL_COLUMNS)]
+
+
+def _fit(lines):
+    """Cut the panel's text to the rows the panel has, and say that it was cut.
+
+    The renderer's own worst case fits; an unbounded value (a caller's name, a
+    writer's exception message) does not have to, and a line that silently
+    fell off the bottom would read as a line that was never written.
+    """
+    if len(lines) <= PANEL_ROWS:
+        return lines
+    kept = lines[:PANEL_ROWS]
+    last = kept[-1]
+    marker = "..."
+    kept[-1] = last[: PANEL_COLUMNS - len(marker)].rstrip() + marker
+    return kept
+
+
 def render_panel(state):
     """The panel's text, from the stored state alone. Pure.
 
@@ -896,10 +999,15 @@ def render_panel(state):
     listens, who called it last and when, how big the edit in flight is, and
     the last health verdict. A field nobody has written yet says so rather
     than showing a zero, which would read as a measurement.
+
+    Every line the panel shows is broken here, at `PANEL_COLUMNS`, and the
+    whole is cut to `PANEL_ROWS` — both numbers come from the measured
+    geometry above, so "the text fits the panel" is a claim a test on the host
+    can check without TouchDesigner anywhere.
     """
     port = str(state.get("port") or "?")
     protocol = str(state.get("protocol") or PROTOCOL_VERSION)
-    lines = ["td-atlas    port %s    protocol %s" % (port, protocol)]
+    lines = _hard_split("td-atlas    port %s    protocol %s" % (port, protocol))
 
     method = str(state.get("method") or "")
     if method:
@@ -910,18 +1018,18 @@ def render_panel(state):
             call += "  at " + when
         if str(state.get("outcome") or "") == "error":
             call += "  FAILED"
-        lines.append(_panel_line("last call", call))
+        lines.extend(_wrap_value("last call", call))
     else:
-        lines.append(_panel_line("last call", "nothing yet"))
+        lines.extend(_wrap_value("last call", "nothing yet"))
 
-    lines.append(_panel_line("batch", str(state.get("batch") or "none yet")))
+    lines.extend(_wrap_value("batch", str(state.get("batch") or "none yet")))
 
     verdict = str(state.get("health") or "")
     if verdict:
         when = _clock(state.get("healthAt"))
-        lines.append(_panel_line("health", verdict + ("  at " + when if when else "")))
+        lines.extend(_wrap_value("health", verdict + ("  at " + when if when else "")))
     else:
-        lines.append(_panel_line("health", "not checked yet"))
+        lines.extend(_wrap_value("health", "not checked yet"))
 
     # A fifth line, and only once a save has actually happened. Not "off" from
     # the start: the four lines above are what the panel has always said, and a
@@ -932,8 +1040,8 @@ def render_panel(state):
     written = str(state.get("text") or "")
     if written:
         when = _clock(state.get("textAt"))
-        lines.append(_panel_line("text", written + ("  at " + when if when else "")))
-    return "\n".join(lines)
+        lines.extend(_wrap_value("text", written + ("  at " + when if when else "")))
+    return "\n".join(_fit(lines))
 
 
 def _bridge_holder():
@@ -1189,14 +1297,76 @@ _TEXT_KEYS = ("source", "build", "path", "operator_count", "operators")
 _SKIPPED_ROOTS = ("local", "perform", "tdatlas")
 
 # What this text does NOT match, and why. It is printed from the live network;
-# `td-atlas project text` prints from the expanded file. The one class measured
-# so far, found by the acceptance pass: a COMP's input wiring is stored in a
-# `.network` file, which the offline reader does not parse (see the list of
-# unparsed file kinds in project/rebuild.py), so the file-side text shows such
-# a COMP with no inputs while this one shows them. On a 12-operator network
-# that was 1 differing field out of 179 compared. Whether other classes exist
-# is unknown — nobody has enumerated them, and the count that once stood here
-# came from a network that no longer exists, so it is not repeated.
+# `td-atlas project text` prints from the expanded file. Nine classes of
+# difference are known, all of them measured on 2025.32460 on the network
+# `tests/live_network.py` builds (21 operators, and 24 more inside the
+# annotation component it loads) — 108 differing fields out of 722 compared,
+# with nothing left over. The network is a test fixture and not a memory, so
+# any of these numbers can be taken again: `tests/test_live_text_diff.py`
+# builds it, saves it with `save_tox`, reads the file back and fails if a
+# field falls outside these nine.
+#
+#   fields  class                     mechanism
+#       80  custom parameter          `toeexpand` writes a custom parameter's
+#           placement                 *value* into `.parm` beside the built-in
+#                                     ones (with 0x4000000 in the flags word)
+#                                     and its *definition* into `.cparm`, which
+#                                     `formats.read_custom_parms` deliberately
+#                                     does not parse. The reader therefore
+#                                     files the value under `parms`; this side
+#                                     files it under `custom_parms`, where
+#                                     `par.isCustom` puts it. 40 parameters,
+#                                     two fields each.
+#       10  custom parameter at its   Nothing is written to `.parm` for a
+#           default                   custom parameter still at its default, so
+#                                     the file holds it only as a `.cparm`
+#                                     definition and the reader sees nothing.
+#                                     This side has no isDefault filter on
+#                                     custom parameters and prints it.
+#        8  float text formatting     The file keeps TouchDesigner's own
+#                                     printing (`2e+06`); `_parm_string` here
+#                                     prints `2000000`. Same number, different
+#                                     text.
+#        3  parameter at its default  `.parm` carries a line for a parameter
+#           with a flags word         whose value is the default when its flags
+#                                     word is not zero (measured: `iop1op 32
+#                                     ""`, `ext0name 256 ""`). `par.isDefault`
+#                                     drops it here.
+#        2  panel COMP input wiring   A panel COMP's parent wire is in its `.n`
+#                                     `inputs` block, but live it hangs off
+#                                     `inputCOMPConnectors`, and `_inputs_data`
+#                                     reads only `inputConnectors`. The file
+#                                     has the wire, this text does not.
+#        2  Table DAT shape           The `.table` header's second word is the
+#                                     row count and its third the column count;
+#                                     `formats.read_table` reads them the other
+#                                     way round, so a 3x2 table comes back as
+#                                     2x3 with the cells in the same order.
+#                                     Measured on two tables whose live shape
+#                                     was known. A reader bug, not a gap.
+#        1  COMP input wiring         A COMP's operator input is stored in a
+#                                     `.network` file (`compinputs`), which the
+#                                     offline reader does not parse — see the
+#                                     list of unparsed file kinds in
+#                                     project/rebuild.py. The file-side text
+#                                     shows no inputs where this one shows
+#                                     them.
+#        1  flag vocabulary           `.n` flag words this side does not know
+#                                     (measured: `showDocked`). `_FLAG_WHEN_ON`
+#                                     is the vocabulary; anything outside it is
+#                                     absent here and present there.
+#        1  the .tox save's own root  `enableexternaltox` is written into the
+#           parameter                 root `.parm` of a saved `.tox` and of no
+#                                     `.toe` (measured over the expansion
+#                                     cache: 1326 of 2066 `.tox` roots carry
+#                                     it, 0 of the `.toe` roots do). An
+#                                     artefact of measuring through `save_tox`,
+#                                     not of this text.
+#
+# Two of the nine are ours to fix rather than to live with — the table shape is
+# a plain reader bug, and the panel wiring is a connector this side does not
+# read. The other seven are the file and the live object genuinely holding
+# different things.
 
 
 def _config_value(key, default=None):
