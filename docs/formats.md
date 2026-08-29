@@ -63,6 +63,21 @@ The first line is `FAMILY:type`, where `type` is a **contracted** name — see
 below. `inputs` lists `index<tab>name`, naming siblings relative to the node's
 parent, so wiring must be resolved against that parent to get absolute paths.
 
+The whitespace matters if you ever write one of these back. Measured over the
+51,397 `.n` files and the 17,867 input lines in this project's expansion
+cache: every input line separates the index from the name with a **space then
+a tab**, never a bare tab; a node that has flags writes `flags =` followed by
+**two** spaces, and the 32 nodes that have none write it with one; and one
+node writes an empty `inputs { }` block, which is not the same file as one
+with no block at all. None of that changes how a reader parses the file — and
+all of it changes 28% of the files byte for byte if you get it wrong.
+
+Lines other than `tile`, `flags`, `color` and the `inputs` block do occur
+(`view 8 0 1 1 1 0 0 0 0 1 1`, for one) and no reader here parses them, so a
+writer must carry them across untouched rather than re-render the file. The
+`outputs`, `docked` and `wires` blocks the reader knows how to skip appear in
+**none** of the 51,397 files, so their layout stays unmeasured.
+
 ## `.parm` — parameters
 
 ```
@@ -142,6 +157,46 @@ absent — and the flags word carries further bits (`0x1`, `0x2`, `0x20`,
 `0x40`, `0x100`, `0x4000000`, `0x8000000` and others) whose meaning has not
 been measured. None of them changes how many values the line holds.
 
+### Writing a `.parm` line back
+
+**The same quoted constant is read two different ways depending on the flags
+word, and a writer has to reproduce both.** With no mode bit the constant is
+the whole remainder with one pair of outer quotes stripped and nothing
+unescaped; with `0x10`, `0x200` or `0x200000` set it is lexed as a field and
+`\"` becomes `"`. So
+
+```
+Bodytext 0        "say \"hi\""     ->  say \"hi\"
+Bodytext 16       "say \"hi\"" e   ->  say "hi"
+```
+
+55 lines in the cache sit on the strict side of that split; `Bodytext` in
+`alembicoutPOP/example2/comment1.parm` is one. A writer that picks one
+spelling for both corrupts whichever half it did not pick, so the escaping
+has to be keyed off exactly the bits the reader keys its splitting off.
+
+Three more rules follow from the reader:
+
+- Every value but the last is lexed strictly, so it needs quoting when it is
+  empty, holds whitespace, or opens with a quote or a BOM.
+- The **last** value takes the whole remainder and is only unquoted when it
+  already starts with a quote, so it survives bare unless it would be
+  mistaken for a quoted string or has whitespace at its ends.
+- On a line with no mode bit, a constant that itself opens and closes with a
+  quote has to be wrapped again, or reading it back strips its own quotes.
+
+With those, `read(write(read(line))) == read(line)` on all **472,699**
+`.parm` and `.cparm` value lines in the cache, and 415,090 of them come back
+byte for byte as well. The rest differ only in spelling — a value written
+bare that the file quoted, or the other way round — which `toecollapse` does
+not care about.
+
+**The flags word itself cannot be recovered from a network dumped to text.**
+td-atlas's text form records the mode through its keys and never the 32-bit
+word, so a write-back reads the word off the original `.parm` line. Rebuilding
+a `.toe` therefore requires the original file; there is no path from text
+alone.
+
 ## `.cparm` — custom parameter definitions
 
 **A `.cparm` is a different grammar from a `.parm`**, not the same file with
@@ -183,6 +238,20 @@ three. Verified exact on all 686 payload files across 60 snippet libraries.
 Tables continue after the prologue with four `uint32` (unknown, columns, rows,
 padding) and then each cell as a `uint32` tag, a `uint32` length, and its
 bytes.
+
+Measured over all 2,336 tables in the cache: every one opens `1\n*` with the
+first `uint32` 1 and the fourth 0, and 71,760 of the 71,767 cells carry the
+tag `2`. What the tag means is unknown — the seven cells that carry `1` are
+not distinguishable by anything else measured here — and no reader in this
+project uses it, so writing `2` for every cell reproduces the cells exactly
+while leaving that one byte per cell a guess on seven of them.
+
+### Writing a payload back
+
+Only the last of the six prologue words is used by the reader, and the other
+five have never been surveyed, so a writer that rewrites a `.text` should keep
+the original file's first 23 bytes and replace only the length field. With
+that, all 9,502 `.text` files in the cache rewrite byte for byte.
 
 ## Contracted type names
 

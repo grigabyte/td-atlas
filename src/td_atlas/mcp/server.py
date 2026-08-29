@@ -950,6 +950,69 @@ def td_project_text(file: str, path: str = "", max_bytes: int = 200_000) -> str:
 
 @mcp.tool()
 @guarded
+def td_project_write(file: str, text: str, output: str) -> str:
+    """Write an edited td_project_text dump back into a new .toe/.tox.
+
+    The return leg of td_project_text: edit the JSON, hand the whole document
+    back here, and get a file TouchDesigner opens — with no instance running.
+
+    Three things to know before reaching for it, because each one is a silent
+    wrong answer otherwise:
+
+    - **`file` must still be the original the text came from.** The dump
+      covers five of the forty-odd kinds of file a .toe holds; panel layouts,
+      replicator settings and custom parameter definitions live in the others
+      and are copied across from the original. There is no path from text
+      alone to a .toe.
+    - **`output` must not exist.** Repacking writes the file whole, and this
+      tool will not overwrite anything of the user's. Write beside it and diff.
+    - **Read the gaps in the reply.** Anything the text asked for that could
+      not be written — a new operator, a changed operator type, a custom
+      parameter page — is listed rather than approximated, and the built file
+      does not say what the text said.
+
+    Changing a parameter, its expression, a DAT's code, a table cell, the
+    wiring, the flags, the placement or the colour all work, as does deleting
+    an operator.
+    """
+    from pathlib import Path as _Path
+
+    from ..project import ExpandError
+    from ..project import index_resolver
+    from ..project.rebuild import rebuild
+
+    target = _Path(output).expanduser()
+    if target.exists():
+        return (
+            f"{target} already exists.\n{hint('project_write_output_exists')}"
+        )
+    try:
+        changes = rebuild(file, text, target, resolver=index_resolver())
+    except ExpandError as exc:
+        if "not a network dump" in str(exc):
+            return f"error: {exc}\n{hint('project_write_not_a_dump')}"
+        return failure(exc)
+    except ValueError as exc:
+        return f"error: {exc}\n{hint('project_write_not_a_dump')}"
+
+    lines = [
+        f"wrote {target}",
+        f"{len(changes.files)} file(s) rewritten, {len(changes.deleted)} removed",
+    ]
+    if changes.estimated_flags:
+        lines.append(
+            f"{changes.estimated_flags} parameter flag word(s) were composed "
+            f"from the text's keys rather than read off the original line; "
+            f"bits other than expression and bind are lost on those"
+        )
+    if changes.gaps:
+        lines.append(f"{len(changes.gaps)} thing(s) the text asked for were NOT written:")
+        lines += [f"  - {gap}" for gap in changes.gaps]
+    return "\n".join(lines)
+
+
+@mcp.tool()
+@guarded
 def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
     """Search the Python and GLSL held inside a project's DATs.
 

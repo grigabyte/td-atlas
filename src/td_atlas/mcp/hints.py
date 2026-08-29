@@ -369,6 +369,28 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_project_read", "td_project_text"),
     ),
+    "project_write_output_exists": Recovery(
+        cause=(
+            "something already sits at that output path, and repacking writes "
+            "the file whole rather than merging into it"
+        ),
+        action=(
+            "name a path that does not exist yet, then compare the two with "
+            "td_project_diff before replacing anything of the user's"
+        ),
+        resume=("td_project_diff",),
+    ),
+    "project_write_not_a_dump": Recovery(
+        cause=(
+            "the text handed in is not a network dump — it has no 'operators' "
+            "key, so there is nothing to write back"
+        ),
+        action=(
+            "take the text from td_project_text on the same file, edit it, "
+            "and hand the whole document back; a fragment cannot be applied"
+        ),
+        resume=("td_project_text",),
+    ),
     "project_path_unknown": Recovery(
         cause="the project holds no operator at that path",
         action=(

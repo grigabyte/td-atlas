@@ -1135,6 +1135,7 @@ def cmd_project(args: argparse.Namespace) -> int:
     from .project import ExpandError, collapse, expand, index_resolver, load_file
     from .project.diff import diff as diff_projects
     from .project.render import describe, grep, render_matches
+    from .project.rebuild import rebuild as rebuild_file
     from .project.serialize import to_text as to_json_text
 
     resolver = index_resolver()
@@ -1163,6 +1164,28 @@ def cmd_project(args: argparse.Namespace) -> int:
                 # would still work but a byte comparison against the file
                 # written by -o would not.
                 sys.stdout.write(text)
+        elif args.action == "write":
+            text = (
+                sys.stdin.read()
+                if args.text == "-"
+                else Path(args.text).read_text(encoding="utf-8")
+            )
+            changes = rebuild_file(
+                args.file, text, args.output, resolver=resolver
+            )
+            print(args.output)
+            _say(
+                f"{len(changes.files)} file(s) rewritten, "
+                f"{len(changes.deleted)} removed, "
+                f"{changes.estimated_flags} parameter flag word(s) estimated"
+            )
+            for gap in changes.gaps:
+                _say(f"gap: {gap}")
+            # A gap means the built file does not say what the text said, and
+            # a caller scripting this has to be able to tell without reading
+            # prose. Exit 2, not 1: the file was written.
+            if changes.gaps:
+                return 2
         elif args.action == "grep":
             project = load_file(args.file, resolver=resolver)
             matches = grep(project, args.pattern, regex=not args.fixed)
@@ -1348,6 +1371,16 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--path", help="only this subtree, e.g. /project1")
     a.add_argument("-o", "--output", help="write to a file instead of stdout")
     a.add_argument("--refresh", action="store_true", help="ignore the cache")
+
+    a = actions.add_parser(
+        "write",
+        help="write edited JSON back into a .toe/.tox (needs the original)",
+    )
+    a.add_argument("file", help="the original .toe/.tox the text came from")
+    a.add_argument(
+        "--text", required=True, help="the edited JSON, or '-' for stdin"
+    )
+    a.add_argument("-o", "--output", required=True, help="where to write")
 
     a = actions.add_parser("grep", help="search the code inside a project's DATs")
     a.add_argument("file")

@@ -1,6 +1,6 @@
 # Tool reference
 
-Thirty-five MCP tools in three groups.
+Thirty-six MCP tools in three groups.
 
 ## Index — offline, no running TouchDesigner
 
@@ -49,6 +49,7 @@ Thirty-five MCP tools in three groups.
 | --- | --- |
 | `td_project_read(file, path, depth, params)` | Operator tree of a .toe/.tox without TouchDesigner. |
 | `td_project_text(file, path, max_bytes)` | The whole network as JSON — every parameter, wire, flag and DAT line. Reach for it when the tree is not enough; narrow with `path`, since a big network is refused rather than cut. |
+| `td_project_write(file, text, output)` | The return leg of `td_project_text`: write an edited dump into a new `.toe`/`.tox`, no instance running. `file` must still be the original — the dump covers five of the forty-odd kinds of file a `.toe` holds and the rest are copied from it — and `output` must not exist. Read the gaps in the reply: anything that could not be written is listed, not approximated. |
 | `td_project_grep(file, pattern, limit)` | Search the Python and GLSL inside DATs. |
 | `td_project_diff(before, after, show_moves, include_text)` | Semantic comparison of two files. |
 
