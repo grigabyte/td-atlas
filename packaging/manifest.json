@@ -18,7 +18,7 @@
   "support": "https://github.com/grigabyte/td-atlas/issues",
   "server": {
     "type": "uv",
-    "entry_point": "src/td_atlas/cli.py",
+    "entry_point": "server.py",
     "mcp_config": {
       "command": "uv",
       "args": [

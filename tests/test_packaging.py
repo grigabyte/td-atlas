@@ -125,6 +125,18 @@ def test_the_bundle_launches_the_same_module_the_cli_prints():
     assert args[0] == "run" and "${__dirname}" in args
 
 
+def test_the_entry_point_is_a_file_that_can_actually_be_run_as_one():
+    """For the uv server type `mcp_config` is optional, so a host is entitled
+    to run `entry_point` directly. `src/td_atlas/cli.py` was the obvious
+    candidate and is the wrong one: it opens with a relative import and dies
+    before argparse. The generated launcher goes through `cli.main` so both
+    paths stay on the code path `mcp_command()` measured."""
+    manifest = build_mcpb.build_manifest()
+    assert manifest["server"]["entry_point"] == "server.py"
+    assert "from td_atlas.cli import main" in build_mcpb.LAUNCHER
+    assert '"mcp"' in build_mcpb.LAUNCHER
+
+
 def test_the_bundle_ships_no_resolved_environment():
     """The uv server type forbids it, and a resolved environment is exactly
     where a machine-specific artefact would hide."""
