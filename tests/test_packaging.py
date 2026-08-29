@@ -171,3 +171,19 @@ def test_the_plugin_version_tracks_the_package(pyproject):
     assert plugin["version"] == pyproject["version"], (
         "the plugin manifest is versioned by hand — bump it with pyproject"
     )
+
+
+def test_the_server_announces_our_version_not_the_library_s():
+    """A bundle published as 0.1.0 whose server says 1.29.1 is a quiet lie.
+
+    FastMCP takes no version, and the low-level server left at None reports
+    the `mcp` library's own version to every client — which is what it did
+    until this was set.
+    """
+    from importlib.metadata import version
+
+    from td_atlas.mcp.server import mcp
+
+    options = mcp._mcp_server.create_initialization_options()
+    assert options.server_version == version("td-atlas")
+    assert options.server_version != version("mcp")

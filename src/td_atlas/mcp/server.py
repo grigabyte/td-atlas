@@ -24,6 +24,17 @@ from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
 from ..component.handler import NODE_FLAGS
 from .hints import IndexMissing, failure, guarded, hint
 
+
+def _package_version() -> str:
+    """Our own version, from the installed metadata rather than a copy here."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("td-atlas")
+    except PackageNotFoundError:  # running from a source tree, not installed
+        return "0+unknown"
+
+
 mcp = FastMCP(
     "td-atlas",
     instructions=(
@@ -33,6 +44,12 @@ mcp = FastMCP(
         "undoable block, and td_render to see what you made."
     ),
 )
+
+# FastMCP takes no version, and the low-level server left at None reports the
+# `mcp` library's own version to every client — measured: 1.29.1 against our
+# 0.1.0. A bundle published under one version whose server announces another
+# is the kind of quiet mismatch this project exists to catch.
+mcp._mcp_server.version = _package_version()
 
 _store: AtomStore | None = None
 
@@ -1006,7 +1023,14 @@ def td_project_write(file: str, text: str, output: str) -> str:
             f"bits other than expression and bind are lost on those"
         )
     if changes.gaps:
-        lines.append(f"{len(changes.gaps)} thing(s) the text asked for were NOT written:")
+        # Not all of these are unwritten: a composed flags word is written but
+        # approximate, and each line says which it is. A blanket "NOT written"
+        # here would contradict the line under it.
+        lines.append(
+            f"{len(changes.gaps)} thing(s) the text asked for did not land as "
+            f"asked — each line says whether it was written approximately or "
+            f"not at all:"
+        )
         lines += [f"  - {gap}" for gap in changes.gaps]
     return "\n".join(lines)
 
