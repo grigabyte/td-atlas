@@ -18,11 +18,13 @@ over three shipped palette components (21, 35 and 4,080 operators):
 | battery.tox | 35 | 3,870 B | 25,315 B | 2,567 B | 22,551 B | 0.002 s | 0.002 s | 0.012 s |
 | kantanMapper.tox | 4,080 | 308,928 B | 6,111,237 B | 299,592 B | 3,076,502 B | 0.259 s | 0.260 s | 1.723 s |
 
-The numbers kill the cheap option. A `.toe` is a compressed container, so the
-text is *twenty times bigger than the file it was printed from*: carrying the
-source alongside costs about 5% on top of the text and no measurable time.
-Storing only the text would have saved nothing while making every restore
-depend on the user's original still being there and unchanged. The expansion
+What settles it is correctness, not size: `rebuild.py` is a patcher, so the
+text alone cannot produce a `.toe` at all — a restore without the source is
+not a cheaper restore, it is no restore. Size only fails to argue back. A
+`.toe` is a compressed container, so across the 277 shipped components the
+text runs a median 5.3x the size of the file it was printed from (0.01x to
+24x; for 45 of them the text is the smaller of the two), and the copy adds a
+median 19% on top of the text and no measurable time. The expansion
 tree costs a further half of the text again, 9,647 files for the large case,
 and 6.6x the wall time, in exchange for nothing the file copy does not give —
 `expand()` reproduces it from the copy on demand and caches it.

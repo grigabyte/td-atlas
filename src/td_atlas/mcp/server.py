@@ -1045,9 +1045,10 @@ def td_variant_save(file: str, label: str, note: str = "", path: str = "") -> st
     the variant is the network text plus a byte copy of the file, kept under
     ~/.td-atlas/variants and grouped by the project's path.
 
-    That copy is what makes a restore exact — the text alone cannot rebuild a
-    .toe, and it is twenty times larger than the compressed file it was
-    printed from, so the copy costs about 5% more and removes the dependency.
+    That copy is what makes a restore possible at all: the rebuild is a
+    patcher, so the text alone cannot produce a .toe. It is also cheap —
+    measured across the shipped palette, the copy adds a median 19% on top of
+    the text and no measurable time.
 
     `label` may hold letters, digits, dot, dash and underscore. A label
     already in use is refused rather than overwritten. `path` narrows only the

@@ -57,11 +57,14 @@ a warm expansion cache; sizes are bytes on disk.
 | `Tools/battery.tox` | 35 | 3,870 | 25,315 | 2,567 | 22,551 | 0.002 s | 0.002 s | 0.012 s |
 | `Mapping/kantanMapper.tox` | 4,080 | 308,928 | 6,111,237 | 299,592 | 3,076,502 | 0.259 s | 0.260 s | 1.723 s |
 
-The number that decides things: **a `.toe` is a compressed container, so the
-readable text is about twenty times larger than the file it was printed
-from.** Keeping the original file alongside the text therefore costs roughly
-5% more and no measurable time, which is why `project/variants.py` stores
-both. The expanded tree adds half the text again — and 9,647 files for
+What decides it is correctness: the rebuild is a patcher, so **the text alone
+cannot produce a `.toe`** — without the source there is no restore at all.
+Size does not argue back. A `.toe` is a compressed container, and across the
+277 shipped palette components the text runs a median 5.3x the size of the
+file it was printed from — but the spread is wide (0.01x to 24x, and for 45
+of them the text is the *smaller* of the two), so the three rows above are
+examples, not a law. Against the text, the copy costs a median 19% and no
+measurable time, which is why `project/variants.py` stores both. The expanded tree adds half the text again — and 9,647 files for
 `kantanMapper` — for something `toeexpand` reproduces on demand.
 
 ## `.n` — nodes
