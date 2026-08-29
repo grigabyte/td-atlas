@@ -1188,6 +1188,16 @@ _TEXT_KEYS = ("source", "build", "path", "operator_count", "operators")
 #                      git history.
 _SKIPPED_ROOTS = ("local", "perform", "tdatlas")
 
+# What this text does NOT match, and why. It is printed from the live network;
+# `td-atlas project text` prints from the expanded file. The one class measured
+# so far, found by the acceptance pass: a COMP's input wiring is stored in a
+# `.network` file, which the offline reader does not parse (see the list of
+# unparsed file kinds in project/rebuild.py), so the file-side text shows such
+# a COMP with no inputs while this one shows them. On a 12-operator network
+# that was 1 differing field out of 179 compared. Whether other classes exist
+# is unknown — nobody has enumerated them, and the count that once stood here
+# came from a network that no longer exists, so it is not repeated.
+
 
 def _config_value(key, default=None):
     """One value out of ~/.td-atlas/config.json. Never raises."""

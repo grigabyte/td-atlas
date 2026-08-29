@@ -133,10 +133,15 @@ rather wait.
 
 The text covers the artist's own root components. TouchDesigner's `/local` and
 `/perform`, the bridge's own `/tdatlas`, and the external `.tox` roots `/ui`
-and `/sys` are left out. Where it differs from the text read back from the
-saved `.toe` — component wiring, custom parameter placement, a few node flags
-— the differences are measured and listed in `tests/test_externalise.py` and
-in the handler's own comments.
+and `/sys` are left out — each by a measured rule the handler's comments give.
+
+This text is printed from the live network, and the one `td-atlas project text`
+prints is read from the expanded file, so the two are not byte-identical. The
+one class of difference measured so far: a COMP's input wiring lives in a
+`.network` file, which the offline reader does not parse, so the file-side text
+shows such a COMP with no inputs where the live-side text shows them. Other
+classes may exist — nobody has enumerated them, and an earlier count quoted in
+a commit message came from a network that no longer exists.
 
 ## Install
 
