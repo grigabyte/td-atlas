@@ -1,13 +1,15 @@
 # Tool reference
 
-Forty MCP tools in three groups.
+41 MCP tools in three groups. This list is held to the code by
+`tests/test_skill_reference.py`: every name and parameter list here is compared
+against the server, and so is that count.
 
 ## Index — offline, no running TouchDesigner
 
 | Tool | Use it for |
 | --- | --- |
 | `td_search_operators(query, family, limit)` | Find an operator by what it does. Plain language. `family` narrows to TOP/CHOP/SOP/DAT/MAT/COMP/POP. |
-| `td_operator_schema(op_type, page, include_hidden)` | Exact parameter names, defaults, menu options, ranges, connector counts, path to a shipped example. |
+| `td_operator_schema(op_type, page, include_hidden)` | Exact parameter names, defaults, menu options, ranges, connector counts, path to a shipped example. Menu options print as `value — Label` where the label says more than the value, which is where costs like "(GPU)" live. |
 | `td_search_parameters(query, limit)` | Which operator has a parameter doing X. How `alwayscook` gets found. |
 | `td_python_api(name, query)` | Members and methods of a class, with inherited ones resolved. |
 | `td_docs(query, page, limit)` | 2,060 wiki pages — concepts, techniques, tutorials, not just operators. |
@@ -21,14 +23,14 @@ Forty MCP tools in three groups.
 | Tool | Use it for |
 | --- | --- |
 | `td_status()` | Is the bridge up, what project is open. |
-| `td_log(limit, failures, summary, method)` | Your own trail: every bridge call this host made, how long it took and what it refused with. `td_status` keeps only the last call; this survives the session and answers "what did I break yesterday". `failures=True` for the refusals alone with the repair for the latest; `summary=True` for which methods refuse and which are slow. Offline tools never dial the bridge and leave no trace here. |
+| `td_log(limit, failures, summary, method)` | Your own trail: every bridge call this host made, how long it took and what it refused with. `td_status` reports no call history at all; this survives the session and answers "what did I break yesterday". `failures=True` for the refusals alone with the repair for the latest; `summary=True` for which methods refuse and which are slow. Offline tools never dial the bridge and leave no trace here. |
 | `td_instances()` | Every running TouchDesigner that registered a bridge, and which one these tools reach. Check it before believing an edit landed in the project you meant. |
 | `td_doctor()` | Every link — install, index, probe pass, bridge, this server — with the command that fixes each. Catches the index built from another TouchDesigner build, which raises nothing. |
 | `td_health(path, interval)` | **The silent-failure detector.** Run after building anything. |
 | `td_network(path, depth)` | What is inside a component and how it is wired. |
 | `td_op_info(path)` | One operator: type, wiring, live parameter values, errors. |
 | `td_build(operations, undo_name, owner)` | Multi-step edits as one atomic, undoable block. Validated first. A created node with no `position` is given a free spot, and one wired inside its own `op_create` lands to the right of its source, so a batch reads left to right. |
-| `td_set_params(path, pars, op_type, owner)` | Set parameters on an existing operator. |
+| `td_set_params(path, pars, op_type, owner)` | Set parameters on an existing operator. Names are checked against the index **only if you pass `op_type`**; without it the name goes straight to TouchDesigner and comes back as an `AttributeError`. |
 | `td_palette_load(name, parent, rename, position, category, owner)` | Install a palette component by the name `td_palette` reports. Checks the .tox is on disk first, and reports the name TouchDesigner actually gave the node. |
 | `td_extension_add(class_name, code, path, parent, name, extension_name, promote, index, position, owner)` | Attach a Python class to a COMP as an extension — DAT, three Extensions parameters and the re-init in one call. Parses the code here first, and reads the result back: a class that fails to instantiate leaves the COMP reporting nothing at all. |
 | `td_annotate(text, parent, title, name, path, size, color, position, font_size, mode, owner)` | Leave a note in the network saying what you built and why — a coloured box beside the nodes it describes. Pass `path` to rewrite a note instead of adding another. |
@@ -38,9 +40,9 @@ Forty MCP tools in three groups.
 | `td_render(path, width, height)` | A TOP's image, returned to you. |
 | `td_errors()` | Operators reporting an error or warning. |
 | `td_exec(code)` | Arbitrary Python inside TouchDesigner. Last resort. |
-| `td_undo(redo)` | Undo or redo, including whole `td_build` batches. |
+| `td_undo(redo)` | Undo or redo, including whole `td_build` batches. Cannot be a step inside `td_build` — that is refused, because two of them in a row reach past the batch into the artist's own history. |
 | `td_snapshot(label, path)` | Save a component for later diffing. |
-| `td_claim_scope(path, owner, ttl_seconds)` | Announce a subtree as yours before a run of edits, when another agent or session may be in the same project. Covers everything below `path`; lapses on its own. |
+| `td_claim_scope(path, owner, ttl_seconds)` | Announce a subtree as yours before a run of edits, when another agent or session may be in the same project. Covers everything below `path`; lapses on its own. It guards against *every* unnamed caller including you, so carry the same `owner` into each write that follows. |
 | `td_release_scope(path, owner)` | Hand a claimed subtree back as soon as you are done, instead of leaving the next agent to wait out the claim. |
 | `td_scopes()` | Which subtrees are claimed, by whom, until when. Check before editing a project someone else may be in. |
 
@@ -91,7 +93,7 @@ contact_sheet(BridgeClient.discover(), "/project1/out", "sheet.png",
 ## Setup
 
 ```bash
-td-atlas build     # offline index, ~12 s
+td-atlas build     # offline index, ~14 s
 td-atlas install   # stage the bridge, print the bootstrap line
 # paste that line into TouchDesigner's textport, once per project
 td-atlas probe     # runtime facts: defaults, ranges, menus, type aliases

@@ -14,6 +14,7 @@ from td_atlas.atoms.extract_static import (
 from td_atlas.atoms.htmltext import html_to_text, page_title
 from td_atlas.atoms.store import AtomStore, fts_query
 from td_atlas.atoms.validate import validate_params
+from td_atlas.mcp.server import _menu_options
 
 
 # -- full-text query building ----------------------------------------------
@@ -290,3 +291,31 @@ def test_validate_defers_when_operator_was_never_probed(store):
     # Without runtime facts there is nothing authoritative to check against,
     # so TouchDesigner gets the final say rather than a false rejection.
     assert validate_params(store, "oddTOP", {"anything": 1}).ok
+
+
+# -- menu rendering ---------------------------------------------------------
+
+# The value a menu takes and the label TouchDesigner shows for it are separate
+# strings, and the label is sometimes the only place the cost lives: the Noise
+# TOP takes 'simplex3d' and 'sparse' alike, and only "Simplex 3D (GPU)" against
+# a plain "Sparse" says one runs on the GPU and the other on the CPU at ~96 ms
+# a cook (measured on 2025.32460 at 1280x720). The index stored the labels and
+# the schema dropped them, so the skill's advice to read them was unactionable
+# through the tool that was meant to show them.
+
+def test_menu_options_keeps_labels_that_say_more_than_the_value():
+    rendered = _menu_options(
+        ["simplex3d", "sparse"], ["Simplex 3D (GPU)", "Sparse"]
+    )
+    assert "simplex3d — Simplex 3D (GPU)" in rendered
+    assert "sparse — Sparse" in rendered
+
+
+def test_menu_options_stays_bare_when_labels_add_nothing():
+    # Capitalisation alone is not information worth doubling the line for.
+    assert _menu_options(["off", "on"], ["Off", "On"]) == '["off", "on"]'
+
+
+def test_menu_options_survives_a_menu_with_no_labels():
+    assert _menu_options(["a", "b"], None) == '["a", "b"]'
+    assert _menu_options(["a", "b"], ["only one"]) == '["a", "b"]'

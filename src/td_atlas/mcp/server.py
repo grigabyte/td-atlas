@@ -102,12 +102,41 @@ def _warn(client: BridgeClient) -> str:
     return "".join(f"warning: {line}\n" for line in lines)
 
 
+def _menu_options(names: list[str], labels: list[str] | None) -> str:
+    """Render a menu, keeping the labels when they say more than the values.
+
+    The value a parameter takes and the label TouchDesigner shows for it are
+    not the same string, and the difference is sometimes the only warning you
+    get: the Noise TOP's `type` menu takes 'simplex3d' and 'sparse', and only
+    the labels — "Simplex 3D (GPU)" against a plain "Sparse" — say that one
+    runs on the GPU and the other on the CPU at ~96 ms per cook. Dropping the
+    labels dropped that. Labels are paired in whenever any of them differs
+    from its own value by more than capitalisation, so a menu whose labels
+    add nothing stays as short as it was.
+    """
+    if not labels or len(labels) != len(names):
+        return json.dumps(names, ensure_ascii=False)
+
+    def bare(text: str) -> str:
+        return "".join(ch for ch in text.lower() if ch.isalnum())
+
+    if not any(bare(n) != bare(str(lab)) for n, lab in zip(names, labels)):
+        return json.dumps(names, ensure_ascii=False)
+    return json.dumps(
+        [f"{n} — {lab}" for n, lab in zip(names, labels)], ensure_ascii=False
+    )
+
+
 def _fmt_param(row: dict[str, Any]) -> str:
     bits = [row["style"] or row["par_type"] or "?"]
     if row.get("default") is not None:
         bits.append(f"default={row['default']!r}")
     if row.get("menu_names"):
-        bits.append("options=" + json.dumps(row["menu_names"]))
+        bits.append(
+            "options=" + _menu_options(
+                row["menu_names"], row.get("menu_labels")
+            )
+        )
     elif row.get("is_number"):
         lo, hi = row.get("norm_min"), row.get("norm_max")
         if lo is not None and hi is not None:
