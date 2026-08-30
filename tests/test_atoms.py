@@ -319,3 +319,32 @@ def test_menu_options_stays_bare_when_labels_add_nothing():
 def test_menu_options_survives_a_menu_with_no_labels():
     assert _menu_options(["a", "b"], None) == '["a", "b"]'
     assert _menu_options(["a", "b"], ["only one"]) == '["a", "b"]'
+
+
+def test_a_parameter_the_probe_missed_is_not_a_group(store):
+    """Refusing a real parameter is worse than passing an unknown one.
+
+    Measured on a live 2025.32460: `rotate` on transformTOP, `scale` on
+    blurTOP and `top` on compositeTOP all set fine, and all three were refused
+    as "a parameter group" because the runtime pass had not recorded a style
+    for them. 1,364 of the 2,693 unstyled rows in the shipped index are of
+    that kind. A name is a heading only when other rows sit under it.
+    """
+    store.insert_ops([{"type": "probeTOP", "family": "TOP", "label": "Probe"}])
+    store.insert_params([
+        # A real group: 't' has members under it and cannot be written to.
+        {"op_type": "probeTOP", "name": "t", "par_type": "XY"},
+        # Missed by the probe, nobody under it — a parameter, not a heading.
+        {"op_type": "probeTOP", "name": "rotate", "par_type": "Float"},
+    ])
+    store.merge_runtime_params(
+        "probeTOP",
+        [{"name": "tx", "label": "Translate", "style": "XYZW", "default": 0.0,
+          "group": "t", "page": "Transform", "is_number": True}],
+    )
+    store.conn.commit()
+
+    assert validate_params(store, "probeTOP", {"rotate": 10}).ok
+    refused = validate_params(store, "probeTOP", {"t": 1})
+    assert not refused.ok
+    assert "parameter group" in refused.render()

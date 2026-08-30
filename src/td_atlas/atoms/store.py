@@ -625,10 +625,26 @@ class AtomStore:
             (op_type,),
         ).fetchall()
 
+        # A name is a group heading only when *other* rows name it as their
+        # group: 't' has 'tx' and 'ty' under it, so it cannot be written to.
+        # The runtime pass not having seen a parameter is not evidence of the
+        # same thing — measured 2026-08-30, 1,364 of the 2,693 rows the probe
+        # missed are ordinary parameters with nobody under them (`rotate` on
+        # transformTOP, `scale` on blurTOP, `top` on compositeTOP, every
+        # `resmenu`/`armenu` pulse), and calling those groups made
+        # validate_params refuse writes that TouchDesigner accepts. Refusing a
+        # real parameter is worse than passing an unknown one through: the
+        # bridge's own error says what is wrong, a false refusal just blocks.
+        headings = {
+            row["group_name"]
+            for row in rows
+            if row["group_name"] and row["group_name"] != row["name"]
+        }
+
         out: list[dict[str, Any]] = []
         for row in rows:
             item = dict(row)
-            item["settable"] = row["style"] is not None
+            item["settable"] = row["style"] is not None or row["name"] not in headings
             item["summary"] = row["summary"] or row["group_summary"]
             item["label"] = row["label"] or row["group_label"]
             for key in ("menu_names", "menu_labels"):

@@ -65,7 +65,12 @@ def validate_params(
 
     settable = {r["name"]: r for r in rows if r["settable"]}
     groups = {r["name"]: r for r in rows if not r["settable"]}
-    if not settable:
+    # "Never probed" means no row carries a runtime style, not "nothing is
+    # settable": since 2026-08-30 a parameter the probe missed still counts as
+    # settable unless other rows sit under it as a group, so the old emptiness
+    # check would no longer fire and an unprobed operator would be judged
+    # against help text alone.
+    if not any(r["style"] is not None for r in rows):
         return result  # never probed; defer to TouchDesigner
 
     for name, value in values.items():
