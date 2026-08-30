@@ -188,9 +188,10 @@ HINTS: dict[str, Recovery] = {
             "which is not the same as the write failing"
         ),
         action=(
-            "read the stored expression with td_op_info before changing it; if "
-            "it can only be evaluated during a cook, it is already correct and "
-            "there is nothing to repair"
+            "read the stored expression with td_op_info before changing it: an "
+            "expression only evaluable during a cook is already correct. From "
+            "a step inside td_build the batch was still rolled back, so the "
+            "value is gone either way and has to be reapplied"
         ),
     ),
     # No mapping. Deliberately names nothing to call: see the module docstring.

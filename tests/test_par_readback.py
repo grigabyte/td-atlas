@@ -86,6 +86,11 @@ def test_the_write_is_reported_as_having_happened():
     assert "written" in message
     assert "EXPRESSION" in message, "the stored mode says the write landed"
     assert "me.inputVal" in message, "the cook-only cause must be offered"
+    assert "rolled" in message or "rolls" in message, (
+        "'was written' is only true of a lone par_set — inside a batch the "
+        "rollback takes the value back, and saying otherwise tells the agent "
+        "to leave a parameter set that no longer is"
+    )
 
 
 def test_the_group_claim_is_not_made_when_td_named_the_member():

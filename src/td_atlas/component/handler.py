@@ -2337,7 +2337,10 @@ def _read_back(target, name, par):
             "(`me.inputVal` and friends), in which case the write is good and "
             "only this read-back failed; and a name that is not in scope in a "
             "Python parameter expression — `math.sin`, not `sin`. Check with "
-            "td_op_info, which shows the stored expression."
+            "td_op_info, which shows the stored expression. One caveat on "
+            "'was written': that holds for a par_set on its own. Raised from a "
+            "step inside a batch, this rolls the whole batch back, and the "
+            "value is gone with it — reapply after fixing."
             % (target.path, name, mode, exc, misnamed)
         ) from exc
 
