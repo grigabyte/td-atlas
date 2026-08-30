@@ -57,6 +57,30 @@ def _clip_line(line: str) -> str:
     return line if len(line) <= _EXCERPT else line[:_EXCERPT] + "..."
 
 
+def _warning_excerpt(text: str) -> str:
+    """The one line of an operator's warning worth putting beside its path.
+
+    TouchDesigner's warnings are one sentence except when they are not: a cook
+    dependency loop appends the whole cook stack, tab-indented, and printing
+    that under every warned operator would bury the report. Measured shape
+    (build 2025.32460):
+
+        Warning: Cook dependency loop detected. Check for exports, ...:
+        \tCook stack starts
+        \t/…/Lgrade  \t/…/Lcomp  \t/…/Lfb
+
+    The leading `Warning: ` is dropped because the finding already says these
+    are warnings, and the stack is left to `td_errors`, which prints it whole.
+    """
+    lines = _lines(text)
+    if not lines:
+        return ""
+    head = lines[0]
+    if head.startswith("Warning: "):
+        head = head[len("Warning: "):]
+    return _clip_line(head)
+
+
 def _compile_excerpt(text: str) -> str:
     """The compiler's own line — it names the source DAT and the line number."""
     for line in _lines(text):
@@ -231,7 +255,12 @@ def check(
         if node["errors"]:
             errored.append(node["path"])
         if node["warnings"]:
-            warned.append(node["path"])
+            # The path alone sends the reader back to `td_errors` to find out
+            # what is wrong, and a cook dependency loop — the warning worth
+            # catching here — reads as a bare path with no hint that it is one.
+            # Measured: the bridge hands the whole string over, this is only
+            # where it was being dropped.
+            warned.append(f"{node['path']} ({_warning_excerpt(node['warnings'])})")
         if node["bypass"]:
             bypassed.append(node["path"])
         if node["type"] in _OUTPUT_TYPES and node.get("active") is False:

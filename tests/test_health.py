@@ -417,3 +417,46 @@ def test_a_bridge_that_does_not_know_the_method_does_not_fail_the_check():
                        sample(60, [node("/project1/a", 70)])])
     result = health_mod.check(client)
     assert result.ok and client.published == []
+
+
+# -- what a warned operator's line says -------------------------------------
+
+# The whole string TouchDesigner puts on the node at the head of a cook
+# dependency loop, measured live on build 2025.32460. The stack behind the
+# first line is the reason this is excerpted rather than printed.
+COOK_LOOP_WARNING = (
+    "Warning: Cook dependency loop detected. Check for exports, expressions "
+    "or wiring that are creating this loop: \n"
+    "\t# Cook stack starts\n"
+    "\t/p/keep\n"
+    "\t# Cook dependency loop starts\n"
+    "\t/p/grade\n"
+    "\t/p/comp\n"
+    "\t/p/fb\n"
+    "\t# Cook loop detected\n"
+    "\t/p/grade (/p/grade)"
+)
+
+
+def test_a_warned_operator_is_named_together_with_what_it_is_warning_about():
+    """A bare path sends the reader elsewhere to find out what is wrong."""
+    before = [node("/p/grade", 100, warnings=COOK_LOOP_WARNING)]
+    after = [node("/p/grade", 160, warnings=COOK_LOOP_WARNING)]
+    result = health_mod.check(FakeClient([sample(0, before), sample(60, after)]))
+    finding = next(f for f in result.findings if f.kind == "node-warnings")
+    assert finding.paths == ["/p/grade (Cook dependency loop detected. Check "
+                             "for exports, expressions or wiring that are "
+                             "creating this loop:)"]
+    # The cook stack stays out of it: that is what td_errors prints whole.
+    assert "Cook stack starts" not in finding.render()
+
+
+def test_a_one_line_warning_keeps_its_text_and_loses_only_the_prefix():
+    warn = "Warning: The GLSL Shader has compile errors (Use Info DAT to see details)."
+    before = [node("/p/g", 100, warnings=warn)]
+    after = [node("/p/g", 160, warnings=warn)]
+    result = health_mod.check(FakeClient([sample(0, before), sample(60, after)]))
+    finding = next(f for f in result.findings if f.kind == "node-warnings")
+    assert finding.paths == [
+        "/p/g (The GLSL Shader has compile errors (Use Info DAT to see details).)"
+    ]

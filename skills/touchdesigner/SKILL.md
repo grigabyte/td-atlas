@@ -115,6 +115,13 @@ Ctrl+Z:
 A DAT whose text is an output (Select, Null, Info, the script generators) is
 refused: it would overwrite the assignment on its next cook.
 
+Measured live (2026-08-30, build 2025.32460): a fragment shader delivered this
+way to a `textDAT`, with a `glslTOP` created in the next step pointing its
+`pixeldat` at it, compiled — `compileResult` read `Compiled Successfully` and
+the TOP's first pixel came back as the colour the shader writes. A shader that
+does not compile is a **warning**, not an error, and `compileResult` is where
+the line number lives; `td_health` reads it for you.
+
 Methods: `op_create`, `op_delete`, `op_connect`, `op_disconnect`, `par_set`.
 `undo` is not one of them — it walks the history the batch is being recorded
 into. Call `td_undo` on its own, after.

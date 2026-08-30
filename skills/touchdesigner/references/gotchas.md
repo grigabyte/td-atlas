@@ -122,14 +122,41 @@ input is a different thing, and wiring that input to a node that is itself
 downstream of the loop makes a genuine cook dependency loop. TouchDesigner
 notices and writes `Cook dependency loop detected` into the node's warning.
 
-Reported by the session that hit it (2026-08-30, build 2025.32460): the
-warning showed up in `td_network` output and was not seen in `td_errors` or
-`td_health`. **Not reproduced**, and the code says the tools do not differ that
-way: `td_network` and `td_errors` read warnings through the same
-`warnings(recurse=False)` call, and `td_health` does list the operator — but
-only as a `note` giving the path with no message text. The likely explanation
-is staleness (see *Stale errors* below), not a blind spot in `td_errors`. Treat
-"only `td_network` shows it" as unverified; treat the loop itself as real.
+A session reported that only `td_network` showed the warning and that
+`td_errors` stayed silent. **Measured on the live instance (2026-08-30, build
+2025.32460) and the tools do not differ**: a loop built from
+`constant → composite(maximum) → level → feedback`, with the Feedback TOP's
+wired input taken from the `level` inside the loop, reports
+
+```
+Warning: Cook dependency loop detected. ...
+	# Cook stack starts
+	/…/Lkeep
+	# Cook dependency loop starts
+	/…/Lgrade  /…/Lcomp  /…/Lfb
+```
+
+on `Lgrade` — and `td_errors` and `td_network` both name it, in either call
+order, on repeated calls. What *does* differ is **before the loop has cooked**:
+freshly built with nothing pulling it, every operator sat at `0` cooks and both
+tools reported nothing at all. Adding a `cacheTOP` with `alwayscook` took them
+to 90 cooks, and from then on both tools carried the full text. So the silence
+was the loop not running, not a blind spot — the same "a branch nothing
+consumes never runs" at the top of this file, arriving as a missing diagnosis
+instead of a missing picture. Check errors *after* something pulls the chain.
+
+`td_health` folds every warned operator into one `note` line, and it used to
+give the path alone — `1 operator(s) reporting a warning`, with the message
+dropped, which tells you where to look and not what is wrong. It now carries
+the warning's first line:
+
+```
+[note ] 1 operator(s) reporting a warning
+         /…/Lgrade (Cook dependency loop detected. Check for exports, ...)
+```
+
+The cook stack behind that sentence is left to `td_errors`, which prints the
+whole thing.
 
 Fix: take the Feedback TOP's wired input from a node *before* the loop.
 
@@ -198,24 +225,41 @@ that its value is an operator and not just text you typed.
 
 ## A fresh Geometry COMP already has geometry in it
 
-Reported by the session that hit it (2026-08-30, build 2025.32460), **not
-verified offline**: a newly created `geometryCOMP` arrives with a `torus1`
-inside it, display and render flags on, and the Render TOP draws that torus.
-The shipped help treats this as normal enough to write examples around it
-("if you had `torus1` inside `geo1`" — *Run Command Examples*), but a fresh
-COMP's contents are a runtime fact and the offline index does not record them.
-Check it, do not assume it either way.
+**Measured on the live instance (2026-08-30, build 2025.32460).** A newly
+created `geometryCOMP` arrives holding one child, `torus1` — on this build a
+`torusPOP`, not a SOP — with `display` and `render` both on, and it is what
+gets drawn. A Render TOP at 128×128 pointed at an otherwise untouched COMP
+(camera at `tz 5`) returned 3268 of 16384 pixels with alpha above 0.5, in a
+bounding box of 98×38. Destroying `torus1` took the same render to 0. The
+shipped help treats the torus as normal enough to write examples around it
+("if you had `torus1` inside `geo1`" — *Run Command Examples*); the offline
+index does not record a fresh COMP's contents, because they are a runtime fact.
 
-The half that *is* certain, from the code: `td_network` defaults to
-`depth=1` and lists only direct children, so `td_network("/project1/REF")`
-names the COMP and stops there. Its contents need `td_network` pointed at the
-COMP itself, or `depth=2`.
+Fresh COMPs of other families are not empty either — a `cameraCOMP` came with
+one child and a `lightCOMP` with 21 — but those are viewport gizmos and do not
+reach a Render TOP. The Geometry COMP is the one whose contents render.
+
+`td_network` defaults to `depth=1` and lists only direct children, so
+`td_network("/project1/REF")` names the COMP and stops there. It does print
+`numChildren`, which is the cheap tell: `geometryCOMP … numChildren: 1` on a
+COMP you have put nothing into. The contents themselves need `td_network`
+pointed at the COMP, or `depth=2`.
 
 After creating a Geometry COMP, look inside it before wondering why the render
 shows something you did not build. While you are in there, check the flags on
-your own SOP: the same session found `display` and `render` off on the SOP it
-had just created inside the COMP (seen with `td_flags`, also not re-verified) —
-the mirror-image trap, where your geometry is the invisible one.
+your own SOP — also measured, and the mirror-image trap: a `sphereSOP` created
+inside the COMP (through `op_create`, and through `.create()` in `td_exec`
+alike) arrives with `display` **off** and `render` **off**, while the torus
+beside it has both on. Until you set them, your geometry is the invisible one:
+
+```
+/…/g6/s6      sphereSOP   display false  render false
+/…/g6/torus1  torusPOP    display true   render true
+```
+
+With the flags off, every measurement of the render is the same number no
+matter what you change upstream — see *Identical numbers are usually a picture
+that did not change* below.
 
 ## Movie File Out
 
@@ -277,6 +321,52 @@ stay off the bridge, then stop it. This also ruins timing measurements taken
 from inside `exec`: a loop that samples `cookTime` is holding up the very frame
 it is measuring. Use `td_health`, which samples across an interval from the
 host side.
+
+Time is the other thing that does not move inside a request. A `noiseTOP`
+driven by `absTime.frame`, cooked with `cook(force=True)` and read five times
+in one `exec`, returned five identical SHA-1s and the same frame number
+(`51208`) five times. The same node read once per request, three requests
+running, gave three different hashes on frames 51209, 51210, 51211. A loop with
+`sleep` in it does not sample a range; it samples one frame forty times. Take a
+strip with repeated calls instead — that is what the host-side
+`contact_sheet()` helper in `references/tools.md` does, one bridge call per
+frame with TouchDesigner left to run in between.
+
+## Identical numbers are usually a picture that did not change
+
+A session reported that `numpyArray(delayed=False)` through `td_exec` hands
+back a stale frame — that `cook(force=True)` did not help, and that three
+measurements in a row came back character-for-character identical while the
+scene was being changed underneath them. **That does not reproduce.** Measured
+on the live instance (2026-08-30, build 2025.32460), hashing the array rather
+than eyeballing it:
+
+- a `constantTOP → levelTOP` chain, `colorr` set in one request and read in the
+  next: `0.1 → 0.5 → 0.9` gave three distinct hashes, and `numpyArray()`,
+  `numpyArray(delayed=True)`, `numpyArray(delayed=False)` and `saveByteArray()`
+  all moved together;
+- the same change made and read back **inside one request** — set `0.2`,
+  `cook(force=True)`, read; set `0.8`, `cook(force=True)`, read — gave two
+  distinct hashes and the two pixel values;
+- a Render TOP, camera `tz` stepped `3 → 8 → 1.5` one request apart: alpha
+  bounding box `128×80 → 60×22 → 128×128`, hash distinct each time; dropping
+  the resolution 128→64 came through as well;
+- a change made at the head of a four-deep chain that **nothing pulls**, read
+  at the tail with `cook(force=True)`: fresh every time.
+
+What *does* reproduce is the symptom. Toggling `bypass` on a noise SOP inside a
+Geometry COMP and measuring the Render TOP gave the identical hash and an alpha
+bounding box of `0×0` on every reading — because that SOP was created with
+`display` and `render` off and nothing of it was ever in the frame. Setting the
+two flags turned the same toggle into `64×64 → 0×0 → 64×64` and three different
+hashes.
+
+So the rule is not "numpyArray lies". It is: **a number that will not move is
+evidence about the picture, not about the reader.** Before theorising about
+staleness, render the node and look at it, and check the flags on whatever you
+expected to be in the frame. If you want a second opinion from a different code
+path, `saveByteArray()` — what `td_render` uses — was measured moving in step
+with `numpyArray` on every case above.
 
 ## Stale errors
 
