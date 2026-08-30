@@ -80,10 +80,10 @@ from plain "Sparse", "Hermite", "Harmomic Summation" (TouchDesigner's own
 spelling; the value is `harmonic`), "Random" and "Alligator", which are
 CPU-side.
 
-Measured on 2025.32460 at 1280×720, Apple Silicon, `td_health` over a 2 s
-interval, repeated: `sparse` 96 ms per cook, `alligator` 104 ms, `harmonic`
-104 ms, `hermite` 38 ms; `simplex3d` and `perlin3d` never crossed the 8 ms
-threshold at all. Whether that shows up as dropped frames depends on the rest
+Measured on 2025.32460 at 1280×720, Apple Silicon, sampled by `td_health`
+over a 2 s interval: `sparse` 96 ms per cook (reproduced twice),
+`alligator` 104 ms, `harmonic` 104 ms, `hermite` 38 ms (each measured once);
+`simplex3d` and `perlin3d` never crossed the 8 ms threshold at all. Whether that shows up as dropped frames depends on the rest
 of the network — do not wait for the frame rate to tell you.
 
 Nothing warns you. `td_health` flags any operator costing more than 8 ms.
@@ -159,21 +159,6 @@ the members as a suggestion. `td_set_params` only does the same when you pass
 
 Not every operator has the transform parameters you expect: `circleTOP` has no
 `tx`, it has `centerx`/`centery`.
-
-## A claimed subtree refuses you too
-
-`td_claim_scope(path, owner)` guards a subtree against *every* caller that does
-not name itself, including the one that made the claim. After claiming, pass
-the same `owner` into `td_build`, `td_set_params`, `td_set_flags`,
-`td_annotate` and `td_palette_load`, or the refusal you get back names you as
-the owner of the claim that is blocking you.
-
-## Undo is not a batch step
-
-`td_build` refuses a step whose method is `undo` or `redo`. Two of them in a
-row reach past the batch's own entries into the artist's history, and the
-rollback cannot give that back. Call `td_undo` on its own, after the batch has
-returned.
 
 ## Saved files use contracted type names
 
