@@ -17,7 +17,7 @@ import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 
-PROTOCOL_VERSION = 4
+PROTOCOL_VERSION = 5
 
 # The shared secret, read from ~/.td-atlas/config.json when the server starts —
 # see _load_token(). It is not baked into this text: a released .tox is one file
