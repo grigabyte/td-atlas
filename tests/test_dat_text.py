@@ -79,6 +79,11 @@ class FakeOP:
     def pars(self):
         return []
 
+    def destroy(self):
+        self.valid = False
+        if self.parent_op is not None and self in self.parent_op.children:
+            self.parent_op.children.remove(self)
+
 
 @pytest.fixture
 def network(monkeypatch):
@@ -209,3 +214,32 @@ def test_text_survives_a_batch(network, monkeypatch):
     )
     assert network.children[0].text == SHADER
     assert fake_ui.undo.blocks == ["shader"]
+
+
+# -- a refused create leaves nothing behind ---------------------------------
+
+def test_a_refused_create_takes_its_node_with_it(network):
+    """Measured live on 2026-08-30: it did not.
+
+    Everything after `create` can refuse — a parameter name that does not
+    exist, text on a DAT that computes its own, a source that is not there —
+    and the half-made node stayed in the network each time. Inside a batch the
+    rollback swept it up; a single `op_create` had nothing to undo it, so the
+    caller was told "no" and still had to go and find the leftover.
+    """
+    with pytest.raises(TypeError):
+        create("noiseTOP", "n1", text=SHADER)
+    assert [c.name for c in network.children] == []
+
+
+def test_the_refusal_survives_a_failing_cleanup(network, monkeypatch):
+    """The caller has to hear why the create refused, not why the sweep did."""
+    original = FakeOP.destroy
+
+    def explode(self):
+        raise RuntimeError("destroy blew up")
+
+    monkeypatch.setattr(FakeOP, "destroy", explode)
+    with pytest.raises(TypeError):
+        create("selectDAT", "pick", text=SHADER)
+    monkeypatch.setattr(FakeOP, "destroy", original)

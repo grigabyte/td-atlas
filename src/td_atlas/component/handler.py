@@ -2227,28 +2227,44 @@ def m_op_create(params):
         raise ValueError("op_create requires 'type'")
     created = parent_comp.create(op_type, params.get("name"))
 
-    position = params.get("position")
-    if position:
-        created.nodeX, created.nodeY = float(position[0]), float(position[1])
+    # Everything past the create can refuse — a parameter name that does not
+    # exist, text on a DAT that computes its own, a source path that is not
+    # there. Measured 2026-08-30: the node stayed behind in the network on
+    # every one of those, so a caller who was told "no" still had to go and
+    # find the leftover. Inside a batch the rollback removed it; a single
+    # op_create had nothing to undo it.
+    try:
+        position = params.get("position")
+        if position:
+            created.nodeX, created.nodeY = float(position[0]), float(position[1])
 
-    if params.get("pars"):
-        _apply_pars(created, params["pars"])
+        if params.get("pars"):
+            _apply_pars(created, params["pars"])
 
-    # After `pars`, because a parameter can load content from a file and would
-    # otherwise race with what the caller asked to be in the DAT.
-    if params.get("text") is not None:
-        _set_dat_text(created, params["text"])
+        # After `pars`, because a parameter can load content from a file and
+        # would otherwise race with what the caller asked to be in the DAT.
+        if params.get("text") is not None:
+            _set_dat_text(created, params["text"])
 
-    sources = []
-    for wiring in params.get("connect") or []:
-        source = _resolve(wiring["from"])
-        index = int(wiring.get("index", 0))
-        source.outputConnectors[0].connect(created.inputConnectors[index])
-        sources.append(source)
+        sources = []
+        for wiring in params.get("connect") or []:
+            source = _resolve(wiring["from"])
+            index = int(wiring.get("index", 0))
+            source.outputConnectors[0].connect(created.inputConnectors[index])
+            sources.append(source)
 
-    # After the wiring, because the wiring says which node this one follows.
-    if not position:
-        _place_node(parent_comp, created, sources)
+        # After the wiring, because the wiring says which node this one follows.
+        if not position:
+            _place_node(parent_comp, created, sources)
+    except Exception:
+        # Best effort, and second: if destroying the node throws as well, the
+        # caller still has to hear why the create refused, not why the cleanup
+        # did.
+        try:
+            created.destroy()
+        except Exception:
+            pass
+        raise
 
     return _op_summary(created, include_pars=False)
 
