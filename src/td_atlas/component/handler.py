@@ -2178,8 +2178,41 @@ def m_network(params):
     }
 
 
+def _set_dat_text(target, text):
+    """Write a DAT's contents. Contents are not a parameter, so `pars` cannot.
+
+    Without this, every shader, script and callback body costs a second call —
+    an `exec` doing `op(...).text = ...` — which lands outside the batch's undo
+    block and outside its rollback. A GLSL network is mostly DAT text, so that
+    was the common case, not an edge one.
+
+    The refusals are deliberate. A DAT whose text is an *output* (Select, Null,
+    Info, the script generators) accepts the assignment in TouchDesigner and
+    then overwrites it on its next cook, which is a silent loss; `_dat_owns_its_text`
+    is the measured list of the types that keep what is written to them.
+    """
+    if not getattr(target, "isDAT", False):
+        raise TypeError(
+            "'text' needs a DAT, but %s is a %s. Shader and script source "
+            "belongs in a textDAT." % (target.path, target.OPType)
+        )
+    if not isinstance(text, str):
+        raise TypeError(
+            "'text' must be a string, got %s" % type(text).__name__
+        )
+    if not _dat_owns_its_text(target):
+        raise TypeError(
+            "%s is a %s, which computes its text every cook: an assignment "
+            "here is overwritten on the next cook and lost without a word. "
+            "Use a textDAT or tableDAT." % (target.path, target.OPType)
+        )
+    target.text = text
+
+
 def m_op_create(params):
     """Create an operator, optionally setting parameters and wiring an input.
+
+    `text` fills a DAT's contents in the same step — see `_set_dat_text`.
 
     A `position` is honoured exactly as given. Without one, the node is given a
     free spot instead of TouchDesigner's (0, 0), and one wired to a source
@@ -2200,6 +2233,11 @@ def m_op_create(params):
 
     if params.get("pars"):
         _apply_pars(created, params["pars"])
+
+    # After `pars`, because a parameter can load content from a file and would
+    # otherwise race with what the caller asked to be in the DAT.
+    if params.get("text") is not None:
+        _set_dat_text(created, params["text"])
 
     sources = []
     for wiring in params.get("connect") or []:
@@ -2245,6 +2283,65 @@ def m_op_disconnect(params):
     return {"path": target.path, "index": index}
 
 
+class ParEvalError(ValueError):
+    """A parameter was written, and evaluating it back raised.
+
+    Its own class rather than a bare ValueError because the two mean opposite
+    things to the caller: a ValueError out of the bridge says an argument was
+    refused and nothing happened, while this says the write landed and only the
+    read-back failed. `hints.py` maps the name.
+    """
+
+
+def _read_back(target, name, par):
+    """Evaluate a parameter just written, naming it when TouchDesigner will not.
+
+    A write is confirmed by reading it back, and the read-back is where a bad
+    expression finally surfaces — TouchDesigner accepts `par.expr` as text and
+    only complains when something asks for a value. Its complaint is the
+    problem this wraps. Measured on build 2025.32460: an expression written to
+    `ty` came back as `Error in /project1/REF/masses parameter t` — the
+    parameter *group*, not the member, and no reason at all. An agent reading
+    that goes looking at `tx` and `tz` as well, or at the wrong operator.
+
+    Everything the message lacks is known here: the member's own name, that the
+    write itself went through, and which of the two usual causes it could be.
+    The causes are offered as candidates, not a diagnosis — TouchDesigner does
+    not say which, and guessing on its behalf would be the confident wrong
+    answer this project refuses to give.
+
+    `tdError` is not referenced by name: this module is imported on the host to
+    be shipped into TouchDesigner, where that class does not exist.
+    """
+    try:
+        return par.eval()
+    except Exception as exc:
+        try:
+            mode = str(par.mode).rsplit(".", 1)[-1]
+        except Exception:
+            mode = "unknown"
+        # Only claim the group substitution when it actually happened: the
+        # message sometimes does name the member ('expr0expr'), and asserting
+        # otherwise would send the reader looking for a group that is not there.
+        misnamed = ""
+        if name not in str(exc):
+            misnamed = (
+                "That message does not name '%s' — TouchDesigner reports these "
+                "against the parameter group ('t' for 'ty'), so look at the "
+                "member you set, not at its siblings. " % name
+            )
+        raise ParEvalError(
+            "%s: '%s' was written (mode %s) but evaluating it raised: %s\n"
+            "%sTwo causes account for "
+            "most of these: an expression that is only valid inside a cook "
+            "(`me.inputVal` and friends), in which case the write is good and "
+            "only this read-back failed; and a name that is not in scope in a "
+            "Python parameter expression — `math.sin`, not `sin`. Check with "
+            "td_op_info, which shows the stored expression."
+            % (target.path, name, mode, exc, misnamed)
+        ) from exc
+
+
 def _apply_pars(target, values):
     """Set parameters, accepting constants, expressions and bindings.
 
@@ -2271,7 +2368,7 @@ def _apply_pars(target, values):
                 )
         else:
             par.val = value
-        applied[name] = _jsonable(par.eval())
+        applied[name] = _jsonable(_read_back(target, name, par))
     return applied
 
 

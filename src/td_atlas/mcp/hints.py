@@ -181,6 +181,18 @@ HINTS: dict[str, Recovery] = {
             "than repeating the call unchanged"
         ),
     ),
+    # The opposite of a ValueError, so not folded into it: the write landed.
+    "ParEvalError": Recovery(
+        cause=(
+            "the parameter was written, and reading the value back raised — "
+            "which is not the same as the write failing"
+        ),
+        action=(
+            "read the stored expression with td_op_info before changing it; if "
+            "it can only be evaluated during a cook, it is already correct and "
+            "there is nothing to repair"
+        ),
+    ),
     # No mapping. Deliberately names nothing to call: see the module docstring.
     "unmapped_bridge_error": Recovery(
         cause=(

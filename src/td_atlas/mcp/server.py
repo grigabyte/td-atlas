@@ -594,7 +594,9 @@ def td_build(
     op_create, op_delete, op_connect, op_disconnect, par_set.
 
     op_create takes parent, type, name, optional pars {name: value}, optional
-    position [x, y], and optional connect [{"from": path, "index": 0}].
+    position [x, y], optional connect [{"from": path, "index": 0}], and
+    optional text for a DAT's contents — shader and script source belongs
+    there, not in a separate td_exec, so it lands inside this undo block.
     Values may be a constant, {"expr": "..."} for an expression, {"bind": "..."}
     or {"pulse": true}. Parameter names are validated against the index first.
 

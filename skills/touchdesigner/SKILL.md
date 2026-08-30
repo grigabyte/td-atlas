@@ -101,6 +101,20 @@ back, and a successful batch is a single Ctrl+Z for the person using
 TouchDesigner. Parameter values may be a constant, `{"expr": "..."}` for an
 expression, `{"bind": "..."}`, or `{"pulse": true}`.
 
+A DAT's contents are not a parameter, so they go in their own `text` key on
+`op_create` — shader source, script bodies, callbacks. Do it there rather than
+in a follow-up `td_exec`, so the text is part of the same rollback and the same
+Ctrl+Z:
+
+```json
+{"method": "op_create", "params": {
+   "parent": "/project1", "type": "textDAT", "name": "frag",
+   "text": "out vec4 fragColor;\nvoid main() { fragColor = vec4(1.0); }"}}
+```
+
+A DAT whose text is an output (Select, Null, Info, the script generators) is
+refused: it would overwrite the assignment on its next cook.
+
 Methods: `op_create`, `op_delete`, `op_connect`, `op_disconnect`, `par_set`.
 `undo` is not one of them — it walks the history the batch is being recorded
 into. Call `td_undo` on its own, after.

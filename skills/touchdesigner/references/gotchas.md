@@ -115,6 +115,108 @@ melt ─┬─────────────► comp(maximum) ──► po
       └── fb ── drift ── decay        fb.top = comp   (not out)
 ```
 
+### A Feedback TOP's *wire* input is not its `top` parameter
+
+A Feedback TOP takes the frame it replays from its `top` parameter. Its wired
+input is a different thing, and wiring that input to a node that is itself
+downstream of the loop makes a genuine cook dependency loop. TouchDesigner
+notices and writes `Cook dependency loop detected` into the node's warning.
+
+Reported by the session that hit it (2026-08-30, build 2025.32460): the
+warning showed up in `td_network` output and was not seen in `td_errors` or
+`td_health`. **Not reproduced**, and the code says the tools do not differ that
+way: `td_network` and `td_errors` read warnings through the same
+`warnings(recurse=False)` call, and `td_health` does list the operator — but
+only as a `note` giving the path with no message text. The likely explanation
+is staleness (see *Stale errors* below), not a blind spot in `td_errors`. Treat
+"only `td_network` shows it" as unverified; treat the loop itself as real.
+
+Fix: take the Feedback TOP's wired input from a node *before* the loop.
+
+## A composite's first input is the foreground
+
+`compositeTOP` with `operand = over` is not symmetric, and nothing tells you
+which way round it goes. The shipped help gives the formula, and it settles it:
+
+```
+over:  (input2.rgba * (1.0 - input1.a)) + input1.rgba
+```
+
+The help numbers inputs from 1; connectors are numbered from 0. So the help's
+`input1` is **connector index 0**, and it is the layer that covers the other
+one. Put the foreground on index 0.
+
+Get it backwards with an opaque foreground and the frame goes solid black,
+with no error and no warning — an opaque layer on index 0 hides index 1
+completely. This cost a session about an hour: an accumulating feedback frame
+was wired to index 0 and the source to index 1, so the source was never seen.
+
+`swaporder` ("Swaps the order of the input pairs. A operation B is changed to B
+operation A") flips it without rewiring. The `operand` menu documents the
+formula for many of its entries — `td_docs("Composite TOP")` prints them, which
+is faster than guessing which operations care about order. The commutative
+ones do not (`add`, `multiply`, `average`, `maximum`, `minimum`); the layer
+modes do, and the help names `over` and `hardlight` as its own examples.
+`outside` is documented as `input1.rgba * (1.0 - input2.a)`, which is the same
+asymmetry again.
+
+## A default is not the neutral value
+
+`levelTOP` has a `contrast` parameter, and its default is **1.0**, not 0.
+Setting it to 0 is not "leave it alone" — it collapses the image to a flat
+grey, every pixel the same, with no error, no warning and nothing in
+`td_health`. Diagnosing it took four calls: rendering the upstream nodes one at
+a time to prove they were still alive.
+
+Measured from the index on build 2025.32460 (`params` table, `levelTOP`):
+`contrast` default `1.0`, range 0–1; and so are `brightness1` and `gamma1`,
+which are the same trap. `blacklevel` defaults to `0.0`.
+
+The general rule: read `par.default` — `td_operator_schema` prints it — instead
+of assuming which number means "no change". Multiplicative parameters are
+neutral at 1, additive ones at 0, and the parameter name does not tell you
+which kind it is.
+
+## A relative OP path is read from the network the node sits in
+
+A COMP is a network, so a relative path in one of its own parameters looks as
+if it should start inside it. It does not: it is resolved from the network the
+COMP *sits in*, alongside its siblings.
+
+Measured, from TouchDesigner's own shipped snippet
+(`OPSnippets/Snippets/COMP/geometryCOMP.tox`, expanded): every example writes
+`material 0 phong1` or `material 0 constant1` on `geo1`, and `phong1` sits
+beside `geo1` in the same network, not inside it. So for
+`/project1/REF/gobj`, the MAT `/project1/REF/mdark` is written `mdark` —
+`../mdark` points a level too high and resolves to nothing.
+
+An OP-path parameter that resolves to nothing is silent. The geometry renders
+with a default shader, `errors()` is empty and `td_errors` says nothing. The
+only way to see it is `par.eval()`, which returns `None`; `par.val` happily
+returns the string you wrote. When `td_op_info` shows an OP parameter, check
+that its value is an operator and not just text you typed.
+
+## A fresh Geometry COMP already has geometry in it
+
+Reported by the session that hit it (2026-08-30, build 2025.32460), **not
+verified offline**: a newly created `geometryCOMP` arrives with a `torus1`
+inside it, display and render flags on, and the Render TOP draws that torus.
+The shipped help treats this as normal enough to write examples around it
+("if you had `torus1` inside `geo1`" — *Run Command Examples*), but a fresh
+COMP's contents are a runtime fact and the offline index does not record them.
+Check it, do not assume it either way.
+
+The half that *is* certain, from the code: `td_network` defaults to
+`depth=1` and lists only direct children, so `td_network("/project1/REF")`
+names the COMP and stops there. Its contents need `td_network` pointed at the
+COMP itself, or `depth=2`.
+
+After creating a Geometry COMP, look inside it before wondering why the render
+shows something you did not build. While you are in there, check the flags on
+your own SOP: the same session found `display` and `render` off on the SOP it
+had just created inside the COMP (seen with `td_flags`, also not re-verified) —
+the mirror-image trap, where your geometry is the invisible one.
+
 ## Movie File Out
 
 - It is terminal: nothing consumes it, so it needs a keep-alive (above).
