@@ -452,6 +452,13 @@ def cmd_reload(args: argparse.Namespace) -> int:
     client = _client(args)
     if client is None:
         return 1
+    # The one command exempt from the protocol check, because it is the one
+    # the check tells the user to run: refusing to talk to an out-of-date
+    # bridge and then naming `td-atlas reload` as the repair would send them
+    # to a command that refuses for the same reason. What it sends is `exec`,
+    # in the bridge's method table since protocol 1. A mismatch still gets
+    # printed below, as a warning rather than a refusal.
+    client.enforce_protocol = False
     try:
         result = client.exec(
             f"exec(open({str(cfg.bootstrap_path())!r}).read())"

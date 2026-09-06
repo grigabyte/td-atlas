@@ -91,6 +91,16 @@ class BridgeClient:
     token: str = ""
     host: str = "127.0.0.1"
     timeout: float = 30.0
+    # `td-atlas reload` sets this to False, and nothing else does. Its whole
+    # job is to replace the handler a version check would refuse to talk to,
+    # so enforcing the check there makes the one command that repairs an
+    # out-of-date bridge the one command that cannot run against it. It is
+    # safe because reload rides on `exec`, which has been in the bridge's
+    # method table since protocol 1 (verified against the first commit of
+    # component/handler.py), so the request shape is one any bridge
+    # understands. Mismatches are still reported, as `version_warning`
+    # instead of a refusal.
+    enforce_protocol: bool = True
     # Set once, on the first call this instance makes (see
     # `_ensure_protocol_checked`); never re-checked on later calls.
     version_warning: str | None = field(default=None, init=False, repr=False)
@@ -199,18 +209,18 @@ class BridgeClient:
             version = None
         if version is None or version < MIN_PROTOCOL_VERSION:
             reported = "no protocol version" if version is None else f"protocol {version}"
-            raise BridgeUnavailable(
+            self._refuse(
                 f"The running bridge reports {reported}, below the minimum "
-                f"{MIN_PROTOCOL_VERSION} this client supports. {_UPGRADE_BRIDGE}",
-                reason="bridge_protocol",
+                f"{MIN_PROTOCOL_VERSION} this client supports. {_UPGRADE_BRIDGE}"
             )
+            return
         if version > EXPECTED_PROTOCOL_VERSION:
-            raise BridgeUnavailable(
+            self._refuse(
                 f"The running bridge speaks protocol {version}, newer than "
                 f"the {EXPECTED_PROTOCOL_VERSION} this client expects. "
-                f"{_UPGRADE_HOST}",
-                reason="bridge_protocol",
+                f"{_UPGRADE_HOST}"
             )
+            return
         # The warn-don't-refuse band between the two bounds. Empty while
         # MIN == EXPECTED, and kept because the bounds are separate knobs:
         # the day a bridge one version back is genuinely usable, lowering
@@ -220,6 +230,17 @@ class BridgeClient:
                 f"bridge protocol {version} is older than this client's "
                 f"{EXPECTED_PROTOCOL_VERSION}. {_UPGRADE_BRIDGE}"
             )
+
+    def _refuse(self, message: str) -> None:
+        """Refuse a bridge on protocol grounds — unless the caller is reload.
+
+        Both directions are lifted, not just the too-old one: a bridge newer
+        than this host is replaced by the same command, and refusing to run it
+        would leave the only repair unreachable from either side.
+        """
+        if self.enforce_protocol:
+            raise BridgeUnavailable(message, reason="bridge_protocol")
+        self.version_warning = message
 
     def call(
         self, method: str, timeout: float | None = None, **params: Any
