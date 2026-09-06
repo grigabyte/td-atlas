@@ -29,6 +29,18 @@ _TOKEN_LOADED = False
 _MAX_REPR = 4000
 _MAX_CHILDREN = 2000
 
+# Depth and node ceilings for a network walk. Measured 2026-09-06 on the
+# largest component TouchDesigner ships, kantanMapper.tox: 4080 operators,
+# nesting 12 levels below its own root, widest parent 143 children (counted
+# offline by expanding the .tox and walking the tree — no running instance
+# needed for either number). _MAX_DEPTH is that 12 plus room for the
+# component sitting a few levels inside a project; _MAX_NETWORK_NODES sits
+# above the 4080 so the largest shipped component still comes back whole,
+# and bounds a walk on anything bigger. Both cuts are reported in the reply:
+# a partial network described as a whole one is the failure this prevents.
+_MAX_DEPTH = 16
+_MAX_NETWORK_NODES = 5000
+
 
 # -- authentication ---------------------------------------------------------
 
@@ -2155,27 +2167,62 @@ def m_op_info(params):
 
 
 def m_network(params):
-    """Walk a component, describing children and how they are wired."""
+    """Walk a component, describing children and how they are wired.
+
+    Every cut this makes is named in the reply. A walk trimmed in silence is
+    worse than a refusal: the caller reads a slice of the network as the whole
+    of it and builds on operators that are not there.
+    """
     target = _resolve(params.get("path") or "/")
-    depth = int(params.get("depth", 1))
+    asked = int(params.get("depth", 1))
+    depth = max(1, min(asked, _MAX_DEPTH))
     include_pars = bool(params.get("pars", False))
 
+    # A list rather than an int: this walk is recursive and a nested function
+    # cannot rebind a name in the enclosing scope without `nonlocal`, which
+    # reads worse here than one mutable cell.
+    budget = [_MAX_NETWORK_NODES]
+    hidden = [0]
+
     def walk(comp, level):
+        """Return (described children, how many of them were left out)."""
         if not hasattr(comp, "children"):
-            return []
-        nodes = []
-        for child in list(comp.children)[:_MAX_CHILDREN]:
+            return [], 0
+        children = list(comp.children)
+        described = []
+        for child in children[:_MAX_CHILDREN]:
+            if budget[0] <= 0:
+                break
+            budget[0] -= 1
             entry = _op_summary(child, include_pars=include_pars)
             if level < depth and getattr(child, "children", None):
-                entry["children"] = walk(child, level + 1)
-            nodes.append(entry)
-        return nodes
+                entry["children"], below = walk(child, level + 1)
+                if below:
+                    entry["childrenHidden"] = below
+            described.append(entry)
+        # Counted as direct children only: what hangs below one that was cut
+        # was never walked, so its size is not known and is not guessed at.
+        missing = len(children) - len(described)
+        hidden[0] += missing
+        return described, missing
 
-    return {
+    nodes, missing = walk(target, 1)
+    result = {
         "path": target.path,
         "type": target.OPType,
-        "children": walk(target, 1),
+        "children": nodes,
+        "depth": depth,
     }
+    if missing:
+        result["childrenHidden"] = missing
+    if hidden[0]:
+        result["truncated"] = True
+        result["hidden"] = hidden[0]
+        result["limit"] = _MAX_NETWORK_NODES
+        result["maxChildren"] = _MAX_CHILDREN
+    if asked > depth:
+        result["depthLimited"] = asked
+    return result
 
 
 def _set_dat_text(target, text):

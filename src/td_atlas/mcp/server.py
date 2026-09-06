@@ -546,8 +546,30 @@ def td_network(path: str = "/project1", depth: int = 1) -> str:
             )
             if node.get("children"):
                 walk(node["children"], indent + 2)
+            # Printed under the parent it belongs to, and printed even when
+            # that parent's listing is empty: a cut the reader cannot see is
+            # a network they will read as complete.
+            if node.get("childrenHidden"):
+                lines.append(
+                    f"{' ' * (indent + 2)}... {node['childrenHidden']} more "
+                    f"child(ren) not listed"
+                )
 
     walk(result["children"], 2)
+    if result.get("childrenHidden"):
+        lines.append(f"  ... {result['childrenHidden']} more child(ren) not listed")
+    if result.get("truncated"):
+        lines.append(
+            f"TRUNCATED: {result['hidden']} operator(s) were left out — this "
+            f"reply describes at most {result.get('limit')} operators, and at "
+            f"most {result.get('maxChildren')} children of any one component. "
+            f"Ask for a subtree with a narrower `path` to see the rest."
+        )
+    if result.get("depthLimited"):
+        lines.append(
+            f"depth {result['depthLimited']} was reduced to "
+            f"{result.get('depth')}, the deepest this tool walks."
+        )
     return _warn(client) + "\n".join(lines)
 
 
