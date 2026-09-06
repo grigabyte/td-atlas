@@ -462,6 +462,18 @@ HINTS: dict[str, Recovery] = {
         action="use only letters, digits, dot, dash and underscore",
         resume=("td_snapshot",),
     ),
+    "UnknownMethod": Recovery(
+        cause=(
+            "the running bridge has no such method — it was staged from an "
+            "older version of this package than the one calling it"
+        ),
+        action=(
+            "run 'td-atlas reload' to re-stage the bridge from this host's "
+            "sources, then repeat the call — a bridge that answers at all is "
+            "running, so the reload reaches it"
+        ),
+        resume=("td_doctor",),
+    ),
     "doctor_failed": Recovery(
         cause="the check pass itself raised, so no link was verified",
         action=(
@@ -483,6 +495,7 @@ MAPPED_BRIDGE_ERRORS = frozenset(
         "SyntaxError",
         "ScopeHeld",
         "ValueError",
+        "UnknownMethod",
     }
 )
 

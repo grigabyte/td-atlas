@@ -25,10 +25,15 @@ from ..config import (
     select_instance,
 )
 
-# Oldest bridge protocol this client still talks to (with a warning telling
-# the artist to update). Bump only when a client-side change actually needs
-# behaviour a pre-bump bridge cannot provide.
-MIN_PROTOCOL_VERSION = 1
+# Oldest bridge protocol this client still talks to. Held equal to the
+# expected version by the owner's decision of 2026-09-06: every method the
+# host calls arrived by protocol 5, so an older bridge is refused outright
+# rather than accepted with a warning. Accepting it only postponed the
+# failure to the first new method, which came back as `UnknownMethod` from a
+# call the agent had no reason to think would fail — a refusal at connect
+# time names the fix once instead. Written as a literal so the two bounds
+# stay separate knobs; lowering it re-opens the warning band below.
+MIN_PROTOCOL_VERSION = 5
 
 # The version this client was built against. This is *imported*, not copied,
 # from `component/handler.py` — the single owner of PROTOCOL_VERSION — so the
@@ -206,6 +211,10 @@ class BridgeClient:
                 f"{_UPGRADE_HOST}",
                 reason="bridge_protocol",
             )
+        # The warn-don't-refuse band between the two bounds. Empty while
+        # MIN == EXPECTED, and kept because the bounds are separate knobs:
+        # the day a bridge one version back is genuinely usable, lowering
+        # MIN is the whole change.
         if version < EXPECTED_PROTOCOL_VERSION:
             self.version_warning = (
                 f"bridge protocol {version} is older than this client's "

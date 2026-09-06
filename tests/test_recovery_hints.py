@@ -128,6 +128,7 @@ def test_an_unavailability_with_no_reason_still_gets_a_hint():
         ("SyntaxError", "td_python_api"),
         ("ScopeHeld", "td_scopes"),
         ("Unauthorized", "td_doctor"),
+        ("UnknownMethod", "td_doctor"),
     ],
 )
 def test_the_types_touchdesigner_raises_map_to_the_tool_that_answers_them(
@@ -145,6 +146,17 @@ def test_an_argument_the_bridge_refused_gets_no_invented_next_call():
     text = failure(BridgeError({"type": "ValueError", "message": "bad ttl"}, "claim"))
     assert "fix: " in text
     assert "continue with:" not in text
+
+
+def test_a_bridge_older_than_the_host_is_named_as_that_and_not_as_a_bad_call():
+    """`UnknownMethod` is the one bridge error that says nothing about the
+    arguments: the method does not exist there. Before it was mapped, an
+    agent got `unmapped_bridge_error` and no reason to suspect the bridge."""
+    text = failure(BridgeError({"type": "UnknownMethod", "message": "variants"},
+                               "variants"))
+    assert "td-atlas reload" in text
+    assert ".venv" not in text  # a venv path is this machine's, not a user's
+    assert "none known" not in text
 
 
 def test_an_unmapped_touchdesigner_exception_invents_nothing():
