@@ -482,7 +482,6 @@ td-atlas/
 ├── LICENSE                 MIT
 ├── pyproject.toml
 ├── .gitignore
-├── АУДИТ-ПЛАН.md           the 2026-09 audit's repair plan (Russian)
 ├── .github/
 │   ├── workflows/ci.yml    pytest and ruff, macOS and Windows, Python 3.11-3.14
 │   └── ISSUE_TEMPLATE/     build, OS and `td-atlas doctor` output

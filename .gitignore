@@ -16,3 +16,8 @@ release/
 # — machine-specific, and not something to commit. (The plugin root is
 # `plugin/`, so this file is no longer plugin config either.)
 .mcp.json
+
+# Промпты сессий: они пишутся под конкретную машину и несут домашние пути.
+# Дважды попадали в индекс через `git add -A` (коммиты 9f30728 и 7c62f15) —
+# отсюда правило, а не аккуратность.
+ПРОМПТ-*.md
