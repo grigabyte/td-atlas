@@ -15,10 +15,12 @@ Three layers, deliberately separable:
 
 `mcp/server.py` exposes all three; `cli.py` is the same functionality for
 humans. Keep that parity — a capability added to one should appear in the
-other, or the omission should be deliberate and noted.
+other, or the gap should be declared in the parity section below, which
+`tests/test_cli_mcp_parity.py` holds to the code.
 
-One omission is deliberate: **the MCP surface cannot aim at a chosen
-instance.** The CLI's global `--port`/`--project` have no MCP equivalent;
+One gap is declared in prose rather than in that table, because it is about
+the global flags and not about any one capability: **the MCP surface cannot
+aim at a chosen instance.** The CLI's global `--port`/`--project` have no MCP equivalent;
 every bridge tool dials whatever `BridgeClient.discover()` picks. The reason
 is the failure mode, not the plumbing: `discover()` raises
 `InstanceSelectionError` when a flag names no bridge or several, and an MCP
@@ -28,6 +30,91 @@ was built to prevent is covered without it — `td_instances` lists every
 running bridge and marks the one these tools reach, and `_warn` prefixes the
 ambiguity warning onto every bridge result whenever more than one is running,
 so an agent cannot edit the wrong project in silence.
+
+## CLI ↔ MCP parity
+
+The two surfaces are compared capability by capability, and the comparison is
+a test rather than an intention: `tests/test_cli_mcp_parity.py` reads the
+three tables below, walks `build_parser()` and the `@mcp.tool()` definitions,
+and fails when the code and this section disagree. That test exists because
+the previous version of this rule was prose — "keep that parity" — and by the
+time anyone counted, five gaps were declared and eleven were not.
+
+A *capability* is one MCP tool, or one CLI subcommand. `project` and
+`project variant` are counted by their actions (`project read`, `project
+variant save`, …), not as one command each, because that is the level at
+which an MCP tool corresponds to anything.
+
+### Paired
+
+Seventeen capabilities exist on both sides. Where the two spell an argument
+differently the rename is declared here, and the test applies it before
+comparing the argument sets; the CLI's global `--db`/`--port`/`--project` are
+excluded, since they are the declared gap above.
+
+| CLI | MCP | Renames |
+| --- | --- | --- |
+| `instances` | `td_instances` | |
+| `status` | `td_status` | |
+| `doctor` | `td_doctor` | |
+| `search` | `td_search_operators` | |
+| `op` | `td_operator_schema` | `type`→`op_type` |
+| `exec` | `td_exec` | |
+| `render` | `td_render` | |
+| `log` | `td_log` | `number`→`limit` |
+| `project read` | `td_project_read` | |
+| `project text` | `td_project_text` | |
+| `project write` | `td_project_write` | |
+| `project grep` | `td_project_grep` | |
+| `project diff` | `td_project_diff` | `file`→`before`, `other`→`after`, `moves`→`show_moves`, `no_text`→`include_text` |
+| `project variant save` | `td_variant_save` | |
+| `project variant list` | `td_variant_list` | |
+| `project variant restore` | `td_variant_restore` | |
+| `project variant diff` | `td_variant_diff` | `label`→`before`, `other`→`after`, `moves`→`show_moves`, `no_text`→`include_text` |
+
+### CLI only
+
+Nine, and the shape of the reason is the same in every row: something a person
+does to this machine once, or something that writes a directory to disk.
+
+| CLI | Why not an MCP tool |
+| --- | --- |
+| `install` | Stages the bridge and prints a line to paste into TouchDesigner. An agent that could install the bridge would need the bridge to do it. |
+| `release-tox` | Builds a distributable `.tox` of the bridge. Maintenance of this project, not use of it. |
+| `build` | Rebuilds the index from a TouchDesigner installation — 23–30 s of one-off setup, and `td_doctor` already says to run it. |
+| `probe` | The same, for the runtime half of the index: it needs a running instance whose cook it will occupy for a minute. |
+| `reload` | Replaces the running bridge's own handler. A tool that can restart its own transport reports its outcome to nobody. |
+| `mcp` | Starts the MCP server. It is how the tools exist; it cannot be one of them. |
+| `project expand` | Unpacks a project into a directory and prints the path. Its whole output is a filesystem location an agent cannot read from. |
+| `project collapse` | Repacks such a directory into a `.toe`/`.tox`. The MCP side writes projects with `td_project_write`, which takes text, not a directory. |
+| `project scripts` | Writes every DAT's contents out as files. `td_project_text` gives an agent the same content in one string. |
+
+### MCP only
+
+Twenty-four, in three groups. The CLI's live surface is deliberately the few
+commands a person types at a terminal — `exec`, `render`, `status`,
+`instances`, `log` — and a bridge capability gets a subcommand when someone
+wants to type it, not for symmetry.
+
+| MCP | Group | Why not a CLI subcommand |
+| --- | --- | --- |
+| `td_docs`, `td_glossary`, `td_example`, `td_expression_help`, `td_python_api`, `td_palette`, `td_search_parameters`, `td_op_info` | index lookups | A person reads the wiki, the palette browser and the operator's own help; `search` and `op` cover what a terminal is actually better at. |
+| `td_build`, `td_set_params`, `td_flags`, `td_set_flags`, `td_network`, `td_errors`, `td_annotate`, `td_annotations`, `td_undo`, `td_snapshot`, `td_extension_add`, `td_palette_load`, `td_health` | live editing | A person editing a network does it in TouchDesigner, where the result is visible. These exist because an agent cannot see the network. |
+| `td_claim_scope`, `td_release_scope`, `td_scopes` | scope claims | An agreement between agents about which subtree each may touch. A person at a terminal is the party the claims protect, not one of the claimants. |
+
+### Declared argument divergences
+
+Everything else must match. These do not, and each row says why; anything not
+listed here fails the test.
+
+| Pair | Divergence | Why |
+| --- | --- | --- |
+| `op` / `td_operator_schema` | `--groups` is CLI only | The tool deliberately returns parameter *members* (`tx`, `ty`) and never the documented *groups* (`t`), because an agent that sets `t` gets a refusal it cannot read. The flag exists for a person cross-reading Derivative's own docs, which name the groups. |
+| `render` / `td_render` | `-o/--output` is CLI only; `width` defaults to 512 in the tool and to the TOP's own resolution in the CLI | The tool hands the image back inline, so it has nowhere to write and every pixel costs context; the CLI writes a file, where the artist's own resolution is the right answer. |
+| `project read` / `td_project_read` | `--refresh` is CLI only | The expansion cache is keyed on the file's path, size and mtime, so a changed project is re-expanded without asking. The flag is a repair for a cache damaged by something outside this program — a person's problem, diagnosed at a terminal. |
+| `project text` / `td_project_text` | `--refresh` and `-o/--output` are CLI only; `max_bytes` is MCP only | `--refresh` as above. The tool must fit its answer in a context window, so it refuses a network over `max_bytes` rather than truncating one; the CLI writes to a file or a pipe, where there is no such ceiling and `-o` is the whole point. |
+| `project grep` / `td_project_grep` | `--fixed` is CLI only | An agent composing a pattern can escape it; a person typing `v1.2.3` at a prompt cannot be asked to. |
+| `doctor` / `td_doctor` | `--install-path` and `--clear-cache` are CLI only | Both change this machine — one points the index at another installation, the other deletes every cached expansion. Repairs belong to whoever owns the machine. |
 
 ## The rule that matters most here
 

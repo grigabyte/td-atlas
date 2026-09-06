@@ -151,9 +151,12 @@ def _fmt_param(row: dict[str, Any]) -> str:
 
 # -- index tools ------------------------------------------------------------
 
+# `limit` is held equal to the CLI's `search --limit` by
+# tests/test_cli_mcp_parity.py — the two surfaces answered the same question
+# with different amounts of it for no recorded reason.
 @mcp.tool()
 @guarded
-def td_search_operators(query: str, family: str = "", limit: int = 12) -> str:
+def td_search_operators(query: str, family: str = "", limit: int = 15) -> str:
     """Find TouchDesigner operators by what they do.
 
     Searches names, labels, summaries and full documentation. Use this first,
@@ -1258,9 +1261,12 @@ def td_variant_diff(
     )
 
 
+# `limit` is held equal to the CLI's `project grep --limit` by
+# tests/test_cli_mcp_parity.py. The CLI had no flag at all and took
+# `project/render.py`'s own 100 while this said 60, for no recorded reason.
 @mcp.tool()
 @guarded
-def td_project_grep(file: str, pattern: str, limit: int = 60) -> str:
+def td_project_grep(file: str, pattern: str, limit: int = 100) -> str:
     """Search the Python and GLSL held inside a project's DATs.
 
     Ordinary file search cannot reach this code: it lives inside the .toe

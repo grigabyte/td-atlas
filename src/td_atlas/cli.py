@@ -1010,7 +1010,7 @@ def cmd_search(args: argparse.Namespace) -> int:
     if not store.exists():
         _say("error: no index. Run 'td-atlas build' first.")
         return 1
-    rows = store.search_ops(args.query, limit=args.limit)
+    rows = store.search_ops(args.query, family=args.family, limit=args.limit)
     if not rows:
         print("no matches")
         return 0
@@ -1046,7 +1046,10 @@ def cmd_op(args: argparse.Namespace) -> int:
     pars = store.parameters(args.type)
     if args.page:
         pars = [p for p in pars if (p["page"] or "").lower() == args.page.lower()]
-    settable = [p for p in pars if p["settable"] and not p["hidden"]]
+    settable = [
+        p for p in pars
+        if p["settable"] and (args.include_hidden or not p["hidden"])
+    ]
     groups = [p for p in pars if not p["settable"]]
 
     page = object()
@@ -1216,7 +1219,9 @@ def cmd_project(args: argparse.Namespace) -> int:
             return _cmd_variant(args, resolver)
         elif args.action == "grep":
             project = load_file(args.file, resolver=resolver)
-            matches = grep(project, args.pattern, regex=not args.fixed)
+            matches = grep(
+                project, args.pattern, regex=not args.fixed, limit=args.limit
+            )
             print(render_matches(matches, args.pattern))
         elif args.action == "diff":
             before = load_file(args.file, resolver=resolver)
@@ -1450,6 +1455,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("search", help="full-text search over operators")
     p.add_argument("query")
+    p.add_argument(
+        "--family", default="",
+        help="narrow to one family: TOP, CHOP, SOP, DAT, MAT, COMP",
+    )
+    # Held equal to td_search_operators' default by tests/test_cli_mcp_parity.py:
+    # the two surfaces answered the same question with different amounts of it
+    # for no recorded reason.
     p.add_argument("--limit", type=int, default=15)
     p.set_defaults(func=cmd_search, uses_selector=False)
 
@@ -1461,6 +1473,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="also list documented parameter groups and their members",
     )
     p.add_argument("--page", help="only parameters on this page")
+    p.add_argument(
+        "--include-hidden",
+        action="store_true",
+        help="also show parameters TouchDesigner hides in the UI",
+    )
     p.set_defaults(func=cmd_op, uses_selector=False)
 
     p = sub.add_parser("exec", help="run Python inside TouchDesigner")
@@ -1539,6 +1556,10 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("file")
     a.add_argument("pattern")
     a.add_argument("--fixed", action="store_true", help="literal, not regex")
+    # Was implicit — the default lived in project/render.py and only the MCP
+    # tool let a caller change it. Held equal to td_project_grep's by
+    # tests/test_cli_mcp_parity.py.
+    a.add_argument("--limit", type=int, default=100, help="stop after this many")
 
     a = actions.add_parser("diff", help="compare two projects semantically")
     a.add_argument("file")
