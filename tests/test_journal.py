@@ -532,3 +532,24 @@ def test_a_rotated_token_is_scrubbed_not_the_old_one():
     written = journal.journal_path().read_text()
     assert new not in written
     assert written.count("<token redacted>") == 2
+
+
+def test_a_home_that_does_not_exist_yet_is_not_a_complaint(tmp_path, monkeypatch):
+    """`~/.td-atlas` is created by the first install, build or bridge call. Until
+    then it is absent, and `os.access` says False for an absent directory —
+    which would have made a fresh checkout's first `td-atlas log` announce that
+    the journal is broken."""
+    monkeypatch.setenv("TD_ATLAS_HOME", str(tmp_path / "never-made"))
+    assert journal.not_being_kept() == ""
+    assert "not being written" not in journal.format_calls(journal.read())
+
+
+def test_a_home_that_exists_and_refuses_writes_is(tmp_path, monkeypatch):
+    home = tmp_path / "read-only"
+    home.mkdir()
+    home.chmod(0o500)
+    monkeypatch.setenv("TD_ATLAS_HOME", str(home))
+    try:
+        assert "not being written" in journal.not_being_kept()
+    finally:
+        home.chmod(0o700)

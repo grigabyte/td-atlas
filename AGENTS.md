@@ -25,8 +25,8 @@ every bridge tool dials whatever `BridgeClient.discover()` picks. The reason
 is the failure mode, not the plumbing: `discover()` raises
 `InstanceSelectionError` when a flag names no bridge or several, and an MCP
 tool must return that as text rather than an exception, which would mean a
-guard at every `bridge()` call site — there were twelve when that was written
-and there are twice that now, which is the argument. What the registry
+guard at every `bridge()` call site, and there are more of those every time a
+bridge tool is added — which is the argument. What the registry
 was built to prevent is covered without it — `td_instances` lists every
 running bridge and marks the one these tools reach, and `_warn` prefixes the
 ambiguity warning onto every bridge result whenever more than one is running,

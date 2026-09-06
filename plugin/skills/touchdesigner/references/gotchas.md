@@ -391,16 +391,16 @@ with `numpyArray` on every case above.
 
 ## A bypassed operator is not a broken one, and looks like neither
 
-The bypass flag makes an operator pass its input through untouched. Nothing
-about the network says so: the node still cooks, still has an output, still
-reports no error, and downstream still gets a picture — the picture it would
-have had if the operator were not there. A bypass left on from an afternoon of
-debugging is the quietest way to lose an effect.
+The bypass flag makes an operator pass its input through instead of applying
+itself. Downstream still gets a picture — the picture it would have had if the
+operator were not there — and nothing reports an error, so a bypass left on
+from an afternoon of debugging is the quietest way to lose an effect.
 
-`td_health` reports it as `bypassed` with every path, because it cannot know
-whether the bypass was deliberate. Bypass is a flag, so `td_flags` reads it and
-`td_set_flags` clears it; it is not a parameter and does not appear in
-`td_operator_schema`.
+`td_health` reports it as `bypassed` and lists every path. It reads the flag
+and nothing else: it cannot tell a deliberate bypass from a forgotten one, so
+it names them all rather than guessing. Bypass is a flag, not a parameter — it
+is in `NODE_FLAGS`, so `td_flags` reads it and `td_set_flags` clears it, and it
+does not appear in `td_operator_schema`.
 
 ## Realtime off changes what "one frame" means
 

@@ -324,7 +324,15 @@ def not_being_kept() -> str:
     if _read_failure:
         return "the journal cannot be read: " + _read_failure
     path = journal_path()
-    if not path.exists() and not os.access(path.parent, os.W_OK):
+    # Only when the directory is there and refuses writes. `os.access` is also
+    # False for a directory that does not exist, and an absent `~/.td-atlas` is
+    # the ordinary state before the first `install`, `build` or bridge call —
+    # complaining about it would replace one confident wrong answer with
+    # another. A home whose own parent is unwritable is therefore invisible
+    # here; the process that fails to create it sees that as `_write_failure`.
+    if not path.exists() and path.parent.exists() and not os.access(
+        path.parent, os.W_OK
+    ):
         return (
             "the journal is not being written: %s is not writable"
             % path.parent
