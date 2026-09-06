@@ -690,6 +690,14 @@ def _stem_for_path(root: Path, scoped: str, name: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
+class OutputExists(ExpandError):
+    """Something already sits where the rebuilt file would go.
+
+    Its own type so a caller can recognise this one refusal without matching
+    on the message text.
+    """
+
+
 def rebuild(
     source: str | Path,
     text: str,
@@ -702,11 +710,24 @@ def rebuild(
     Nothing is written beside `source`: the expansion is copied into the cache
     first, because `toecollapse` renames whatever already sits at its
     destination to `.bkp` and must never do that to a user's file.
+
+    `output` must not exist. The check lives here rather than on one of the
+    two surfaces because both of them reach this function and only the MCP
+    tool had it: `td-atlas project write` went straight past into
+    `toecollapse`, which renames whatever is already there to `.bkp` — the
+    exact thing this module exists to prevent.
     """
     import json
 
     source = Path(source).expanduser().resolve()
     output = Path(output).expanduser()
+    if output.exists():
+        raise OutputExists(
+            f"{output} already exists. Repacking writes the file whole rather "
+            f"than merging into it, so nothing of the user's is overwritten "
+            f"here: write beside it and compare the two with "
+            f"'td-atlas project diff'."
+        )
     data = json.loads(text)
     if not isinstance(data, dict) or "operators" not in data:
         raise ExpandError(

@@ -1113,15 +1113,15 @@ def td_project_write(file: str, text: str, output: str) -> str:
 
     from ..project import ExpandError
     from ..project import index_resolver
-    from ..project.rebuild import rebuild
+    from ..project.rebuild import OutputExists, rebuild
 
     target = _Path(output).expanduser()
-    if target.exists():
-        return (
-            f"{target} already exists.\n{hint('project_write_output_exists')}"
-        )
     try:
         changes = rebuild(file, text, target, resolver=index_resolver())
+    except OutputExists as exc:
+        # The refusal itself now comes from the layer both surfaces share;
+        # what this adds is the recovery an agent gets and a shell does not.
+        return f"{exc}\n{hint('project_write_output_exists')}"
     except ExpandError as exc:
         if "not a network dump" in str(exc):
             return f"error: {exc}\n{hint('project_write_not_a_dump')}"
