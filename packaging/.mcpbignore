@@ -13,3 +13,11 @@ __pycache__/
 *.db-shm
 config.json
 .DS_Store
+
+# Developer tooling that `git archive` cannot leave out because it is tracked
+# and lives under `src/`. `src/td_atlas/component/ruff.toml` declares the
+# globals TouchDesigner injects, so the linter does not read `op` and `me` as
+# undefined names; it configures a check that is never run from a bundle. The
+# staging tree is meant to be source, metadata, licence and readme — nothing
+# else — and a lint config is none of the four.
+src/td_atlas/component/ruff.toml
