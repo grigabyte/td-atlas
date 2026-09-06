@@ -25,7 +25,8 @@ every bridge tool dials whatever `BridgeClient.discover()` picks. The reason
 is the failure mode, not the plumbing: `discover()` raises
 `InstanceSelectionError` when a flag names no bridge or several, and an MCP
 tool must return that as text rather than an exception, which would mean a
-guard at every one of the twelve `bridge()` call sites. What the registry
+guard at every `bridge()` call site — there were twelve when that was written
+and there are twice that now, which is the argument. What the registry
 was built to prevent is covered without it — `td_instances` lists every
 running bridge and marks the one these tools reach, and `_warn` prefixes the
 ambiguity warning onto every bridge result whenever more than one is running,
@@ -166,7 +167,7 @@ machine with the application present.
 Rebuilding the index after changing an extractor:
 
 ```bash
-td-atlas build               # offline, ~12 s
+td-atlas build               # offline, 23-30 s
 td-atlas probe               # needs TouchDesigner open with the bridge
 td-atlas reload              # push handler changes into a running instance
 ```
@@ -240,8 +241,13 @@ inside one must be written `%%`.
 1. Write the function in `mcp/server.py` with a docstring aimed at an agent —
    the docstring *is* the interface, so say when to reach for it and what trap
    it avoids, not just what it returns.
-2. Catch `BridgeUnavailable` and `BridgeError` and return the message as text.
-   An exception surfaces as an opaque `ToolError`.
+2. Put `@guarded` under `@mcp.tool()`. It catches `BridgeUnavailable` and
+   `BridgeError` and returns the message with a repair hint attached; an
+   exception that escapes surfaces to the agent as an opaque `ToolError`. This
+   used to read "catch them in the body of every tool", which described a
+   convention the code had already replaced — `tests/test_recovery_hints.py`
+   asserts that every bridge tool carries the decorator, so a new tool without
+   it fails rather than being noticed by a reader.
 3. Return types feed a generated output schema. A union of `Image | str` fails
    to generate; leave the annotation off when a tool can return either.
 4. Add it to `plugin/skills/touchdesigner/references/tools.md`.

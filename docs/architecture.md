@@ -9,7 +9,8 @@ inside the application.** A 5 MB parameter database, a 182 MB offline mirror of
 the entire wiki, 483 worked examples, 277 finished components. Deriving the
 index from the installed build means it is exact for that build, rather than
 scraped from a wiki that may describe a different release — and it means the
-index can be rebuilt in twelve seconds with no network.
+index can be rebuilt in under half a minute with no network (25.8 s wall
+clock, measured 2026-09-06 on build 2025.32460).
 
 **TouchDesigner reports almost nothing when work silently does nothing.** A
 branch nothing displays never cooks. An output device switched off produces
@@ -132,6 +133,9 @@ would cost an agent exactly the time the tool exists to save.
   for this reason; both looked like complete success while being wrong.
 - **Never write beside a user's file.** The TouchDesigner tools do; this
   project copies first.
-- **Keep the offline layers offline.** All but three tests run without
-  TouchDesigner. Tests that need a running application cannot be trusted to
-  run.
+- **Keep the offline layers offline.** A plain `pytest` needs no running
+  TouchDesigner at all — `pyproject.toml` deselects the `live` marker, so a
+  test that dials an instance is not collected unless it is asked for by name.
+  Some tests need TouchDesigner *installed* and skip without it; those stay in
+  the default run, because the skip is honest and the same checks pass on any
+  machine with the application present.
