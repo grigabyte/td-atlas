@@ -16,6 +16,26 @@ td-atlas is built on two observations:
    inside the application.**
 2. **TouchDesigner reports almost nothing when work silently does nothing.**
 
+**What it does** — [The atom index](#the-atom-index) ·
+[The bridge](#the-bridge) ·
+[What TouchDesigner does not report](#what-touchdesigner-does-not-report) ·
+[The call journal](#the-call-journal) ·
+[Reading projects offline](#reading-projects-offline) ·
+[The network text, written on save](#the-network-text-written-on-save)
+
+**Getting it running** — [Install](#install) ·
+[Compatibility](#compatibility) ·
+[As an MCP server](#as-an-mcp-server) ·
+[The skill](#the-skill) ·
+[As a bundle](#as-a-bundle) ·
+[Troubleshooting](#troubleshooting)
+
+**Working on it** — [Documentation](#documentation) ·
+[Development](#development) ·
+[Layout](#layout) ·
+[Contributing](CONTRIBUTING.md) ·
+[Licence](#licence)
+
 ## The atom index
 
 Two passes produce one SQLite index, exact for the build it was made from
@@ -26,26 +46,30 @@ on an M-series Mac:
 
 | Source in the app bundle | What it yields |
 | --- | --- |
-| `Config/TDParameterHelp.json` | 654 operators, 16,584 parameters: labels, prose, types |
-| `Samples/Learn/OfflineHelp/` | 2,060 wiki pages — 654 Python classes, 686 operator pages, 185 glossary entries, 720 concept and technique articles |
-| `Samples/Palette/` | **277 ready-made components** — projection mappers, corner-pinners, audio analysers |
-| `Samples/Learn/OPSnippets/` | 483 working example networks, one per operator |
-| `Config/Help/{command.help,exprhelp}` | 490 command and expression entries |
+| `Config/TDParameterHelp.json` | every operator and parameter: labels, prose, types |
+| `Samples/Learn/OfflineHelp/` | the offline wiki — Python classes, operator pages, glossary entries, concept and technique articles |
+| `Samples/Palette/` | **ready-made components** — projection mappers, corner-pinners, audio analysers |
+| `Samples/Learn/OPSnippets/` | working example networks, one per operator |
+| `Config/Help/{command.help,exprhelp}` | command and expression entries |
 
 **Runtime pass** — instantiates every operator type inside a non-cooking
 sandbox and reads what documentation does not record: defaults, numeric ranges
 and clamps, **menu options**, parameter pages and ordering, connector counts,
-and the 71 contracted type names TouchDesigner writes when it saves. Cooking is
+and the contracted type names TouchDesigner writes when it saves. Cooking is
 disabled on the sandbox so that creating a Video Device In TOP does not open a
 camera.
 
-The two passes do not add up to the table above, and `td-atlas status` reports
-the total rather than the static half: the runtime pass finds 13 operator types
-the help JSON does not describe and 7,667 parameters it does not list, so an
-index that has been probed holds **667 operators and 24,251 parameters** where
-the static pass alone holds 654 and 16,584. Those extra parameters are the
-reason the runtime pass exists — they are mostly the ones whose defaults and
-menu options are only knowable by asking a live instance.
+The two passes do not add up, and the runtime pass is the reason: it finds
+operator types the help JSON does not describe and thousands of parameters it
+does not list — mostly the ones whose defaults and menu options are only
+knowable by asking a live instance.
+
+**The counts are a property of your build, not of this README.** Run
+`td-atlas status`: it prints the operators, parameters and wiki articles your
+index actually holds, and that line — not this page — is what the project
+treats as authoritative. For scale, on the build this README was written
+against (2025.32460, macOS) it reads
+`667 ops, 24251 params, 2060 articles`.
 
 ## The bridge
 
@@ -425,6 +449,7 @@ timestamps, after the fact; `td_log` is the same for an agent.
 | [`plugin/skills/touchdesigner/references/gotchas.md`](plugin/skills/touchdesigner/references/gotchas.md) | Every trap that produced no error |
 | [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | All 41 MCP tools |
 | [`AGENTS.md`](AGENTS.md) | Agents *contributing to* this repository |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to run the tests and the linter before a pull request |
 | [`docs/architecture.md`](docs/architecture.md) | How the three layers fit together, and why |
 | [`docs/formats.md`](docs/formats.md) | The reverse-engineered `.toe`/`.tox` format, with evidence |
 
@@ -451,12 +476,16 @@ imports and a hard rule against blocking.
 td-atlas/
 ├── README.md               this file
 ├── AGENTS.md               contributor guide, human or agent
+├── CONTRIBUTING.md         the short version: how to run the checks
 ├── CLAUDE.md               entry points for an agent opening this repository
 ├── CHANGELOG.md            Keep a Changelog; every protocol change is in it
 ├── LICENSE                 MIT
 ├── pyproject.toml
 ├── .gitignore
 ├── АУДИТ-ПЛАН.md           the 2026-09 audit's repair plan (Russian)
+├── .github/
+│   ├── workflows/ci.yml    pytest and ruff, macOS and Windows, Python 3.11-3.14
+│   └── ISSUE_TEMPLATE/     build, OS and `td-atlas doctor` output
 ├── docs/
 │   ├── architecture.md     the three layers and the reasoning
 │   └── formats.md          the undocumented .toe format, measured
