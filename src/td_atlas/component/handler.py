@@ -10,6 +10,7 @@ handler that blocks stalls the entire application. Keep work bounded.
 """
 
 import base64
+import hmac
 import io
 import json
 import os
@@ -98,6 +99,27 @@ def _read_token():
     if not isinstance(token, str) or not token:
         return "", "no token in %s" % path
     return token, None
+
+
+def _token_matches(supplied):
+    """Constant-time comparison of the supplied token against AUTH_TOKEN.
+
+    `!=` on strings returns as soon as two bytes differ, so how long the
+    rejection took says how much of the token the caller already had. The
+    bridge listens on localhost, but "only local software can reach it" is a
+    weaker claim than it sounds on a machine an artist installs plugins on.
+
+    Both sides are encoded first because `hmac.compare_digest` raises
+    TypeError on non-ASCII str, and a header is whatever the caller sent; a
+    non-str header value is simply not a token, and is rejected without
+    reaching the comparison.
+    """
+    if not isinstance(supplied, str):
+        return False
+    return hmac.compare_digest(
+        supplied.encode("utf-8", "surrogateescape"),
+        AUTH_TOKEN.encode("utf-8", "surrogateescape"),
+    )
 
 
 def _load_token():
@@ -249,11 +271,20 @@ def _write_instance(dat, now=None):
 
 
 def _remove_instance(dat):
-    """Withdraw the record on an orderly stop, so nothing outlives the bridge."""
+    """Withdraw the record on an orderly stop, so nothing outlives the bridge.
+
+    A failure here is not fatal — the host treats a record whose pid is gone as
+    stale — but it is worth saying, for the same reason `_write_instance` says
+    its own: a leftover record makes `td_instances` list a bridge that is not
+    there, and silence here is why nobody would think to look at the directory.
+    """
     try:
         os.remove(_instance_path(int(dat.par.port.eval())))
-    except Exception:
+    except FileNotFoundError:
+        # Never published, or already withdrawn. Nothing to report.
         pass
+    except Exception as exc:
+        print("[td-atlas] could not remove the instance record: %s" % exc)
 
 
 def _drop_stale_ports(keep_port):
@@ -4033,7 +4064,7 @@ def onHTTPRequest(dat, request, response):
             _load_token()
         if AUTH_TOKEN:
             supplied = _header(request, "X-TD-Atlas-Token") or ""
-            if supplied != AUTH_TOKEN:
+            if not _token_matches(supplied):
                 return _reply(
                     response,
                     {"ok": False, "error": {"type": "Unauthorized",

@@ -166,6 +166,38 @@ def test_the_config_is_read_once_not_once_per_request(td_home, capsys):
     assert status == 401
 
 
+def test_a_header_that_is_not_a_token_is_refused_not_crashed(td_home):
+    """The comparison is `hmac.compare_digest`, which is fussier than `!=`.
+
+    It raises TypeError on a non-ASCII str and on anything that is not a
+    str or bytes, where `!=` just returned False. A caller controls that
+    header, so a crash there is a 500 handed to anyone who sends `é` — and
+    inside TouchDesigner an unhandled handler exception is worse than a
+    refusal. Both shapes must come back as an ordinary 401.
+    """
+    _write_config(td_home, {"token": "s3cret-token"})
+
+    for junk in ("s3cret-tokén", "—", 12345, None, b"s3cret-token", ["x"]):
+        request = {"data": json.dumps({"method": "no-such-method"})}
+        request["X-TD-Atlas-Token"] = junk
+        status, body = _status(handler.onHTTPRequest(None, request, {}))
+        assert status == 401, junk
+        assert body["error"]["type"] == "Unauthorized"
+
+
+def test_a_non_ascii_token_still_authenticates(td_home):
+    """The encode is not a filter: a config token outside ASCII must work.
+
+    Rejecting it would be a silent lockout — the bridge would start, announce
+    itself, and refuse the token the host is reading from the same file.
+    """
+    _write_config(td_home, {"token": "паро́ль-мостá"})
+
+    status, body = _status(handler.onHTTPRequest(None, _request("паро́ль-мостá"), {}))
+    assert status == 404
+    assert body["error"]["type"] == "UnknownMethod"
+
+
 def test_an_unconfigured_handler_warns_on_the_first_request(td_home, capsys):
     """Even if onServerStart never ran, the open bridge is not silent."""
     status, _ = _status(handler.onHTTPRequest(None, _request(), {}))
