@@ -180,6 +180,7 @@ def measured(tmp_path_factory):
         client.call("exec", code="op(%r).destroy()" % path)
 
 
+@pytest.mark.live
 def test_no_field_differs_for_a_reason_nobody_has_named(measured):
     unexplained = measured["buckets"]["unexplained"]
     assert unexplained == [], "\n".join(
@@ -188,6 +189,7 @@ def test_no_field_differs_for_a_reason_nobody_has_named(measured):
     )
 
 
+@pytest.mark.live
 def test_the_network_still_exercises_every_class_the_documentation_names(measured):
     """The class list is only honest while the network still produces it.
 
@@ -199,6 +201,7 @@ def test_the_network_still_exercises_every_class_the_documentation_names(measure
     assert empty == []
 
 
+@pytest.mark.live
 def test_most_of_the_two_texts_agree(measured):
     """The measured shape of the disagreement, so a regression is visible.
 

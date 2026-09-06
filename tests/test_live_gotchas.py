@@ -29,6 +29,10 @@ import pytest
 import live_network as ln
 
 
+# Every test here drives a running instance, so the marker goes on the
+# module rather than on eighteen individual tests.
+pytestmark = pytest.mark.live
+
 HOLDER = "/tdatlas"
 NAME = "gotchaprobe"
 ROOT = HOLDER + "/" + NAME

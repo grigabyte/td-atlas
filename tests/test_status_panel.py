@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from td_atlas.component import handler as h
 
 
@@ -283,6 +285,7 @@ def test_an_empty_panel_fits_too():
 import live_network as ln  # noqa: E402  (test helper, not a package import)
 
 
+@pytest.mark.live
 def test_the_advance_per_character_is_the_measured_one():
     client = ln.bridge_or_skip()
     ink = ln.panel_ink(client, "W" * 40)
@@ -296,6 +299,7 @@ def test_the_advance_per_character_is_the_measured_one():
     assert abs(narrow - ink["ink_right"]) <= h.PANEL_PX_PER_CHAR
 
 
+@pytest.mark.live
 def test_the_advance_per_line_is_the_measured_one():
     client = ln.bridge_or_skip()
     ink = ln.panel_ink(client, "\n".join("W" * 3 for _ in range(5)))
@@ -306,6 +310,7 @@ def test_the_advance_per_line_is_the_measured_one():
     assert abs(starts[0] - h.PANEL_INK_TOP) <= 1
 
 
+@pytest.mark.live
 def test_a_full_column_fits_and_one_more_character_does_not():
     """`PANEL_COLUMNS` is a wrap threshold, not an estimate."""
     client = ln.bridge_or_skip()
@@ -315,6 +320,7 @@ def test_a_full_column_fits_and_one_more_character_does_not():
     assert len(over["line_starts"]) == 2
 
 
+@pytest.mark.live
 def test_the_worst_case_the_renderer_can_produce_lands_inside_the_panel():
     client = ln.bridge_or_skip()
     long_name = "moviefilein_with_a_very_long_deliberate_name_1234567890"

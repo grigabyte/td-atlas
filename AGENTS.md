@@ -55,16 +55,26 @@ or derive the real mapping from TouchDesigner.
 
 ```bash
 uv pip install -e . pytest
-pytest                       # a couple of hundred, well under a second
+pytest                       # the default run: no TouchDesigner needed
+pytest -m live               # the rest: needs one running, with the bridge
 ```
 
-`test_project.py::test_expands_and_reads_a_shipped_example` and both tests in
-`test_release.py` need a TouchDesigner installation — the latter two shell out
-to `toecollapse` and `toeexpand` from the bundle — and skip without one; that's
-3 of the 92. The other 89, including the whole health-check suite, run on
-synthetic fixtures with no installation needed. **None of the 92 need a
-running TouchDesigner instance** — keep it that way; tests that need one
-cannot be trusted to run.
+**A plain `pytest` does not need TouchDesigner running** — keep it that way.
+That is now enforced rather than hoped for: `[tool.pytest.ini_options]` in
+`pyproject.toml` deselects the `live` marker by default, so a test that dials
+a live instance is not collected at all unless it is asked for by name. A new
+test that reaches a running instance gets `@pytest.mark.live` (or a module
+`pytestmark`); `--strict-markers` rejects a misspelling rather than silently
+running it in the default set.
+
+The reason for the split is what the old arrangement read like: the live tests
+skipped, and every summary said two dozen checks had run when none of them
+had. Deselecting says which set you are looking at.
+
+Some tests need TouchDesigner *installed* — they shell out to `toeexpand` and
+`toecollapse`, or read a shipped example — and skip without one. Those stay in
+the default set: skipping is honest there, because the same checks pass on any
+machine with the application present.
 
 Rebuilding the index after changing an extractor:
 

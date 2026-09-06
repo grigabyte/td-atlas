@@ -53,3 +53,19 @@ packages = ["src/td_atlas"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+# The suite runs without TouchDesigner, and `addopts` is what makes that true
+# rather than a habit: the tests that drive a *running* instance carry the
+# `live` marker and are deselected by default, so a plain `pytest` collects
+# only what a clean checkout can actually execute. `pytest -m live` selects
+# them instead — the flag is a plain store option, so the one on the command
+# line replaces the one here.
+#
+# Before this existed the live tests were collected and skipped, which reads
+# as "24 checks ran" in every summary while none of them had run.
+addopts = "--strict-markers -m 'not live'"
+markers = [
+    "live: needs a running TouchDesigner with the td-atlas bridge (pytest -m live)",
+]
+testpaths = ["tests"]
