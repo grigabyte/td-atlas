@@ -452,6 +452,7 @@ td-atlas/
 ├── README.md               this file
 ├── AGENTS.md               contributor guide, human or agent
 ├── CLAUDE.md               entry points for an agent opening this repository
+├── CHANGELOG.md            Keep a Changelog; every protocol change is in it
 ├── LICENSE                 MIT
 ├── pyproject.toml
 ├── .gitignore

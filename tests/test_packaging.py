@@ -48,6 +48,37 @@ def pyproject() -> dict:
 
 # -- one source ------------------------------------------------------------
 
+def test_the_version_is_the_same_string_in_every_file_that_states_it(pyproject):
+    """Four files carry the version. Three of them are copies.
+
+    `pyproject.toml` is the source: the wheel, the bundle manifest and the
+    registry submission are all built from it. The other three are read by
+    somebody who never sees it — `__version__` by anything importing the
+    package, the bundle manifest by the MCP host, the plugin manifest by
+    Claude Code — and each has drifted from a bump before.
+
+    This is one test rather than three on purpose: a bump has to move all
+    four, and a failure should name the whole set, not the first copy the
+    suite happens to reach.
+    """
+    import importlib
+
+    stated = {
+        "pyproject.toml": pyproject["version"],
+        "src/td_atlas/__init__.py": importlib.import_module("td_atlas").__version__,
+        "packaging/manifest.json": json.loads(
+            (ROOT / "packaging" / "manifest.json").read_text()
+        )["version"],
+        "plugin/.claude-plugin/plugin.json": json.loads(
+            (ROOT / "plugin" / ".claude-plugin" / "plugin.json").read_text()
+        )["version"],
+    }
+    assert len(set(stated.values())) == 1, (
+        "the version disagrees between files; pyproject.toml is the source: "
+        + ", ".join(f"{where} says {what}" for where, what in stated.items())
+    )
+
+
 def test_the_committed_manifest_is_what_the_builder_would_write(committed):
     """The whole reason the manifest is generated rather than maintained."""
     assert build_mcpb.build_manifest() == committed, (
