@@ -1,6 +1,6 @@
 """The skill's tool reference, checked against the tools that actually exist.
 
-`skills/touchdesigner/references/tools.md` is the first thing an agent reads
+`plugin/skills/touchdesigner/references/tools.md` is the first thing an agent reads
 before it touches TouchDesigner, and it is a hand-written list of every MCP
 tool with its parameters. A hand-written list of a moving target rots the
 moment a tool is added, renamed or given a new argument — and a skill that
@@ -28,7 +28,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SERVER = ROOT / "src" / "td_atlas" / "mcp" / "server.py"
-SKILL_DIR = ROOT / "skills" / "touchdesigner"
+SKILL_DIR = ROOT / "plugin" / "skills" / "touchdesigner"
 TOOLS_MD = SKILL_DIR / "references" / "tools.md"
 SKILL_MD = SKILL_DIR / "SKILL.md"
 

@@ -66,7 +66,7 @@ SERVER_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/serve
 REGISTRY_NAME = "io.github.grigabyte/td-atlas"
 
 # What `git archive` puts into the staging tree. Source, metadata, licence,
-# readme — the four things the bundle needs and nothing else. `skills/` is
+# readme — the four things the bundle needs and nothing else. `plugin/` is
 # deliberately absent: it installs as a Claude Code plugin (see
 # `.claude-plugin/marketplace.json`), not as payload inside an MCP bundle.
 TRACKED_PATHS = ("src/td_atlas", "pyproject.toml", "LICENSE", "README.md")

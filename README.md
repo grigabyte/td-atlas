@@ -258,7 +258,7 @@ virtualenv is activated. Wiring it in by hand looks like:
 claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 ```
 
-41 tools in three groups — see `skills/touchdesigner/references/tools.md`.
+41 tools in three groups — see `plugin/skills/touchdesigner/references/tools.md`.
 
 **Index** (offline): `td_search_operators`, `td_operator_schema`,
 `td_search_parameters`, `td_python_api`, `td_docs`, `td_glossary`,
@@ -281,7 +281,7 @@ before sending, so the usual mistakes come back as corrections:
 
 ## The skill
 
-`skills/touchdesigner/` is an agent-facing guide: how to work through the
+`plugin/skills/touchdesigner/` is an agent-facing guide: how to work through the
 connector, and a reference of every trap that produced no error while costing
 real time — dormant branches, CPU operators hiding in a menu, feedback loops
 that converge to grey, an audio codec that reports success and writes no file,
@@ -323,9 +323,9 @@ unlocks the rest.
 
 | Document | For |
 | --- | --- |
-| [`skills/touchdesigner/SKILL.md`](skills/touchdesigner/SKILL.md) | Agents *using* the connector |
-| [`skills/touchdesigner/references/gotchas.md`](skills/touchdesigner/references/gotchas.md) | Every trap that produced no error |
-| [`skills/touchdesigner/references/tools.md`](skills/touchdesigner/references/tools.md) | All 41 MCP tools |
+| [`plugin/skills/touchdesigner/SKILL.md`](plugin/skills/touchdesigner/SKILL.md) | Agents *using* the connector |
+| [`plugin/skills/touchdesigner/references/gotchas.md`](plugin/skills/touchdesigner/references/gotchas.md) | Every trap that produced no error |
+| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | All 41 MCP tools |
 | [`AGENTS.md`](AGENTS.md) | Agents *contributing to* this repository |
 | [`docs/architecture.md`](docs/architecture.md) | How the three layers fit together, and why |
 | [`docs/formats.md`](docs/formats.md) | The reverse-engineered `.toe`/`.tox` format, with evidence |
@@ -353,16 +353,17 @@ td-atlas/
 ├── docs/
 │   ├── architecture.md     the three layers and the reasoning
 │   └── formats.md          the undocumented .toe format, measured
-├── .claude-plugin/         this repository as a plugin, and as its marketplace
-│   ├── plugin.json
-│   └── marketplace.json
+├── .claude-plugin/
+│   └── marketplace.json    this repository as a marketplace
 ├── packaging/manifest.json the MCPB manifest, generated from pyproject.toml
 ├── scripts/
 │   ├── build_mcpb.py       build the bundle and the registry submission
 │   └── publish.sh          the one step that sends anything outward
-├── skills/touchdesigner/   the agent skill, installed as the plugin above
-│   ├── SKILL.md
-│   └── references/{gotchas,tools}.md
+├── plugin/                 the plugin the marketplace above offers
+│   ├── .claude-plugin/plugin.json
+│   └── skills/touchdesigner/   the agent skill
+│       ├── SKILL.md
+│       └── references/{gotchas,tools}.md
 ├── src/td_atlas/
 │   ├── install.py          locate a TouchDesigner installation
 │   ├── config.py           the ~/.td-atlas handshake between host and TD

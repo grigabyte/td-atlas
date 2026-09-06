@@ -1,6 +1,6 @@
 """The gotchas that could only be settled with TouchDesigner running.
 
-`skills/touchdesigner/references/gotchas.md` carried four claims that came out
+`plugin/skills/touchdesigner/references/gotchas.md` carried four claims that came out
 of one build session and had never been measured: that a fresh Geometry COMP
 ships with a torus that is what actually renders, that a SOP created inside one
 arrives invisible, that `td_errors` is blind to a cook dependency loop, and

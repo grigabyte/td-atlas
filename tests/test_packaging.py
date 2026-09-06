@@ -83,7 +83,7 @@ def test_the_manifest_names_no_tool_it_would_have_to_keep_in_step(committed):
 def _packaging_text() -> str:
     parts = [
         (ROOT / "packaging" / "manifest.json").read_text(),
-        (ROOT / ".claude-plugin" / "plugin.json").read_text(),
+        (ROOT / "plugin" / ".claude-plugin" / "plugin.json").read_text(),
         (ROOT / ".claude-plugin" / "marketplace.json").read_text(),
         (ROOT / "scripts" / "build_mcpb.py").read_text(),
         (ROOT / "scripts" / "publish.sh").read_text(),
@@ -147,27 +147,59 @@ def test_the_bundle_ships_no_resolved_environment():
 
 # -- the plugin -------------------------------------------------------------
 
+PLUGIN = ROOT / "plugin"
+
+
 def test_the_skill_sits_where_a_plugin_looks_for_it():
-    """`skills/<name>/SKILL.md` is the default location a plugin loads from;
-    the plugin manifest names no custom path, so this layout is the contract."""
-    assert (ROOT / "skills" / "touchdesigner" / "SKILL.md").is_file()
-    plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    """`skills/<name>/SKILL.md` is the default location a plugin loads from,
+    relative to the *plugin* root; the manifest names no custom path, so this
+    layout is the contract."""
+    assert (PLUGIN / "skills" / "touchdesigner" / "SKILL.md").is_file()
+    plugin = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
     assert "skills" not in plugin
 
 
-def test_the_marketplace_offers_the_plugin_this_repository_is():
+def test_the_plugin_root_holds_the_skill_and_nothing_else():
+    """The plugin root is a subdirectory, not the repository root.
+
+    While `marketplace.json` said `"source": "./"`, installing the
+    `touchdesigner` plugin copied every tracked file in the repository —
+    `memory-bank/` with the owner's verbatim notes, `tests/`, `src/`. Set
+    equality rather than a few absence checks: a file added under `plugin/`
+    by accident has to fail here, and naming only the directories one
+    happens to think of would let the next one through.
+    """
+    present = {
+        path.relative_to(PLUGIN).as_posix()
+        for path in PLUGIN.rglob("*")
+        if path.is_file()
+        and path.name != ".DS_Store"
+        and "__pycache__" not in path.parts
+    }
+    assert present == {
+        ".claude-plugin/plugin.json",
+        "skills/touchdesigner/SKILL.md",
+        "skills/touchdesigner/references/gotchas.md",
+        "skills/touchdesigner/references/tools.md",
+    }
+    for kept_out in ("memory-bank", "tests", "src", "scripts", "packaging", "docs"):
+        assert not (PLUGIN / kept_out).exists()
+
+
+def test_the_marketplace_offers_the_plugin_beside_it():
     marketplace = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
-    plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    plugin = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
     entries = marketplace["plugins"]
     assert len(entries) == 1
     assert entries[0]["name"] == plugin["name"]
-    # The repository root *is* the plugin, so the source is the marketplace
-    # root itself rather than a subdirectory to keep in step with it.
-    assert entries[0]["source"] == "./"
+    # The marketplace lives at the repository root because that is where a
+    # `/plugin marketplace add <repo>` looks; the plugin it offers is the
+    # subdirectory, so installing it brings the skill and not the repository.
+    assert entries[0]["source"] == "./plugin"
 
 
 def test_the_plugin_version_tracks_the_package(pyproject):
-    plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
+    plugin = json.loads((PLUGIN / ".claude-plugin" / "plugin.json").read_text())
     assert plugin["version"] == pyproject["version"], (
         "the plugin manifest is versioned by hand — bump it with pyproject"
     )

@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "touchdesigner",
-      "source": "./",
+      "source": "./plugin",
       "description": "The td-atlas skill: how to find the right operator, the exact parameter names, and the traps TouchDesigner reports as nothing at all.",
       "category": "creative"
     }

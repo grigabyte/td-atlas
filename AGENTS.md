@@ -1,7 +1,7 @@
 # Working on td-atlas
 
 Guidance for agents contributing to this repository. For *using* the connector
-to drive TouchDesigner, read `skills/touchdesigner/SKILL.md` instead.
+to drive TouchDesigner, read `plugin/skills/touchdesigner/SKILL.md` instead.
 
 ## What this project is
 
@@ -138,7 +138,7 @@ inside one must be written `%%`.
    An exception surfaces as an opaque `ToolError`.
 3. Return types feed a generated output schema. A union of `Image | str` fails
    to generate; leave the annotation off when a tool can return either.
-4. Add it to `skills/touchdesigner/references/tools.md`.
+4. Add it to `plugin/skills/touchdesigner/references/tools.md`.
 
 ## Search ranking
 

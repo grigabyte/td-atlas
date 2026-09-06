@@ -12,7 +12,7 @@ build/
 .claude/
 release/
 
-# `td-atlas install --write-mcp-json .` writes an absolute interpreter path,
-# and the repository root is also a plugin root, where .mcp.json is loaded as
-# plugin config. Machine-specific either way; not something to commit.
+# `td-atlas install --write-mcp-json .` writes an absolute interpreter path
+# — machine-specific, and not something to commit. (The plugin root is
+# `plugin/`, so this file is no longer plugin config either.)
 .mcp.json
