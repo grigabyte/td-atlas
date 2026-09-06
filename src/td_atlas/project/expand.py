@@ -95,7 +95,13 @@ def _cache_key(source: Path) -> str:
 
 
 def cached_expansions() -> list[Path]:
-    """Every cache entry, least recently used first. Working trees excluded."""
+    """Every cache entry, least recently used first. Working trees excluded.
+
+    The exclusion is what both `evict` and `clear_cache` are built on, so it
+    is stated once here: a WORK_PREFIX directory belongs to a `rebuild()` that
+    may still be running, and removing it mid-collapse produces a corrupt
+    output file rather than a freed byte.
+    """
     root = cache_dir()
     if not root.is_dir():
         return []
@@ -332,6 +338,16 @@ def clear_cache() -> int:
     Eviction keeps the cache from growing without end; this is for emptying
     one that already has. Reached from `td-atlas doctor --clear-cache`, so a
     user who wants the disk back does not have to know the directory layout.
+
+    "Every cached expansion" is the whole of what the cache is *for*, and not
+    quite the whole of what is in the directory: `rebuild()` puts its working
+    tree here too, under WORK_PREFIX, and this leaves those alone for the same
+    reason `evict` does — deleting one out from under a rebuild running in
+    another process surfaces as a corrupt output file, which is a worse
+    failure than a directory that was not reclaimed. `rebuild()` removes its
+    own tree in a `finally`, so one survives only a process that was killed
+    mid-rebuild; if `cache_dir()` still holds a `rebuild-*` directory when no
+    rebuild is running, it is that, and it is safe to delete by hand.
     """
     entries = cached_expansions()
     for entry in entries:

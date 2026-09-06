@@ -3,16 +3,18 @@
 # TouchDesigner is not installed on a GitHub runner and cannot be: it is a
 # licensed desktop application with no headless distribution. So this run
 # exercises the two layers that do not need it — the atom index and the
-# project reader — and the bridge only as far as its wire format. Concretely,
-# measured 2026-09-06 on a clean checkout with TD_ATLAS_INSTALL pointed at a
-# path that does not exist:
+# project reader — and the bridge only as far as its wire format.
 #
-#   854 passed, 22 skipped, 24 deselected in 4.8 s
+# So two sets do not run here, and neither is a defect. The `live` marker is
+# deselected outright (it needs a running instance with the bridge; see
+# AGENTS.md). The tests that shell out to `toeexpand`/`toecollapse` or read a
+# shipped example library skip, because there is no installation to find. A
+# red run is a failure; a skipped one of these is the expected shape.
 #
-# The 24 deselected are the `live` marker (needs a running instance with the
-# bridge; see AGENTS.md). The 22 skipped are the tests that shell out to
-# `toeexpand`/`toecollapse` or read a shipped example library. Both numbers
-# are expected here and are not a defect — a red run is a failure, not a skip.
+# The passed count moves with every test added and is not worth pinning here.
+# The two that do not: 24 deselected and 22 skipped. Measured 2026-09-06 on a
+# clean checkout of this commit, Python 3.11, TD_ATLAS_INSTALL pointed at a
+# path that does not exist — 860 passed, 22 skipped, 24 deselected in 5.6 s.
 name: CI
 
 on:

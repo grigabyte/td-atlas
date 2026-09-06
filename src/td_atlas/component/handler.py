@@ -105,9 +105,11 @@ def _token_matches(supplied):
     """Constant-time comparison of the supplied token against AUTH_TOKEN.
 
     `!=` on strings returns as soon as two bytes differ, so how long the
-    rejection took says how much of the token the caller already had. The
-    bridge listens on localhost, but "only local software can reach it" is a
-    weaker claim than it sounds on a machine an artist installs plugins on.
+    rejection took says how much of the token the caller already had. Nothing
+    here narrows who can ask: `bootstrap.py` sets the Web Server DAT's port
+    and callbacks and never its listen address, so which interfaces it binds
+    is TouchDesigner's default and has not been measured. Treat the caller as
+    unknown until it is.
 
     Both sides are encoded first because `hmac.compare_digest` raises
     TypeError on non-ASCII str, and a header is whatever the caller sent; a

@@ -983,21 +983,26 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if broken:
         word = "link" if len(broken) == 1 else "links"
         print(f"{len(broken)} broken {word}: " + ", ".join(c.link for c in broken))
-        return 1
-    unresolved = [c for c in checks if c.status in (WARN, UNKNOWN)]
-    if unresolved:
-        print(
-            "nothing is broken; unresolved: "
-            + ", ".join(f"{c.link} ({_STATUS_LABEL[c.status]})" for c in unresolved)
-        )
     else:
-        print("every link checked out.")
+        unresolved = [c for c in checks if c.status in (WARN, UNKNOWN)]
+        if unresolved:
+            print(
+                "nothing is broken; unresolved: "
+                + ", ".join(f"{c.link} ({_STATUS_LABEL[c.status]})" for c in unresolved)
+            )
+        else:
+            print("every link checked out.")
+
+    # Printed on both paths, not only the clean one. README's Troubleshooting
+    # table sends a user here for "~/.td-atlas/cache has grown", and a user
+    # with a grown cache very often also has a broken link — an early return
+    # on the broken branch withheld the number exactly when it was asked for.
     cached, kept, where = cache_summary()
     print(
         f"reading a .toe or .tox unpacks it into {where}: {cached} expansion(s) "
         f"cached, {kept} kept. Empty it with 'td-atlas doctor --clear-cache'."
     )
-    return 0
+    return 1 if broken else 0
 
 
 def cmd_search(args: argparse.Namespace) -> int:

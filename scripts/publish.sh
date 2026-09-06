@@ -24,7 +24,8 @@
 # must be that exact file — rebuild and re-run this script together, never one
 # without the other.
 #
-# Everything before the first outward step is a gate, cheapest first, because
+# Everything before the first outward step is a gate. Five of them, cheapest
+# first, with the only one that needs the network last. Cheapest first because
 # a release cannot be taken back: a published tag and a registry entry are
 # permanent, and the one release this repository nearly made would have
 # shipped a bundle built five commits back, speaking bridge protocol 3 against
@@ -72,8 +73,10 @@ HEAD_NOW="$(git rev-parse HEAD)"
   exit 1
 }
 
-# 3. The tag is free. `gh release create` on an existing tag fails halfway
-#    through, after the prompt has already been answered.
+# 3. The tag is free *here*. `gh release create` on an existing tag fails
+#    halfway through, after the prompt has already been answered. The remote
+#    is asked separately, in gate 5 — this one costs nothing and rules the
+#    release out before the tests are run.
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
   echo "$TAG already exists — bump the version in pyproject.toml, or delete" >&2
   echo "the tag if this release was never published" >&2
@@ -90,8 +93,8 @@ ACTUAL="$(shasum -a 256 "$BUNDLE" | cut -d' ' -f1)"
   exit 1
 }
 
-# 4. The tests pass. Last of the four because it is the slowest, and the three
-#    above can rule the release out in under a second.
+# 4. The tests pass. Last of the local gates because it is the slowest, and
+#    the three above can rule the release out in under a second.
 echo "running the tests before anything goes out..." >&2
 .venv/bin/python -m pytest -q || {
   echo "tests are not green; nothing published" >&2
@@ -105,6 +108,37 @@ for tool in gh mcp-publisher; do
     exit 1
   }
 done
+
+# 5. The tag is free on the remote too. Gate 3 reads the local ref store, and
+#    a tag deleted locally but still on origin passes it — which is exactly
+#    the state a re-run after a half-finished release leaves behind. This is
+#    the only gate that touches the network, so it stands last, after
+#    everything that can rule the release out offline.
+#
+#    `git ls-remote --exit-code` exits 0 when the ref is there and 2 when it
+#    is not; anything else (no `origin`, no network, a rejected credential)
+#    is 128, and that must fail the gate rather than read as "absent" — the
+#    whole point is to not publish over a tag we could not check for.
+REMOTE_TAG_STATUS=0
+git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 \
+  || REMOTE_TAG_STATUS=$?
+case "$REMOTE_TAG_STATUS" in
+  0)
+    echo "$TAG already exists on origin, even though it is not here — a" >&2
+    echo "release under that tag was already made, or half-made. Bump the" >&2
+    echo "version in pyproject.toml and rebuild; deleting a published tag" >&2
+    echo "breaks every client that resolved it" >&2
+    exit 1
+    ;;
+  2)
+    ;;
+  *)
+    echo "could not ask origin whether $TAG exists (git ls-remote exited" >&2
+    echo "$REMOTE_TAG_STATUS). Not publishing: an unchecked tag is the one" >&2
+    echo "this gate is here to catch" >&2
+    exit 1
+    ;;
+esac
 
 echo "About to publish $TAG:"
 echo "  release  $BUNDLE  ($ACTUAL)"

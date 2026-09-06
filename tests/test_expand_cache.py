@@ -190,6 +190,34 @@ def test_doctor_leaves_the_cache_alone_unless_asked(
     assert len(expand_mod.cached_expansions()) == 1
 
 
+def test_the_cache_line_survives_a_broken_link(
+    monkeypatch, tmp_path, capsys, fake_toeexpand
+):
+    """README's Troubleshooting table sends a grown-cache user to `doctor`.
+
+    That user very often also has a broken link — the two go together on a
+    machine that has been read from for months. `cmd_doctor` used to return 1
+    before it reached `cache_summary()`, so the one number the table promised
+    was withheld exactly on the run that was made to look for it.
+    """
+    expand_mod.expand(_source(tmp_path, "kept"))
+    monkeypatch.setattr(
+        cli, "doctor_checks",
+        lambda args, run=None: [cli.Check("index", cli.FAIL, "no index", "build")],
+    )
+    args = argparse.Namespace(
+        db=None, install_path=None, port=None, project=None, clear_cache=False
+    )
+
+    code = cli.cmd_doctor(args)
+    text = capsys.readouterr().out
+
+    assert code == 1, "a broken link still fails the command"
+    assert "1 broken link" in text
+    assert "1 expansion(s) cached" in text
+    assert "--clear-cache" in text
+
+
 def test_the_doctor_parser_accepts_the_flag():
     parser = cli.build_parser()
     args = parser.parse_args(["doctor", "--clear-cache"])

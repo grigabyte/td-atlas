@@ -116,12 +116,17 @@ td_atlas.cli mcp`; only the interpreter differs, because a bundle has no
 `sys.executable` of the user's to point at.
 
 `scripts/publish.sh` is the only thing here that sends anything outward, and
-nothing calls it. Before the first `gh` it gates on four things, cheapest
+nothing calls it. Before the first `gh` it gates on five things, cheapest
 first: a clean working tree (untracked files included — `git archive HEAD`
 packs neither), a bundle whose `dist/build.json` names the current HEAD, a
-`v<version>` tag that does not exist yet, and a green `pytest`. The SHA-256
-in `dist/server.json` must match the bundle too, since clients verify that
-hash before installing.
+`v<version>` tag that does not exist yet, a green `pytest`, and — last,
+because it is the only gate that needs the network — a `git ls-remote` saying
+the tag is not on `origin` either. That last one exists because the local
+check passes for a tag deleted here but still published there, which is what
+a half-finished release leaves behind; a `ls-remote` that fails to answer
+fails the gate rather than reading as "absent". The SHA-256 in
+`dist/server.json` must match the bundle too, since clients verify that hash
+before installing.
 
 ## Code that runs inside TouchDesigner
 
