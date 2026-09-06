@@ -961,6 +961,14 @@ def render_checks(checks: list[Check]) -> str:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
+    from .project.expand import cache_summary, clear_cache
+
+    if getattr(args, "clear_cache", False):
+        # The one command that empties the cache outright. Eviction keeps it
+        # from growing without end, but a cache that already grew is the
+        # user's disk to reclaim deliberately, not a side effect of a read.
+        removed = clear_cache()
+        print(f"removed {removed} cached expansion(s)")
     checks = doctor_checks(args)
     print(render_checks(checks))
     broken = [c for c in checks if c.broken]
@@ -977,6 +985,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         )
     else:
         print("every link checked out.")
+    cached, kept, where = cache_summary()
+    print(
+        f"reading a .toe or .tox unpacks it into {where}: {cached} expansion(s) "
+        f"cached, {kept} kept. Empty it with 'td-atlas doctor --clear-cache'."
+    )
     return 0
 
 
@@ -1416,6 +1429,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="check the whole chain link by link and say what to run to fix it",
     )
     p.add_argument("--install-path", help="TouchDesigner application directory")
+    p.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="delete every unpacked .toe/.tox this machine has cached",
+    )
     p.set_defaults(func=cmd_doctor, uses_selector=True)
 
     p = sub.add_parser("search", help="full-text search over operators")

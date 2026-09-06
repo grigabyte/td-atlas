@@ -54,7 +54,14 @@ from pathlib import Path
 from typing import Any
 
 from . import formats
-from .expand import Expansion, ExpandError, cache_dir, collapse, expand
+from .expand import (
+    WORK_PREFIX,
+    Expansion,
+    ExpandError,
+    cache_dir,
+    collapse,
+    expand,
+)
 from .formats import NodeFile, ParmValue
 from .model import Node, Project, TypeResolver, load
 from .serialize import join_text
@@ -712,7 +719,9 @@ def rebuild(
     # once would otherwise delete each other's tree mid-collapse, and the
     # failure looks like a corrupt file rather than a collision.
     cache_dir().mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="rebuild-", dir=cache_dir()))
+    # The prefix is the one the cache's eviction skips, so a long rebuild
+    # cannot have its working tree deleted out from under it.
+    work = Path(tempfile.mkdtemp(prefix=WORK_PREFIX, dir=cache_dir()))
 
     name = output.name
     if Path(name).suffix.lower() not in (".toe", ".tox"):
