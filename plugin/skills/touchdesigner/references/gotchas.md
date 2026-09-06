@@ -3,11 +3,18 @@
 Every entry here was hit while building a real composition. Each one produced
 no error, no warning, and no visible sign that anything was wrong.
 
+`td_health` prints each finding with a short kind in brackets — `[WARN ]
+stalled`, `[ERROR] not-cooking`. Every kind it can print is named somewhere in
+this file, so the kind can be searched for directly; a test holds that, so a
+new detector cannot arrive without an entry here.
+
 ## A branch nothing consumes never runs
 
 TouchDesigner cooks on demand. An operator is only pulled if something needs
 it: a viewer, a render chain, an output device, an export. A network you build
 programmatically has no viewer on it, so **it does not run at all**.
+`td_health` calls this `not-cooking`, and reports it when an operator did not
+cook once across the two samples.
 
 Symptom: renders work (they force a cook), but feedback trails never
 accumulate, animation is frozen between calls, and a Movie File Out writes
@@ -61,7 +68,8 @@ no line, no file, and anything scanning for errors misses it entirely.
 
 The compiler's own output is a property, `compileResult`, on `glslTOP`,
 `glslmultiTOP` and `glslMAT` (`glslPOP` has no documented equivalent).
-`td_health` reads it and prints the failing line and source DAT directly.
+`td_health` reads it and prints the failing line and source DAT directly, as
+`shader-compile`.
 
 ## Background throttling
 
@@ -71,6 +79,13 @@ default project's own output. Audio keeps running.
 
 This is easy to mistake for a broken network. Bring the window to the front
 before measuring performance or recording in realtime.
+
+`td_health` calls this `stalled`: fewer than five frames advanced between its
+two samples, and the timeline is playing. It is a warning about the *report*,
+not about the network — without frames there is no evidence either way, so it
+says so and does not go on to name operators as dormant. When the timeline is
+paused rather than throttled, the same silence is reported as `paused`
+instead, which is a note, not a warning: a stopped timeline is a choice.
 
 ## CPU operators hiding in a menu
 
@@ -86,7 +101,12 @@ over a 2 s interval: `sparse` 96 ms per cook (reproduced twice),
 `simplex3d` and `perlin3d` never crossed the 8 ms threshold at all. Whether that shows up as dropped frames depends on the rest
 of the network — do not wait for the frame rate to tell you.
 
-Nothing warns you. `td_health` flags any operator costing more than 8 ms.
+Nothing warns you. `td_health` flags any operator costing more than 8 ms as
+`expensive`. That is per operator; the separate `slow` finding is about the
+whole application — the measured frame rate came in under 60% of the project's
+target. The two are worth telling apart, because `expensive` with no `slow`
+means the rest of the network is absorbing it, and `slow` with no `expensive`
+means the cost is spread across many operators or is not in cooking at all.
 
 The operator summary says so in prose too — *"The ones that are calculated on
 the GPU will have GPU in their name"* — which is easy to read past. Prefer
@@ -281,15 +301,16 @@ that did not change* below.
 
 An `audiodeviceoutCHOP` with `active` off produces silence and reports nothing.
 The same applies to MIDI Out, OSC Out and DMX Out. `td_health` checks all of
-them.
+them and reports `output-off`.
 
 ## Non-Commercial licence
 
 - **Resolution is capped at 1280×1280.** Asking for 1920×1080 silently gives
   1280×720 — TouchDesigner emits a *warning*, not an error, and carries on.
   Measured: `resolutionw 1920, resolutionh 1080` on a Noise TOP yields
-  `width 1280, height 720`. `td_health` raises this to an error because it
-  changes the deliverable.
+  `width 1280, height 720`. `td_health` raises this to an error,
+  `resolution-clamped`, because it changes the deliverable; the licence itself
+  is reported once as the note `licence`.
 - Realtime H.264/H.265 export accelerated by an Nvidia GPU is unavailable.
 - Blob Track TOP is limited to 2 blobs.
 - Output may not be used in paid work.
@@ -368,8 +389,55 @@ expected to be in the frame. If you want a second opinion from a different code
 path, `saveByteArray()` — what `td_render` uses — was measured moving in step
 with `numpyArray` on every case above.
 
+## A bypassed operator is not a broken one, and looks like neither
+
+The bypass flag makes an operator pass its input through untouched. Nothing
+about the network says so: the node still cooks, still has an output, still
+reports no error, and downstream still gets a picture — the picture it would
+have had if the operator were not there. A bypass left on from an afternoon of
+debugging is the quietest way to lose an effect.
+
+`td_health` reports it as `bypassed` with every path, because it cannot know
+whether the bypass was deliberate. Bypass is a flag, so `td_flags` reads it and
+`td_set_flags` clears it; it is not a parameter and does not appear in
+`td_operator_schema`.
+
+## Realtime off changes what "one frame" means
+
+With Realtime on — the default — TouchDesigner drops frames to keep the
+timeline on the wall clock, which is what a performance needs. With it off,
+every frame is rendered no matter how long it takes, which is what an export
+needs. Nothing about a running network makes it obvious which mode it is in,
+and the two give different answers to "is this fast enough": with Realtime off
+the frame rate is not a measurement of anything.
+
+`td_health` reports the state as the note `non-realtime` when it is off. Turn
+it off deliberately for a clean recording (see Movie File Out above), and turn
+it back on before judging performance.
+
+## A health report that only looked at part of the network
+
+Two of `td_health`'s findings are about the report rather than about the
+project, and both exist because a partial answer that reads as a complete one
+is worse than no answer:
+
+- `walk-truncated` — the bridge stops walking at its own node cap, so
+  everything below the report covers only the operators it reached. It names
+  how many were skipped. Run the check again on a subtree to cover the rest.
+- `interval-clamped` — the gap asked for between the two samples was reduced.
+  The host sleeps through that gap and answers nothing else meanwhile, so the
+  interval is bounded.
+
 ## Stale errors
 
 `errors()` keeps its last string until the operator cooks again, so a fixed
 problem can be reported for another moment. If a fix looks ineffective, wait a
 beat and check again.
+
+An operator's own error and warning strings reach the report as `node-errors`
+and `node-warnings`. Tracebacks raised inside a script or a callback are kept
+by TouchDesigner in a different place entirely and appear in no operator's
+error list — `td_health` reads them separately and reports `script-errors`.
+When that read is the thing that fails, it says `script-errors-unread` rather
+than reporting the network as clean: whether anything raised is then unknown,
+which is not the same as nothing having raised.

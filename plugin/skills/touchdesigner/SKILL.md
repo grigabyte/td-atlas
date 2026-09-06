@@ -207,6 +207,9 @@ td-atlas reload                     # upgrade the bridge in place
 ## If the bridge is unreachable
 
 `td-atlas install` prints a one-line bootstrap to paste into TouchDesigner's
-textport (Alt+T). Re-running it upgrades in place. `td_instances` says which
+textport, which is opened from the menu: **Dialogs → Textport and DATs**. Do
+not reach for the keyboard shortcut — a blind key combination lands in the
+network editor when the window is not focused, and creates operators in the
+artist's project. Re-running the bootstrap upgrades in place. `td_instances` says which
 running TouchDesigner these tools actually reach — check it before believing an
 edit landed in the project you meant.

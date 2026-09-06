@@ -251,7 +251,14 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     print("td-atlas bridge staged in", home)
     print()
-    print("Paste this into TouchDesigner's textport (Alt+T), once per project:")
+    # The menu path, not the shortcut: a blind key combination sent to a
+    # window that is not focused lands in the network editor and creates
+    # operators in the artist's project. Measured the hard way; see
+    # memory-bank/runbook.md.
+    print(
+        "Paste this into TouchDesigner's textport "
+        "(Dialogs \u2192 Textport and DATs), once per project:"
+    )
     print()
     print("    " + line)
     print()
@@ -803,7 +810,8 @@ def check_bridge(args: argparse.Namespace) -> Check:
                 f"({cfg.instances_dir()} is empty) and nothing is listening "
                 f"on port {port} — a state, not a fault",
                 "start TouchDesigner and paste the 'td-atlas install' "
-                "bootstrap line into its textport (Alt+T)",
+                "bootstrap line into its textport "
+                "(Dialogs \u2192 Textport and DATs)",
             )
         note = (
             f"; port {port} answers although nothing registered itself — a "
