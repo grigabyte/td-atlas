@@ -41,6 +41,28 @@ _MAX_CHILDREN = 2000
 _MAX_DEPTH = 16
 _MAX_NETWORK_NODES = 5000
 
+# The same ceiling for the two whole-subtree walks (errors, health_sample),
+# for the same reason: 4080 measured operators in the largest shipped
+# component, so 5000 leaves it whole. What it costs on a network past that is
+# an estimate, not a measurement — serialising 4080 operators to text inside
+# TouchDesigner took 241-250 ms (facts.md, build 2025.32460), so ~60 us an
+# operator, and a 5000-node walk lands near 0.3 s: eighteen frames at 60 fps.
+# Every request runs on the main thread, so an unbounded walk is a freeze
+# whose length the caller chooses. Not verified on a live network of that
+# size — no such network exists on this machine.
+_MAX_WALK_NODES = 5000
+
+# One captured frame is a float32 RGBA array the size of the TOP:
+# 1280x720 is 1280*720*4*4 = 14.7 MB, 1920x1080 is 33.2 MB, 3840x2160 is
+# 132 MB (computed from the layout numpyArray() returns, not timed live).
+# The buffer sits in component storage inside TouchDesigner's own process,
+# which is why the cap is bytes and not frames: a 4K TOP reaches the same
+# total in four frames that a 720p one reaches in thirty-five. The frame
+# count is a second cap for the small-TOP case. The host asks for nine
+# frames by default (bridge/filmstrip.py).
+_MAX_CAPTURE_BYTES = 512 * 1024 * 1024
+_MAX_CAPTURE_FRAMES = 64
+
 
 # -- authentication ---------------------------------------------------------
 
@@ -2084,6 +2106,32 @@ def _par_info(par):
     return info
 
 
+def _bounded_descendants(target, limit):
+    """Operators below `target`, at most `limit` of them.
+
+    Returns (nodes, known-but-not-returned). `findChildren(depth=None)` builds
+    the whole list before anything can trim it, so on a network of tens of
+    thousands of operators the cost is already paid by the time a cap could
+    help; walking a level at a time pays only for what comes back. The second
+    number counts the operators already discovered and left unvisited — the
+    true remainder is at least that, since their own children were never
+    looked at, and a guess at the rest would be a made-up number.
+    """
+    if not hasattr(target, "children"):
+        return [], 0
+    found = []
+    queue = list(target.children)
+    while queue:
+        if len(found) >= limit:
+            break
+        node = queue.pop(0)
+        found.append(node)
+        children = getattr(node, "children", None)
+        if children:
+            queue.extend(children)
+    return found, len(queue)
+
+
 def _op_summary(target, include_pars=False):
     """A structured description of a single operator."""
     out = {
@@ -2513,6 +2561,11 @@ def m_capture(params):
     executes — a strip of frames has to be collected by the host calling this
     repeatedly, letting TouchDesigner run in between. Frames are kept as numpy
     arrays in component storage because that is where numpy lives.
+
+    The buffer is capped, and a request that hits the cap keeps nothing new and
+    says `full`. Nothing empties it but `contact_sheet` or a `reset`, so a
+    caller that stops asking for a sheet — or crashes — would otherwise leave
+    TouchDesigner holding the frames until the process ends.
     """
     target = _resolve(params.get("path"))
     if target.family != "TOP":
@@ -2524,9 +2577,30 @@ def m_capture(params):
         frames = []
         holder.store(_CAPTURE_KEY, frames)
 
+    # Checked before the cook, so a refused frame costs neither the cook nor
+    # the array: the buffer can therefore end one frame over the byte cap,
+    # which is the price of not allocating a frame in order to reject it.
+    held = sum(getattr(frame, "nbytes", 0) for frame in frames)
+    if len(frames) >= _MAX_CAPTURE_FRAMES or held >= _MAX_CAPTURE_BYTES:
+        return {
+            "frames": len(frames),
+            "path": target.path,
+            "frame": absTime.frame,
+            "full": True,
+            "bytes": held,
+            "limit": _MAX_CAPTURE_BYTES,
+            "maxFrames": _MAX_CAPTURE_FRAMES,
+            "captured": False,
+        }
+
     target.cook(force=True)
     frames.append(target.numpyArray())
-    return {"frames": len(frames), "path": target.path, "frame": absTime.frame}
+    return {
+        "frames": len(frames),
+        "path": target.path,
+        "frame": absTime.frame,
+        "captured": True,
+    }
 
 
 def m_contact_sheet(params):
@@ -2576,9 +2650,15 @@ def m_contact_sheet(params):
 
 
 def m_errors(_params):
-    """Every operator currently reporting an error or warning."""
+    """Every operator currently reporting an error or warning.
+
+    Bounded: a walk of the whole project runs on the main thread, and one that
+    stopped early says so rather than let a partial sweep read as "nothing is
+    wrong here".
+    """
     found = []
-    for target in root.findChildren(depth=None):
+    scanned, unvisited = _bounded_descendants(root, _MAX_WALK_NODES)
+    for target in scanned:
         try:
             errors = target.errors(recurse=False)
             warnings = target.warnings(recurse=False)
@@ -2593,7 +2673,12 @@ def m_errors(_params):
                     "warnings": warnings or None,
                 }
             )
-    return {"count": len(found), "nodes": found}
+    result = {"count": len(found), "nodes": found, "scanned": len(scanned)}
+    if unvisited:
+        result["truncated"] = True
+        result["notScanned"] = unvisited
+        result["limit"] = _MAX_WALK_NODES
+    return result
 
 
 def _undo_depth():
@@ -2859,6 +2944,17 @@ def m_health_sample(params):
     """
     root_path = params.get("path") or "/project1"
     target = _resolve(root_path)
+    # Refused rather than answered emptily. `findChildren` is a COMP method
+    # (index: py_members lists it on COMP alone), while `children` is an OP
+    # member that is simply empty on everything else — so walking `children`
+    # would report a leaf operator as a subtree with nothing wrong in it,
+    # which is a confident wrong answer where there was an error before.
+    if getattr(target, "family", None) != "COMP":
+        raise TypeError(
+            "health_sample walks a component; %s is a %s (%s). Give it the "
+            "path of the container holding the network to check."
+            % (target.path, target.family, target.OPType)
+        )
 
     # A traceback raised in a DAT callback, a Replicator callback or an
     # extension is recorded per operator and never reaches errors(): measured
@@ -2884,7 +2980,8 @@ def m_health_sample(params):
 
     script_errors = {}
     nodes = []
-    for child in target.findChildren(depth=None):
+    scanned, unvisited = _bounded_descendants(target, _MAX_WALK_NODES)
+    for child in scanned:
         try:
             entry = {
                 "path": child.path,
@@ -2944,7 +3041,7 @@ def m_health_sample(params):
     except Exception:
         pass
 
-    return {
+    sample = {
         "frame": absTime.frame,
         "fpsTarget": me.time.rate,
         "playing": bool(me.time.play),
@@ -2959,7 +3056,15 @@ def m_health_sample(params):
         # unattributed beats unmentioned.
         "scriptErrors": script_errors,
         "scriptErrorsRaw": _clip(script_errors_root),
+        "scanned": len(scanned),
     }
+    if unvisited:
+        # A health verdict over part of a network must not read as a verdict
+        # over the network: the host turns this into a finding of its own.
+        sample["truncated"] = True
+        sample["notScanned"] = unvisited
+        sample["limit"] = _MAX_WALK_NODES
+    return sample
 
 
 def m_perf(_params):

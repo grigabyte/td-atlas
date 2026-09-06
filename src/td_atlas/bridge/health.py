@@ -214,6 +214,22 @@ def check(
     live = second["nodes"]
     health.nodes = len(live)
 
+    # The bridge stops walking at its own cap. Said out loud, because every
+    # count below — and "Nothing wrong found" above all — describes the part
+    # that was walked, and reads as a verdict on the whole project otherwise.
+    if second.get("truncated"):
+        health.findings.append(
+            Finding(
+                "warning", "walk-truncated",
+                f"only {second.get('scanned', len(live))} operator(s) under "
+                f"{path} were sampled (the bridge walks at most "
+                f"{second.get('limit')}); at least "
+                f"{second.get('notScanned')} more were not looked at, and "
+                f"nothing below is known about them. Run this on a subtree "
+                f"to cover the rest",
+            )
+        )
+
     dormant: list[str] = []
     slow: list[str] = []
     errored: list[str] = []

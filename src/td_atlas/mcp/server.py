@@ -962,14 +962,28 @@ def td_errors() -> str:
         result = client.errors()
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
+    # Said in both branches, and first in the clean one: "nothing is wrong"
+    # over part of a project is the sentence this reply must never imply.
+    cut = ""
+    if result.get("truncated"):
+        cut = (
+            f"\nTRUNCATED: only the first {result.get('scanned')} operator(s) "
+            f"were checked (the limit is {result.get('limit')}); at least "
+            f"{result.get('notScanned')} more were not. Nothing is known "
+            f"about those."
+        )
     if not result["count"]:
-        return _warn(client) + "No operators are reporting errors or warnings."
+        return (
+            _warn(client)
+            + "No operators are reporting errors or warnings."
+            + cut
+        )
     lines = [f"{result['count']} operator(s) reporting problems:"]
     for node in result["nodes"]:
         detail = node["errors"] or node["warnings"]
         kind = "ERROR" if node["errors"] else "warning"
         lines.append(f"  [{kind}] {node['path']} ({node['type']}): {detail}")
-    return _warn(client) + "\n".join(lines)
+    return _warn(client) + "\n".join(lines) + cut
 
 
 @mcp.tool()

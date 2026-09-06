@@ -59,8 +59,16 @@ def contact_sheet(
     `interval` is wall-clock seconds between captures, so the sheet spans
     roughly `frames * interval` seconds of the running composition.
     """
+    collected = 0
     for index in range(frames):
-        client.call("capture", path=path, reset=(index == 0))
+        result = client.call("capture", path=path, reset=(index == 0))
+        # The bridge caps the buffer by bytes, so a large TOP fills it before
+        # `frames` requests are spent. Sleeping through the rest would add
+        # nothing to the sheet and would stretch the wall-clock span the
+        # caller is told about.
+        if result.get("full"):
+            break
+        collected += 1
         if index < frames - 1:
             time.sleep(interval)
 
@@ -72,10 +80,16 @@ def contact_sheet(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(_png(sheet["width"], sheet["height"], pixels))
 
-    return {
+    summary = {
         "output": str(output),
         "frames": sheet["count"],
         "grid": f"{sheet['columns']}x{sheet['rows']}",
         "size": f"{sheet['width']}x{sheet['height']}",
-        "span_seconds": round(frames * interval, 2),
+        "span_seconds": round(max(collected, 1) * interval, 2),
     }
+    if collected < frames:
+        summary["truncated"] = (
+            f"the bridge's capture buffer filled after {collected} of "
+            f"{frames} frames; the sheet spans less time than asked for"
+        )
+    return summary
