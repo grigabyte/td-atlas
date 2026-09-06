@@ -587,3 +587,45 @@ def test_undo_cannot_be_a_batch_step():
     for method in ("undo", "redo"):
         with pytest.raises(ValueError, match="cannot be a batch step"):
             handler.m_batch({"ops": [{"method": method, "params": {}}]})
+
+
+def test_batch_cannot_be_a_batch_step():
+    """One `_BATCH_NOTES` list, not a stack of them.
+
+    An inner batch clears it on entry, so the outer batch's rollback record is
+    gone before the outer batch can use it — and the artist gets two nested
+    undo blocks where one Ctrl+Z was promised. The refusal has to happen
+    before any step runs, which is why it is in the same pre-flight loop as
+    `undo`/`redo` rather than inside the execution loop.
+    """
+    with pytest.raises(ValueError, match="cannot be a batch step"):
+        handler.m_batch({"ops": [{"method": "batch", "params": {"ops": []}}]})
+
+
+def test_the_nested_batch_refusal_names_the_way_out():
+    """A refusal an agent cannot act on just becomes a retry loop."""
+    with pytest.raises(ValueError) as caught:
+        handler.m_batch(
+            {
+                "ops": [
+                    {"method": "op_create", "params": {}},
+                    {"method": "batch", "params": {"ops": []}},
+                ]
+            }
+        )
+    message = str(caught.value)
+    assert "step 1" in message, "the caller has to know which step to fix"
+    assert "`ops`" in message
+
+
+def test_the_refusal_lands_before_the_undo_block_is_opened():
+    """A pre-flight rejection must not leave a block open inside TouchDesigner.
+
+    `_UNDO_HELD` is what `_note_status` and the recovery path read to decide
+    whether a level is outstanding; a batch refused for its own contents has
+    opened nothing, so the count must be exactly where it started.
+    """
+    before = handler._UNDO_HELD[0]
+    with pytest.raises(ValueError):
+        handler.m_batch({"ops": [{"method": "batch", "params": {"ops": []}}]})
+    assert handler._UNDO_HELD[0] == before

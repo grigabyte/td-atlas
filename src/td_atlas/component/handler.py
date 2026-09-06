@@ -2753,6 +2753,23 @@ def m_batch(params):
                 "reach past the batch to an edit made before it. Call it on "
                 "its own, after the batch." % (index, step.get("method"))
             )
+        # A nested batch is the same class of problem one level down. There is
+        # one `_BATCH_NOTES` list, not a stack of them, so the inner batch
+        # clears it on entry and again on exit: the outer batch's status notes
+        # are gone, and a rollback of the outer one no longer knows which ones
+        # to put back. It also opens a second undo block inside the first,
+        # which `_UNDO_HELD` counts but the artist experiences as one Ctrl+Z
+        # that undoes only part of what was asked for. Flattening is exact —
+        # the steps run in the same order, in one block — so there is nothing
+        # to lose by refusing.
+        if step.get("method") == "batch":
+            raise ValueError(
+                "step %d: 'batch' cannot be a batch step — the notes and the "
+                "undo block are per-request, not a stack, so the inner batch "
+                "erases the outer one's rollback record. Put the inner steps "
+                "into this batch's `ops` instead; the result is identical."
+                % index
+            )
     name = params.get("undo_name") or "td-atlas batch"
     results = []
     # The length of the stack before anything is opened. What this batch has
