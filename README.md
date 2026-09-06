@@ -192,7 +192,7 @@ compared fields differ**.
 
 | fields | class | why |
 | --- | --- | --- |
-| 80 | custom parameter placement | The file keeps a custom parameter's *value* in `.parm` beside the built-in ones and its *definition* in `.cparm`, which the reader does not parse — so the reader files the value under `parms` where the live side files it under `custom_parms`. 40 parameters, two fields each. |
+| 80 | custom parameter placement | The file keeps a custom parameter's *value* in `.parm` beside the built-in ones and its *definition* in `.cparm`, which the reader does not parse — so the reader files the value under `parms` where the live side files it under `custom_parms`. Forty parameters, two fields each. |
 | 10 | custom parameter at its default | A custom parameter still at its default has no `.parm` line at all, so the file side has nothing to show; the live side prints every custom parameter. |
 | 8 | float text formatting | The file keeps TouchDesigner's own printing (`2e+06`), the live side prints `2000000`. |
 | 3 | parameter at its default with a flags word | `.parm` carries a line for a default-valued parameter whose flags word is not zero; the live side drops anything `isDefault`. |
@@ -215,20 +215,30 @@ connector's index. Both sides are fixed.
 
 ## Install
 
-**Platforms.** Everything here was developed and measured on macOS. Windows is
-supported by intent but **unverified**: no Windows machine was involved. The
-install-discovery layout follows Derivative's published install tree rather
-than measurement; `toeexpand`'s path separators are inferred from its macOS
-output; the clipboard copy (`clip`) has never been run. And one thing is known
-to be weaker there — the token file is narrowed with `chmod`, which on Windows
-sets only the read-only attribute and does not keep other accounts on the
-machine out. Linux is not supported: TouchDesigner is not released for it.
+TouchDesigner has to be installed first: the index is built from *your* copy of
+the application and holds the values that copy reports, so there is nothing to
+download. Python 3.11 or newer. See [Compatibility](#compatibility) for
+platforms and for what the connector can change in your project.
 
 ```bash
-uv pip install -e .
-td-atlas build          # offline index
-td-atlas install        # stage the bridge, print the bootstrap and MCP lines
+git clone https://github.com/grigabyte/td-atlas
+cd td-atlas
+uv venv                     # or: python3 -m venv .venv
+uv pip install -e .         # or: .venv/bin/pip install -e .
 ```
+
+There is no package on PyPI, so `pip install td-atlas` and `uvx td-atlas` will
+not find anything — the checkout *is* the install. Then, from the checkout:
+
+```bash
+.venv/bin/td-atlas build      # offline index, 23–30 s, no TouchDesigner process
+.venv/bin/td-atlas install    # stage the bridge, print the bootstrap and MCP lines
+```
+
+Everything below writes `td-atlas` for short. Unless the virtualenv is
+activated, call it by path — `.venv/bin/td-atlas`, or
+`.venv\Scripts\td-atlas` on Windows — because a system Python will not see
+the package.
 
 `td-atlas install` prints two things to paste. First, into TouchDesigner's
 textport (Dialogs → Textport and DATs), once per project:
@@ -241,11 +251,72 @@ Second, a `claude mcp add` line for your MCP client — see below. Pass
 `--write-mcp-json DIR` to additionally write (or merge into) `DIR/.mcp.json`
 with that same entry.
 
-Then complete the index with runtime facts:
+Then, with TouchDesigner open and the bridge staged, complete the index with
+the runtime facts only a live instance knows:
 
 ```bash
 td-atlas probe
 ```
+
+## Compatibility
+
+**TouchDesigner.** Everything here was measured against build **2025.32460**.
+The index is not a copy of a wiki — it is read out of the application directory
+you point at, so another build gives another index; `td-atlas doctor` catches
+an index built from a TouchDesigner that has since been moved, updated or
+replaced, which nothing else reports. The bridge and the host agree on a
+protocol version and refuse each other when they disagree, naming the side that
+is behind.
+
+**Python.** 3.11 or newer on the host. The code that runs *inside*
+TouchDesigner is held to 3.11 with no third-party imports, because that is the
+interpreter the application ships.
+
+**Operating systems.**
+
+| | |
+| --- | --- |
+| macOS | developed and measured here; every number in this README comes from it |
+| Windows | supported by intent, **unverified** — no Windows machine was ever involved |
+| Linux | not supported: TouchDesigner is not released for it |
+
+What is unverified on Windows, precisely: the install-discovery layout follows
+Derivative's published install tree rather than measurement; `toeexpand`'s path
+separators are inferred from its macOS output; the clipboard copy (`clip`) has
+never been run. And one thing is known to be weaker there — the token file is
+narrowed with `chmod`, which on Windows sets only the read-only attribute and
+does not keep other accounts on the machine out.
+
+**What this can change in your project.** Worth reading before pointing an
+agent at work you care about.
+
+- **The bridge is a component inside your open project.** Pasting the bootstrap
+  line builds `/tdatlas` in the running project — a Web Server DAT, a callbacks
+  DAT and a status panel. Re-running the line upgrades those nodes in place. It
+  is a node in your network like any other, and it is saved with the project if
+  you save the project.
+- **Edits are real edits.** `td_build`, `td_set_params`, `td_set_flags`,
+  `td_annotate`, `td_extension_add`, `td_palette_load` and `td_exec` change the
+  live network. `td_build` wraps a batch in one `ui.undo` block, so it is a
+  single **Ctrl+Z**, and a failed batch rolls itself back; `td_exec` is
+  arbitrary Python and carries no such guarantee.
+- **Nothing saves your project.** No tool calls `project.save()`. `td_snapshot`
+  writes a *component* to `~/.td-atlas/snapshots`, deliberately: saving the
+  session would be a Save As and would leave you working inside `~/.td-atlas`
+  rather than your own file.
+- **Writing text beside the `.toe` is off by default** and needs
+  `"text_on_save": true` in `~/.td-atlas/config.json`. A file at that name that
+  is not one of ours is never overwritten.
+- **Reading a project never touches it.** `toeexpand` and `toecollapse` work in
+  place, and `toecollapse` renames the original to `.bkp` — so every offline
+  read copies the file into a cache under `~/.td-atlas/cache` first. Writing
+  (`td_project_write`, `td_variant_restore`) refuses an output path that
+  already exists rather than replacing it.
+- **On the host** td-atlas writes only under `~/.td-atlas`: the index, the
+  staged bridge, the call journal `calls.jsonl` (capped at 1 MiB), snapshots,
+  variants and the expansion cache. The cache is capped by count and evicted
+  least-recently-used; `td-atlas doctor` says how many expansions it holds
+  and `td-atlas doctor --clear-cache` empties it.
 
 ## As an MCP server
 
@@ -258,16 +329,13 @@ virtualenv is activated. Wiring it in by hand looks like:
 claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 ```
 
-41 tools in three groups — see `plugin/skills/touchdesigner/references/tools.md`.
-
-**Index** (offline): `td_search_operators`, `td_operator_schema`,
-`td_search_parameters`, `td_python_api`, `td_docs`, `td_glossary`,
-`td_palette`, `td_expression_help`, `td_example`.
-
-**Live**: `td_status`, `td_health`, `td_network`, `td_op_info`, `td_build`,
-`td_set_params`, `td_render`, `td_errors`, `td_exec`, `td_undo`, `td_snapshot`.
-
-**Project files**: `td_project_read`, `td_project_grep`, `td_project_diff`.
+41 tools in three groups: **9 index** tools that work offline, **23 live**
+tools that act on a running instance, **9 project-file** tools that read and
+write `.toe`/`.tox` from disk. Every one of them, with its arguments and what
+it is for, is listed in
+[`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md)
+— one list, held to the code by a test, rather than a second copy here that
+would drift.
 
 `td_build` and `td_set_params` validate parameter names against the index
 before sending, so the usual mistakes come back as corrections:
@@ -319,6 +387,36 @@ bridge, which needs `td-atlas install` and one pasted line. So a bundle install
 gives you the project-file tools immediately and tells you which command
 unlocks the rest.
 
+## Troubleshooting
+
+`td-atlas doctor` is the first move for anything that looks like a setup
+problem: it walks the chain — environment, TouchDesigner, index, index build,
+probe, bridge, MCP server — and prints the command that repairs each broken
+link, exiting non-zero when one is broken. The table below is what the messages
+mean.
+
+| Symptom | What it is | What to run |
+| --- | --- | --- |
+| `doctor` says `bridge : absent` | a state, not a fault: no TouchDesigner has registered a bridge and nothing is listening on the port | open the project and paste the `td-atlas install` bootstrap line into the textport |
+| a live tool refuses with *"nothing answered on the bridge port"* | TouchDesigner is not running, or is running without the bridge | `td-atlas doctor`, then the bootstrap line |
+| *"the bridge and this host speak different protocol versions"* | the staged bridge is older (or newer) than this checkout. The oldest bridge accepted is protocol 5; an older one is refused at connect rather than allowed to fail later on the first new method | `td-atlas reload` — it is the one command that talks to a bridge the version check would otherwise reject |
+| a call comes back `UnknownMethod` | same cause, seen from the other side: the bridge has no such method because it was staged from an older package | `td-atlas reload`, then repeat the call |
+| *"the bridge rejected the token this host sent"* | the bridge's token and `~/.td-atlas/config.json` disagree | `td-atlas doctor` compares them; `td-atlas install` re-stages against the current one |
+| *"something answered on that port but not with a bridge reply"* | another program holds the port, or the Web Server DAT is misconfigured | `td-atlas doctor`, then `td-atlas install` |
+| a call times out | every request runs on TouchDesigner's main thread during a cook, so a long script blocks it | wait, then retry in smaller pieces rather than one long `td_exec` |
+| *"this host has no atom index yet"* | nothing was built | `td-atlas build`, then `td-atlas probe` with TouchDesigner open |
+| *"the index names a file that is not on disk"* | TouchDesigner was moved, updated or reinstalled since the index was built | `td-atlas build`, then `td-atlas probe` |
+| `doctor` says `index build` disagrees | the index was built from a different TouchDesigner than the one installed now. Nothing else reports this — the tools simply answer with the other build's values | `td-atlas build` |
+| a network reply ends `TRUNCATED:` or `... N more child(ren) not listed` | the network is larger than one reply carries; the cut is named so it is not read as the whole network | ask again with a narrower `path` |
+| `td_errors` or `td_health` says *"only the first N operator(s) were checked"* | the walk hit its node budget: "nothing is wrong" covers the part that was walked and nothing else | run it again on a subtree |
+| `td_health` reports script errors it *could not read* | the read failed on this build; unknown, not clean | the reply names the reason; treat that area as unchecked |
+| a write refuses because the output already exists | deliberate: `toecollapse` renames what it finds to `.bkp`, so nothing is written over | choose a path that does not exist |
+| `~/.td-atlas/cache` has grown | every offline read unpacks a copy there; it is capped and evicted least-recently-used, but an old cache stays until you say so | `td-atlas doctor` says how many expansions it holds, `td-atlas doctor --clear-cache` empties it |
+| the MCP client cannot start the server | it is launching an interpreter that has no `td_atlas` installed | `td-atlas install` prints the exact `claude mcp add` line, absolute interpreter path and all; `doctor`'s `mcp server` link verifies it |
+
+`td-atlas log --failures` shows what the bridge actually refused, with
+timestamps, after the fact; `td_log` is the same for an agent.
+
 ## Documentation
 
 | Document | For |
@@ -334,9 +432,14 @@ unlocks the rest.
 
 ```bash
 uv pip install -e . pytest
-pytest                  # three tests need an installation, none a running instance
+pytest                  # needs no running TouchDesigner
 td-atlas reload         # re-stage the bridge and reload it through itself
 ```
+
+The suite is the invariant: **no test fails for want of a running
+TouchDesigner.** The ones that need something — an installed application, or a
+live instance to measure against — skip themselves and say which, so a plain
+`pytest` is green on a machine with neither.
 
 See [AGENTS.md](AGENTS.md) before changing anything — particularly the code
 that runs inside TouchDesigner, which is Python 3.11 with no third-party
@@ -348,22 +451,32 @@ imports and a hard rule against blocking.
 td-atlas/
 ├── README.md               this file
 ├── AGENTS.md               contributor guide, human or agent
+├── CLAUDE.md               entry points for an agent opening this repository
 ├── LICENSE                 MIT
 ├── pyproject.toml
+├── .gitignore
+├── АУДИТ-ПЛАН.md           the 2026-09 audit's repair plan (Russian)
 ├── docs/
 │   ├── architecture.md     the three layers and the reasoning
 │   └── formats.md          the undocumented .toe format, measured
 ├── .claude-plugin/
 │   └── marketplace.json    this repository as a marketplace
-├── packaging/manifest.json the MCPB manifest, generated from pyproject.toml
+├── packaging/
+│   ├── manifest.json       the MCPB manifest, generated from pyproject.toml
+│   └── .mcpbignore         what stays out of the bundle
 ├── scripts/
-│   ├── build_mcpb.py       build the bundle and the registry submission
+│   ├── build_mcpb.py       build the bundle, the registry submission, build.json
 │   └── publish.sh          the one step that sends anything outward
-├── plugin/                 the plugin the marketplace above offers
+├── plugin/                 the plugin the marketplace above offers, and
+│   │                       the only part of this tree it installs
 │   ├── .claude-plugin/plugin.json
-│   └── skills/touchdesigner/   the agent skill
-│       ├── SKILL.md
-│       └── references/{gotchas,tools}.md
+│   └── skills/
+│       └── touchdesigner/  the agent skill
+│           ├── SKILL.md
+│           └── references/{gotchas,tools}.md
+├── memory-bank/            the project's own working memory (Russian):
+│                           decisions with dates, measured numbers, a per-shift
+│                           journal. Not needed to use or build td-atlas.
 ├── src/td_atlas/
 │   ├── install.py          locate a TouchDesigner installation
 │   ├── config.py           the ~/.td-atlas handshake between host and TD
@@ -387,10 +500,26 @@ td-atlas/
 │   │   ├── formats.py          the undocumented file formats
 │   │   ├── model.py            the operator tree and type resolution
 │   │   ├── diff.py             semantic comparison
-│   │   └── render.py           tree description and code search
-│   └── mcp/server.py       40 MCP tools over all three layers
-└── tests/                  three need an installation, none a running instance
+│   │   ├── render.py           tree description and code search
+│   │   ├── serialize.py        the whole network as text
+│   │   ├── rebuild.py          the return leg: text back into a .toe
+│   │   ├── variants.py         saved states, text plus a byte copy
+│   │   └── release.py          building the bridge as a .tox
+│   └── mcp/
+│       ├── server.py           the MCP tools over all three layers
+│       └── hints.py            the recovery table every refusal is rendered from
+└── tests/
+    ├── conftest.py         shared fixtures
+    ├── live_network.py     the fixture network the live text diff is measured on
+    └── test_*.py           a plain run needs no TouchDesigner running
 ```
+
+Generated and not in git: `.venv/`, the index and staged bridge under
+`~/.td-atlas/`, and `dist/` — the built bundle, `dist/server.json` and
+`dist/build.json`, which records the commit the bundle came from so
+`publish.sh` can refuse a stale one. `.mcp.json` is written by
+`td-atlas install --write-mcp-json` and holds a path specific to your machine,
+so it is ignored too.
 
 ## Licence
 

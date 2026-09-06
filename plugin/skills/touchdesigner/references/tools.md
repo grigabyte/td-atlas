@@ -25,9 +25,9 @@ against the server, and so is that count.
 | `td_status()` | Is the bridge up, what project is open. |
 | `td_log(limit, failures, summary, method)` | Your own trail: every bridge call this host made, how long it took and what it refused with. `td_status` reports no call history at all; this survives the session and answers "what did I break yesterday". `failures=True` for the refusals alone with the repair for the latest; `summary=True` for which methods refuse and which are slow. Offline tools never dial the bridge and leave no trace here. |
 | `td_instances()` | Every running TouchDesigner that registered a bridge, and which one these tools reach. Check it before believing an edit landed in the project you meant. |
-| `td_doctor()` | Every link — install, index, probe pass, bridge, this server — with the command that fixes each. Catches the index built from another TouchDesigner build, which raises nothing. |
-| `td_health(path, interval)` | **The silent-failure detector.** Run after building anything. |
-| `td_network(path, depth)` | What is inside a component and how it is wired. |
+| `td_doctor()` | Every link — install, index, probe pass, bridge, this server — with the command that fixes each. Catches the index built from another TouchDesigner build, which raises nothing. The read cache is a CLI-only concern: `td-atlas doctor` on a terminal also says how many unpacked projects it holds and `td-atlas doctor --clear-cache` empties it, neither of which this tool reports or does — deleting a user's cache is not something a tool call should do on its own. |
+| `td_health(path, interval)` | **The silent-failure detector.** Run after building anything. `interval` is clamped, so a long wait comes back sooner than asked and says so. Read the reply for the two ways it can be partial — a truncated walk and script errors it could not read; see *When a reply is cut short* below. |
+| `td_network(path, depth)` | What is inside a component and how it is wired. A network too large for one reply comes back cut, and every cut is named rather than silent; see *When a reply is cut short* below. |
 | `td_op_info(path)` | One operator: type, wiring, live parameter values, errors. |
 | `td_build(operations, undo_name, owner)` | Multi-step edits as one atomic, undoable block. Validated first. A created node with no `position` is given a free spot, and one wired inside its own `op_create` lands to the right of its source, so a batch reads left to right. `op_create` takes a `text` key for a DAT's contents, so shader and script source needs no separate `td_exec`. |
 | `td_set_params(path, pars, op_type, owner)` | Set parameters on an existing operator. Names are checked against the index **only if you pass `op_type`**; without it the name goes straight to TouchDesigner and comes back as an `AttributeError`. |
@@ -38,7 +38,7 @@ against the server, and so is that count.
 | `td_flags(path)` | The flags that decide whether a node runs and what is visible: display, render, bypass, cooking, and which ones this operator does not have. Check it when a correct-looking network produces nothing. |
 | `td_set_flags(path, flags, owner)` | Turn those flags on or off. Every write is read back, so a flag the family will not take is a refusal rather than a silence. |
 | `td_render(path, width, height)` | A TOP's image, returned to you. |
-| `td_errors()` | Operators reporting an error or warning. |
+| `td_errors()` | Operators reporting an error or warning. The walk is bounded, so "no operators are reporting errors" can be true of only the part that was walked — the reply says when that happened; see *When a reply is cut short* below. |
 | `td_exec(code)` | Arbitrary Python inside TouchDesigner. Last resort. |
 | `td_undo(redo)` | Undo or redo, including whole `td_build` batches. Cannot be a step inside `td_build` — that is refused, because two of them in a row reach past the batch into the artist's own history. |
 | `td_snapshot(label, path)` | Save a component for later diffing. |
@@ -59,6 +59,37 @@ against the server, and so is that count.
 | `td_variant_list(file)` | What has been saved — of one project, or of every project that has any. Says whether the original has changed since each save; that is information, not a warning, because a restore reads the variant's own copy. |
 | `td_variant_restore(file, label, output)` | Write a saved state back out. A copy, not a repack: `toecollapse` never runs, so nothing of the user's is renamed to `.bkp`. `output` must not exist; a directory keeps the saved file name. |
 | `td_variant_diff(file, before, after, show_moves, include_text)` | Compare two saved states with the same semantic diff `td_project_diff` runs. |
+
+## When a reply is cut short
+
+Everything below runs on TouchDesigner's main thread during a cook, so the work
+one call may do is bounded. When a bound is reached the reply says so instead of
+looking complete — a partial answer read as a whole one is the expensive
+mistake here.
+
+`td_network` marks three separate cuts. `childrenHidden` is printed under the
+component whose listing was shortened, and gives the number left out — printed
+even where nothing was listed at all, since the invisible cut is the dangerous
+one. Over the whole reply, `truncated` with `hidden` says how many operators
+were dropped against the overall budget, `limit` and `maxChildren` say which
+two bounds applied, and `depthLimited` carries the depth you asked for when it
+was reduced to the deepest this tool walks. The repair is always the same: ask
+again with a narrower `path`.
+
+`td_errors` and `td_health` bound their walk by node count. `scanned` is how
+many operators were actually looked at, `notScanned` how many were not, and
+`truncated` marks that it happened; `limit` is the bound. Read "nothing is
+wrong" as covering `scanned` operators and no others.
+
+`td_health` also reports `scriptErrorsUnread` — the places where reading
+TouchDesigner's own script errors raised, with the reason. That is *unknown*,
+not clean, and it is a finding in the report rather than a silence.
+
+Frame capture, used by the contact sheet below, has a byte budget as well as a
+frame count. A capture call answers `captured: true` while it is collecting and
+`full: true` once the buffer is at its limit, with `limit` and `maxFrames`
+naming the bounds; the sheet stops sampling on that flag rather than growing
+storage inside the component without end.
 
 ## When a tool refuses
 
