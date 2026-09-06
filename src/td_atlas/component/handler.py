@@ -2971,11 +2971,20 @@ def m_health_sample(params):
     # One recursive call answers whether the subtree holds any at all (0.02 ms
     # on a 32-node project, and near-independent of node count), so a healthy
     # project pays one call and only a broken one pays a walk.
+    # Every failed read is carried out rather than swallowed. Swallowing one
+    # here is what made a broken read indistinguishable from a clean project:
+    # the report said "nothing wrong found" precisely when the check for the
+    # thing it was built to catch had not run. Nothing is retried and nothing
+    # is inferred — an unread surface is reported as unread.
+    script_errors_unread = []
+
     script_errors_root = ""
     try:
         script_errors_root = target.scriptErrors(recurse=True) or ""
-    except Exception:
-        pass
+    except Exception as exc:
+        script_errors_unread.append(
+            "%s (recursive read: %s: %s)" % (target.path, type(exc).__name__, exc)
+        )
     walk_scripts = bool(script_errors_root)
 
     script_errors = {}
@@ -3016,8 +3025,10 @@ def m_health_sample(params):
                     message = child.scriptErrors(recurse=False)
                     if message:
                         script_errors[child.path] = _clip(message)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    script_errors_unread.append(
+                        "%s (%s: %s)" % (child.path, type(exc).__name__, exc)
+                    )
             nodes.append(entry)
         except Exception:
             continue
@@ -3029,8 +3040,10 @@ def m_health_sample(params):
             message = target.scriptErrors(recurse=False)
             if message:
                 script_errors[target.path] = _clip(message)
-        except Exception:
-            pass
+        except Exception as exc:
+            script_errors_unread.append(
+                "%s (%s: %s)" % (target.path, type(exc).__name__, exc)
+            )
 
     licence = {}
     try:
@@ -3064,6 +3077,11 @@ def m_health_sample(params):
         sample["truncated"] = True
         sample["notScanned"] = unvisited
         sample["limit"] = _MAX_WALK_NODES
+    if script_errors_unread:
+        # A handful of examples, not five thousand: the count carries the
+        # scale and the reasons repeat.
+        sample["scriptErrorsUnread"] = script_errors_unread[:5]
+        sample["scriptErrorsUnreadCount"] = len(script_errors_unread)
     return sample
 
 

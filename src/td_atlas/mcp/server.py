@@ -763,6 +763,9 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
     - operators costing more than half a frame to cook, and the resulting
       frame rate collapse
     - bypassed operators, and the current licence
+
+    `interval` is the gap between the two samples, in seconds, and is capped:
+    this process sleeps through it and answers nothing else meanwhile.
     """
     from ..bridge.health import check
 

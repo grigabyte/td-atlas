@@ -22,6 +22,14 @@ from .client import BridgeClient
 # frame budget is 16.7 ms.
 _SLOW_COOK_MS = 8.0
 
+# The two samples are taken `interval` apart by sleeping on the host, and the
+# MCP server answers nothing else while it sleeps — a caller passing 600 takes
+# the server down for ten minutes. Ten seconds is ten times the default and
+# still well inside the bridge client's own 30 s timeout (client.py), so a
+# clamped call still returns rather than failing somewhere else. Chosen from
+# those two numbers, not measured.
+_MAX_INTERVAL = 10.0
+
 # Operators whose entire job is to reach the outside world. If one of these is
 # switched off, the composition is silently doing nothing.
 _OUTPUT_TYPES = {
@@ -196,7 +204,13 @@ def check(
     interval: float = 1.0,
     publish: bool = True,
 ) -> Health:
-    """Sample a subtree twice and report what is quietly broken."""
+    """Sample a subtree twice and report what is quietly broken.
+
+    `interval` is clamped: it is a sleep on the host, and this process answers
+    nothing else during it. A negative one would raise from `time.sleep`.
+    """
+    asked = interval
+    interval = max(0.0, min(float(interval), _MAX_INTERVAL))
     first = client.call("health_sample", path=path)
     time.sleep(interval)
     second = client.call("health_sample", path=path)
@@ -213,6 +227,32 @@ def check(
     before = {n["path"]: n for n in first["nodes"]}
     live = second["nodes"]
     health.nodes = len(live)
+
+    if asked != interval:
+        health.findings.append(
+            Finding(
+                "note", "interval-clamped",
+                f"the {asked}s gap asked for between the two samples was "
+                f"changed to {interval}s — the host sleeps through it and "
+                f"serves nothing else meanwhile",
+            )
+        )
+
+    # Reported, not swallowed: the bridge could not read one of the surfaces
+    # this report exists to check, and a verdict that leaves that out says
+    # "clean" about something it never looked at.
+    unread = second.get("scriptErrorsUnread") or []
+    if unread:
+        count = second.get("scriptErrorsUnreadCount", len(unread))
+        health.findings.append(
+            Finding(
+                "warning", "script-errors-unread",
+                f"script and callback tracebacks could not be read on "
+                f"{count} operator(s); whether any raised is unknown, not "
+                f"clean",
+                list(unread),
+            )
+        )
 
     # The bridge stops walking at its own cap. Said out loud, because every
     # count below — and "Nothing wrong found" above all — describes the part
