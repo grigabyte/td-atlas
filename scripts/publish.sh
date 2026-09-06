@@ -23,6 +23,13 @@
 # Clients verify that hash before installing, so the asset uploaded in step 1
 # must be that exact file — rebuild and re-run this script together, never one
 # without the other.
+#
+# Everything before the first outward step is a gate, cheapest first, because
+# a release cannot be taken back: a published tag and a registry entry are
+# permanent, and the one release this repository nearly made would have
+# shipped a bundle built five commits back, speaking bridge protocol 3 against
+# sources on 5. The gates are what makes "rebuild and re-run together" a rule
+# rather than a hope.
 
 set -euo pipefail
 
@@ -31,14 +38,47 @@ cd "$(dirname "$0")/.."
 VERSION="$(.venv/bin/python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
 BUNDLE="dist/td-atlas-${VERSION}.mcpb"
 SUBMISSION="dist/server.json"
+RECORD="dist/build.json"
 TAG="v${VERSION}"
 
-for required in "$BUNDLE" "$SUBMISSION"; do
+# 1. A clean working tree. Untracked files count as dirt on purpose: the
+#    bundle is packed by `git archive HEAD`, so a file that exists only in
+#    the working tree is absent from it, and that is exactly the shape of a
+#    forgotten `git add`.
+DIRT="$(git status --porcelain)"
+[ -z "$DIRT" ] || {
+  echo "the working tree is not clean; the bundle is packed from HEAD, so" >&2
+  echo "anything below is absent from it:" >&2
+  echo "$DIRT" >&2
+  echo "commit or stash, rebuild, then publish" >&2
+  exit 1
+}
+
+for required in "$BUNDLE" "$SUBMISSION" "$RECORD"; do
   [ -f "$required" ] || {
     echo "missing $required — run: .venv/bin/python scripts/build_mcpb.py" >&2
     exit 1
   }
 done
+
+# 2. The bundle was packed from the commit that is checked out now. The tree
+#    being clean says nothing about *when* the bundle was built; build_mcpb.py
+#    records the HEAD it archived beside the bundle for this comparison.
+BUILT_FROM="$(.venv/bin/python -c 'import json;print(json.load(open("dist/build.json"))["commit"])')"
+HEAD_NOW="$(git rev-parse HEAD)"
+[ "$BUILT_FROM" = "$HEAD_NOW" ] || {
+  echo "$BUNDLE was built from $BUILT_FROM but HEAD is $HEAD_NOW" >&2
+  echo "rebuild: .venv/bin/python scripts/build_mcpb.py" >&2
+  exit 1
+}
+
+# 3. The tag is free. `gh release create` on an existing tag fails halfway
+#    through, after the prompt has already been answered.
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+  echo "$TAG already exists — bump the version in pyproject.toml, or delete" >&2
+  echo "the tag if this release was never published" >&2
+  exit 1
+fi
 
 # The hash in the submission has to match the file about to be uploaded, or
 # every client that checks it refuses the install.
@@ -47,6 +87,14 @@ ACTUAL="$(shasum -a 256 "$BUNDLE" | cut -d' ' -f1)"
 [ "$DECLARED" = "$ACTUAL" ] || {
   echo "dist/server.json declares $DECLARED but $BUNDLE hashes to $ACTUAL" >&2
   echo "rebuild both together: .venv/bin/python scripts/build_mcpb.py" >&2
+  exit 1
+}
+
+# 4. The tests pass. Last of the four because it is the slowest, and the three
+#    above can rule the release out in under a second.
+echo "running the tests before anything goes out..." >&2
+.venv/bin/python -m pytest -q || {
+  echo "tests are not green; nothing published" >&2
   exit 1
 }
 

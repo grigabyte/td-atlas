@@ -106,8 +106,12 @@ td_atlas.cli mcp`; only the interpreter differs, because a bundle has no
 `sys.executable` of the user's to point at.
 
 `scripts/publish.sh` is the only thing here that sends anything outward, and
-nothing calls it. It needs a built bundle whose SHA-256 matches
-`dist/server.json`, since clients verify that hash before installing.
+nothing calls it. Before the first `gh` it gates on four things, cheapest
+first: a clean working tree (untracked files included — `git archive HEAD`
+packs neither), a bundle whose `dist/build.json` names the current HEAD, a
+`v<version>` tag that does not exist yet, and a green `pytest`. The SHA-256
+in `dist/server.json` must match the bundle too, since clients verify that
+hash before installing.
 
 ## Code that runs inside TouchDesigner
 

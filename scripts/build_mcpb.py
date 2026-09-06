@@ -10,6 +10,8 @@ What it produces, all under `dist/`:
   td-atlas-<version>.mcpb   the bundle a user opens to install the server
   server.json               the official-registry submission, carrying the
                             SHA-256 of the bundle built alongside it
+  build.json                which commit the bundle was packed from, so
+                            `publish.sh` can refuse a stale one
   mcpb-stage/               the exact tree that was packed, kept for inspection
 
 Nothing here publishes. `scripts/publish.sh` is the owner's separate step.
@@ -298,6 +300,14 @@ def build_server_json(version: str, description: str, repo_url: str,
 
 # -- staging and packing ----------------------------------------------------
 
+def _head_commit() -> str:
+    out = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    return out.stdout.strip()
+
+
 def _commit_timestamp() -> int:
     out = subprocess.run(
         ["git", "log", "-1", "--format=%ct", "HEAD"],
@@ -456,12 +466,26 @@ def main() -> int:
         json.dumps(submission, indent=2, ensure_ascii=False) + "\n"
     )
 
+    # Which commit this bundle came out of. `_warn_if_head_is_not_what_you_edited`
+    # only prints; a warning printed here is invisible by the time the owner
+    # runs `publish.sh` days later, and that script would then upload a bundle
+    # nobody can map back to a commit. Written last, so a build that died
+    # part-way leaves no record claiming success.
+    (DIST / "build.json").write_text(
+        json.dumps(
+            {"commit": _head_commit(), "bundle": bundle.name, "version": version},
+            indent=2,
+        )
+        + "\n"
+    )
+
     _say("")
     _say(f"bundle     {bundle}")
     _say(f"           {len(names)} files, {bundle.stat().st_size:,} bytes")
     _say(f"sha256     {digest}")
     _say(f"manifest   {MANIFEST.relative_to(ROOT)} (regenerated)")
     _say(f"submission {(DIST / 'server.json').relative_to(ROOT)}")
+    _say(f"record     {(DIST / 'build.json').relative_to(ROOT)}")
     _say("")
     _say("Nothing was published. To release, see scripts/publish.sh.")
     return 0
