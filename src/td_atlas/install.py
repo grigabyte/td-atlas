@@ -15,7 +15,6 @@ from pathlib import Path
 
 # Relative to the platform-specific "tfs" resource root.
 _PARAM_HELP = "Config/TDParameterHelp.json"
-_PARAM_HELP_EXPERIMENTAL = "Config/TDParameterHelpExperimental.json"
 _OFFLINE_HELP = "Samples/Learn/OfflineHelp"
 _SNIPPETS = "Samples/Learn/OPSnippets/Snippets"
 _PALETTE = "Samples/Palette"
@@ -46,10 +45,6 @@ class TDInstall:
     @property
     def param_help(self) -> Path:
         return self.tfs / _PARAM_HELP
-
-    @property
-    def param_help_experimental(self) -> Path:
-        return self.tfs / _PARAM_HELP_EXPERIMENTAL
 
     @property
     def offline_help(self) -> Path:

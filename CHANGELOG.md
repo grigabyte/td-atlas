@@ -50,10 +50,31 @@ release rather than a change from a previous one.
   Every request runs on TouchDesigner's main thread, so an unbounded walk is a
   freeze of the application.
 
+- Three bridge methods no longer exist: `perf`, `par_get` and `save`. Nothing
+  on the host called any of them and no test covered them, and `save` called
+  `project.save()` — a Save As that moves the artist's working file. Anything
+  reaching the bridge directly (this package is not the only thing that can)
+  loses them; `health_sample` and `op_info` carry what the first two returned.
+  `PROTOCOL_VERSION` is unchanged at 5, because the protocol as exercised
+  between this package's own two halves did not move.
+- The CLI and the MCP surface no longer disagree about how many results a
+  search or a project-wide grep returns by default: `td-atlas search --limit`
+  and `td-atlas project grep --limit` now match `td_search_operators` and
+  `td_project_grep`. `td-atlas search` gained `--family`, `td-atlas op` gained
+  `--include-hidden` and `td-atlas project grep` gained `--limit`, none of
+  which the terminal had. Every remaining difference between the two surfaces
+  is written down in `AGENTS.md` and held there by a test.
+
 ### Fixed
 
 - `.mcp.json` is no longer tracked: it carried an absolute path to one
   machine's virtual environment.
+- `td_log` and `td-atlas log` no longer report "No calls recorded yet" when
+  the journal is failing to be written; the reason is printed under the
+  report. A write error used to be swallowed whole.
+- The bridge token is scrubbed from journal lines using the *current* token.
+  The cache holding it never expired, so a token rotated by `td-atlas install`
+  went into the log in clear while the previous one was removed.
 
 ### Added
 

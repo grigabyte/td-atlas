@@ -340,13 +340,6 @@ class BridgeClient:
             raise BridgeError(payload.get("error") or {}, method)
         return payload.get("result")
 
-    def available(self) -> bool:
-        try:
-            self.call("ping", timeout=3.0)
-            return True
-        except (BridgeUnavailable, BridgeError):
-            return False
-
     # -- convenience -------------------------------------------------------
 
     def ping(self) -> dict:

@@ -51,10 +51,6 @@ def instances_dir() -> Path:
     return home() / "instances"
 
 
-def instance_path(port: int) -> Path:
-    return instances_dir() / f"{int(port)}.json"
-
-
 def bootstrap_path() -> Path:
     return home() / "bootstrap.py"
 

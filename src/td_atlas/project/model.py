@@ -99,9 +99,6 @@ class Project:
     def find(self, path: str) -> Node | None:
         return self.nodes().get(path.rstrip("/") or "/")
 
-    def of_type(self, op_type: str) -> list[Node]:
-        return [n for n in self.walk() if n.op_type == op_type]
-
     def scripts(self) -> list[Node]:
         """Every node carrying text — Python, GLSL, notes."""
         return [n for n in self.walk() if n.text]
@@ -151,10 +148,6 @@ class TypeResolver:
 
     def resolve(self, op_type: str) -> str:
         return self.aliases.get(op_type, op_type)
-
-    @property
-    def size(self) -> int:
-        return len(self.aliases)
 
 
 def load(expansion: Expansion, resolver: TypeResolver | None = None) -> Project:

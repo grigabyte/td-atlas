@@ -2525,16 +2525,6 @@ def m_par_set(params):
     return {"path": target.path, "applied": _apply_pars(target, params["pars"])}
 
 
-def m_par_get(params):
-    target = _resolve(params.get("path"))
-    names = params.get("names")
-    pars = target.pars(*names) if names else target.pars()
-    return {
-        "path": target.path,
-        "pars": {p.name: _par_info(p) for p in pars},
-    }
-
-
 def m_render(params):
     """Return a TOP's image so the agent can see what it built."""
     target = _resolve(params.get("path"))
@@ -2856,15 +2846,6 @@ def m_redo(_params):
     ui.undo.redo()
     return {"redoStack": list(ui.undo.redoStack)}
 
-
-def m_save(params):
-    """Save the session. project.save() returns only a bool, so the path the
-    caller asked for is echoed back to save them guessing."""
-    path = params.get("path")
-    saved = project.save(path) if path else project.save()
-    return {"saved": bool(saved), "path": path, "name": project.name}
-
-
 def m_op_types(params):
     """Resolve operator paths to their types in a single round trip."""
     out = {}
@@ -3132,16 +3113,6 @@ def m_health_sample(params):
         sample["scriptErrorsUnread"] = script_errors_unread[:5]
         sample["scriptErrorsUnreadCount"] = len(script_errors_unread)
     return sample
-
-
-def m_perf(_params):
-    return {
-        "fps": me.time.rate,
-        "frame": absTime.frame,
-        "cookTime": root.cookTime,
-        "childrenCookTime": root.childrenCookTime,
-        "cookRate": me.time.rate,
-    }
 
 
 def _extension_targets(params):
@@ -4016,6 +3987,14 @@ def m_flags_set(params):
     }
 
 
+# Three methods were removed on 2026-09-06 rather than kept for symmetry:
+# `perf` (every field of it is in `health_sample`, which the host does call),
+# `par_get` (`op_info` returns the same parameter values in the same shape),
+# and `save`, which called `project.save()` — a Save As that moves the artist's
+# working file. Nothing on the host had ever called any of the three and no
+# test covered them, so a method that could rewrite someone's project sat in
+# the table reachable by anything that could reach the bridge. `save_tox`
+# stays: it writes a component to a path the caller names, not the session.
 METHODS = {
     "ping": m_ping,
     "exec": m_exec,
@@ -4025,7 +4004,6 @@ METHODS = {
     "op_delete": m_op_delete,
     "op_connect": m_op_connect,
     "op_disconnect": m_op_disconnect,
-    "par_get": m_par_get,
     "par_set": m_par_set,
     "render": m_render,
     "errors": m_errors,
@@ -4034,11 +4012,9 @@ METHODS = {
     "batch": m_batch,
     "undo": m_undo,
     "redo": m_redo,
-    "save": m_save,
     "save_tox": m_save_tox,
     "palette_load": m_palette_load,
     "op_types": m_op_types,
-    "perf": m_perf,
     "health_sample": m_health_sample,
     "extension_add": m_extension_add,
     "annotate": m_annotate,
