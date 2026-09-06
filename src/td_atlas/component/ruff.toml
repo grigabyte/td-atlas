@@ -1,0 +1,16 @@
+# TouchDesigner injects its own globals into the modules it executes, so every
+# use of one reads as an undefined name to a linter that only sees the file.
+# Declaring them here rather than ignoring F821 for the directory keeps the
+# check alive: a misspelt `optype` is still an error, and only the names on
+# this list are exempt. Add a name when the code starts using it.
+#
+# This file sits beside the two modules it describes because ruff resolves
+# configuration per directory; `extend` inherits the rule selection from the
+# package so there is still one place that says which rules are on.
+extend = "../../../pyproject.toml"
+builtins = [
+    # The session and the application.
+    "op", "ui", "me", "app", "project", "root", "absTime", "licenses",
+    # Operator types, which are names in the same namespace.
+    "baseCOMP", "executeDAT", "tableDAT", "textDAT", "textTOP", "webserverDAT",
+]

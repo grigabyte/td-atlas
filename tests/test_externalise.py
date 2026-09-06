@@ -147,7 +147,7 @@ def test_our_own_text_is_recognised():
 def test_a_text_written_by_the_host_command_is_recognised():
     # `td-atlas project text` writes the same format; a file it produced is
     # ours to replace.
-    from td_atlas.project.model import Node, Project
+    from td_atlas.project.model import Project
     from pathlib import Path
 
     project = Project(source=Path("scene.toe"), build={"build": "x"})

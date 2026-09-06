@@ -289,7 +289,7 @@ def patch_parm_file(text: str, parms: dict[str, ParmValue]) -> str:
         lines = [
             raw
             for index, raw in enumerate(lines)
-            if not (index in {last[name] for name in removed})
+            if index not in {last[name] for name in removed}
         ]
 
     added = [name for name in parms if name not in seen]

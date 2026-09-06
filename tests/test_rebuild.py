@@ -552,8 +552,6 @@ def test_the_cli_writes_the_file_and_reports_a_gap_in_its_exit_code(tmp_path, ca
     text said, and a script has to be able to tell those two apart without
     reading prose.
     """
-    import sys
-
     from td_atlas.cli import main
     from td_atlas.project.model import load_file
     from td_atlas.project.serialize import dumps, to_text

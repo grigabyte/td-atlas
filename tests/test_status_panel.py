@@ -266,7 +266,7 @@ def test_nothing_is_cut_while_it_still_fits():
 
 
 def test_the_first_line_is_not_trusted_to_be_short_either():
-    lines = _fits({"port": "9" * 300})
+    _fits({"port": "9" * 300})
 
 
 def test_an_empty_panel_fits_too():

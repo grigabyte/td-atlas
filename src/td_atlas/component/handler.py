@@ -2621,8 +2621,7 @@ def m_contact_sheet(params):
     # and avoids pulling in a resampler.
     tiles = []
     for frame in frames:
-        h, w = frame.shape[0], frame.shape[1]
-        step = max(1, w // width)
+        step = max(1, frame.shape[1] // width)
         tiles.append(frame[::step, ::step, :3])
     th = min(t.shape[0] for t in tiles)
     tw = min(t.shape[1] for t in tiles)

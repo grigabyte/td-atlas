@@ -69,3 +69,34 @@ markers = [
     "live: needs a running TouchDesigner with the td-atlas bridge (pytest -m live)",
 ]
 testpaths = ["tests"]
+
+[tool.ruff]
+# `target-version` is inferred from `requires-python`, so the syntax floor the
+# package claims is the syntax floor ruff enforces — one number, not two. That
+# survives the `extend` in src/td_atlas/component/ruff.toml: `ruff check
+# --show-settings` on handler.py reports target version 3.11 there too, which
+# is what the code inside TouchDesigner actually runs on.
+line-length = 88
+
+[tool.ruff.lint]
+# Measured 2026-09-06 with ruff 0.16.6, on the tree as it stood before these
+# fixes — 69 Python files walked, 67 of them tracked. What ruff was run with,
+# and what it found:
+#
+#   --select ALL (every rule)       7612
+#   ruff's own default (E4,E7,E9,F)  433
+#   E,F,W                            151
+#   E4,E7,E9,F,W (this set)           88 -> 0
+#
+# The 88 were 80 undefined names (TouchDesigner's injected globals, declared
+# in src/td_atlas/component/ruff.toml) and 8 real ones, all fixed here.
+#
+# The rules left out were left out deliberately, not because the count was
+# large. E501 (63 hits) would reflow comments that are wrapped to say what
+# they mean; UP031 (168) would rewrite `%`-formatting that handler.py uses on
+# purpose, since a literal `%` in a probe template is `%%` and f-strings there
+# would be a silent trap; BLE001 (73) and S110 (14) fire on the broad excepts
+# the bridge is built out of — a handler that lets an exception escape freezes
+# TouchDesigner, so those are the design and not a lapse. Re-selecting any of
+# them means changing the code, which is a piece of work, not a config line.
+select = ["E4", "E7", "E9", "F", "W"]

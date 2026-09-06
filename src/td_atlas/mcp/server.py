@@ -1592,9 +1592,9 @@ def td_extension_add(
         return _warn(client) + "\n".join(lines)
 
     lines.append(
-        f"  NOT INITIALISED — the parameters are set but the extension is "
-        f"None. TouchDesigner reported this nowhere; the message below comes "
-        f"from re-evaluating the expression:"
+        "  NOT INITIALISED — the parameters are set but the extension is "
+        "None. TouchDesigner reported this nowhere; the message below comes "
+        "from re-evaluating the expression:"
     )
     lines.append(f"  {result['error']}")
     lines.append(
