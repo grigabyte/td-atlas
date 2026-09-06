@@ -102,20 +102,38 @@ def journal_path() -> Path:
 
 # -- redaction --------------------------------------------------------------
 
-# Cached per config file, because `home()` moves under tests and a cache keyed
-# on nothing would hand one test's token to another. The value is only ever
-# used to *remove* text, so a stale miss would leak and a stale hit is
-# harmless — which is why the key is the path the token was read from.
-_secret_cache: tuple[Path, str] | None = None
+# Cached per config file *and* its modification time. The path alone was the
+# key until 2026-09-06, which is a cache that never expires for the one thing
+# that changes: `td-atlas install` rewrites `config.json` in place with a new
+# token, and a long-lived MCP server went on scrubbing the old one — the value
+# is only ever used to *remove* text, so a stale hit means the live token is
+# written into the log in clear. Adding the mtime costs one `stat` per record;
+# a token rotated twice inside one filesystem timestamp tick is the residual
+# gap, and it is not one this cache can close.
+_secret_cache: tuple[Path, float, str] | None = None
+
+
+def _config_mtime(path: Path) -> float:
+    """The config file's mtime, or 0.0 when it is absent or unreadable.
+
+    Absent is a real state — the bridge writes the token on first registration
+    — and it must not raise: every caller of this is inside `record`, which
+    promises never to turn a working call into a failed one.
+    """
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _config_token() -> str:
     global _secret_cache
     path = home() / "config.json"
-    if _secret_cache is not None and _secret_cache[0] == path:
-        return _secret_cache[1]
+    stamp = _config_mtime(path)
+    if _secret_cache is not None and _secret_cache[:2] == (path, stamp):
+        return _secret_cache[2]
     token = str(load_config().get("token") or "")
-    _secret_cache = (path, token)
+    _secret_cache = (path, stamp, token)
     return token
 
 
@@ -201,10 +219,18 @@ def record(
             entry["reason"] = str(error_reason)
         if error_message:
             entry["message"] = _clip(error_message, MAX_ERROR_CHARS)
+    global _write_failure
     try:
         _append(_scrub(json.dumps(entry, ensure_ascii=False), token))
-    except Exception:
+    except Exception as exc:
+        # Kept rather than swallowed. The failure is invisible from the outside
+        # — no caller checks this return value, and they should not: a journal
+        # that turns a working call into a failed one is worse than no journal
+        # — so the only place it can surface is the reader, which is where
+        # someone is already asking what happened. See `not_being_kept`.
+        _write_failure = "%s: %s" % (type(exc).__name__, exc)
         return None
+    _write_failure = ""
     return entry
 
 
@@ -212,9 +238,14 @@ def _append(line: str) -> None:
     path = journal_path()
     ensure_home()
     data = (line + "\n").encode("utf-8")
-    # O_APPEND, one write() call: concurrent MCP servers and CLI invocations
-    # share this file, and a single append under the pipe buffer is atomic on
-    # POSIX, so two processes interleave whole lines rather than halves.
+    # O_APPEND, one write() call. The guarantee this actually rests on is the
+    # one POSIX gives for O_APPEND on a regular file: the seek to the end and
+    # the write are one operation, so two processes never write over each
+    # other's bytes and the file only grows. (An earlier comment here cited
+    # PIPE_BUF, which is the pipe rule and says nothing about a file.) What is
+    # *not* guaranteed is that one write() lands as one contiguous piece, so a
+    # torn line remains possible in principle; `read` skips a line that will
+    # not parse, which is the same handling a line from a killed process gets.
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
         os.write(fd, data)
@@ -229,11 +260,19 @@ def _trim(path: Path) -> None:
     """Drop the oldest lines until the file is under `TRIM_TO_BYTES`.
 
     Written to a sibling and renamed, because `os.rename` is atomic on POSIX:
-    a reader never sees a half-written journal. Known race, accepted rather
-    than locked away: an append that lands between the read and the rename is
-    lost. It costs one line out of thousands, only at the moment the file
-    overflows, and a lock file would be a second piece of state to leave
-    behind when a process dies.
+    a reader never sees a half-written journal. Known race, named here rather
+    than fixed, and larger than this comment used to claim: what is lost is
+    not one line but every line appended between `read_bytes` and `os.replace`
+    — those go to the old inode and disappear with it. The rewrite was
+    measured at 1.6 ms for a full file (see MAX_BYTES), so that is the width
+    of the window. Two writers crossing the cap together lose more: both trim,
+    and the second `replace` discards the first's result as well.
+
+    Not fixed because both repairs cost more than the loss. `fcntl.flock` does
+    not exist on Windows, which this project's CI now runs; a lock file is a
+    second piece of state to leave behind when a process dies. The loss is
+    bounded to the moment the file overflows — about one append in 1,300 —
+    and what is lost is journal lines, not the calls themselves.
     """
     try:
         raw = path.read_bytes()
@@ -258,6 +297,45 @@ def _trim(path: Path) -> None:
             temp.unlink()
         except OSError:
             pass
+
+
+# -- what is wrong with the journal itself ----------------------------------
+
+# Why the last append failed, or "" when it worked. Process-local by
+# construction: the MCP server that failed to write is not the process running
+# `td-atlas log`. That is why `not_being_kept` also looks at the directory —
+# an unwritable home is the one cause a second process can see for itself.
+_write_failure = ""
+
+# Set when the file is there and cannot be read. Distinct from absent, which
+# is the ordinary state before the first bridge call.
+_read_failure = ""
+
+
+def not_being_kept() -> str:
+    """One line saying the journal is not a record of what happened, or "".
+
+    Exists because "No calls recorded yet" and "nothing is being written" read
+    identically, and the first is reassuring. A reader who has just been told
+    the trail is empty needs to know whether to believe it.
+    """
+    if _write_failure:
+        return "the journal is not being written: " + _write_failure
+    if _read_failure:
+        return "the journal cannot be read: " + _read_failure
+    path = journal_path()
+    if not path.exists() and not os.access(path.parent, os.W_OK):
+        return (
+            "the journal is not being written: %s is not writable"
+            % path.parent
+        )
+    return ""
+
+
+def _note(text: str) -> str:
+    """Append the "not being kept" line to a rendered report, when there is one."""
+    warning = not_being_kept()
+    return f"{text}\n\n({warning})" if warning else text
 
 
 # -- reading ----------------------------------------------------------------
@@ -316,11 +394,19 @@ def read(limit: int | None = None, failures_only: bool = False,
     """The journal, oldest first, filtered. A corrupt line is skipped, not
     fatal — a half-written line from a killed process must not hide the rest.
     """
+    global _read_failure
     path = journal_path()
     try:
         raw = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    except FileNotFoundError:
+        _read_failure = ""
         return []
+    except OSError as exc:
+        # Present and unreadable is not the same as absent, and returning an
+        # empty list for both is what made "No calls recorded yet" a lie.
+        _read_failure = "%s: %s" % (type(exc).__name__, exc)
+        return []
+    _read_failure = ""
     calls: list[Call] = []
     for line in raw.splitlines():
         line = line.strip()
@@ -404,7 +490,9 @@ def summarise(calls: list[Call]) -> Summary:
 def format_calls(calls: list[Call], width: int = 100) -> str:
     """One line per call, newest last, so a terminal's tail is the present."""
     if not calls:
-        return "No calls recorded yet. The journal fills as the bridge is used."
+        return _note(
+            "No calls recorded yet. The journal fills as the bridge is used."
+        )
     lines = []
     for call in calls:
         mark = "ok  " if call.ok else "FAIL"
@@ -422,14 +510,16 @@ def format_calls(calls: list[Call], width: int = 100) -> str:
                 lines.append("        " + piece)
         elif not call.ok:
             lines.append("        (no message recorded)")
-    return "\n".join(lines)
+    return _note("\n".join(lines))
 
 
 def format_summary(summary: Summary) -> str:
     """Five seconds of reading, in the order the question is actually asked:
     how much, how much of it broke, what broke, and what was slow."""
     if not summary.total:
-        return "No calls recorded yet. The journal fills as the bridge is used."
+        return _note(
+            "No calls recorded yet. The journal fills as the bridge is used."
+        )
     first = time.strftime("%m-%d %H:%M", time.localtime(summary.span[0]))
     last = time.strftime("%m-%d %H:%M", time.localtime(summary.span[1]))
     lines = [
@@ -457,4 +547,4 @@ def format_summary(summary: Summary) -> str:
         lines.append(
             "  %-18s %8.1f ms   %s" % (call.method, call.ms, call.when)
         )
-    return "\n".join(lines)
+    return _note("\n".join(lines))

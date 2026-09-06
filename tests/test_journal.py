@@ -8,6 +8,7 @@ makes "the token never lands in the log" a claim a test can settle.
 from __future__ import annotations
 
 import json
+import os
 import time
 
 import pytest
@@ -438,3 +439,96 @@ def test_noting_a_request_carries_the_failure_count_into_the_table(monkeypatch):
 def test_a_clean_session_shows_no_counter():
     text = handler.render_panel({"port": "9977", "protocol": "4", "fails": "0"})
     assert "failed" not in text.split("\n")[0]
+
+
+# -- when the journal itself is broken --------------------------------------
+#
+# The audit's finding, in one sentence: `record` swallowed every write error,
+# no caller checked its return value, and `td_log` then printed "No calls
+# recorded yet" — the same words it prints when the session really did nothing.
+# The reader was told the reassuring half of an ambiguity.
+
+@pytest.fixture(autouse=True)
+def _forget_write_failure():
+    journal._write_failure = ""
+    journal._read_failure = ""
+    yield
+    journal._write_failure = ""
+    journal._read_failure = ""
+
+
+def test_a_failed_write_is_named_in_the_report_not_swallowed(monkeypatch):
+    def explode(_line):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(journal, "_append", explode)
+    assert journal.record("op_create", ok=True, seconds=0.01) is None
+
+    text = journal.format_calls(journal.read())
+    assert "not being written" in text
+    assert "No space left on device" in text
+
+
+def test_the_summary_says_it_too(monkeypatch):
+    monkeypatch.setattr(journal, "_append", lambda _l: (_ for _ in ()).throw(
+        PermissionError("read-only file system")
+    ))
+    journal.record("op_create", ok=True, seconds=0.01)
+    text = journal.format_summary(journal.summarise(journal.read()))
+    assert "not being written" in text and "read-only" in text
+
+
+def test_a_write_that_works_again_clears_the_complaint(monkeypatch):
+    monkeypatch.setattr(journal, "_append", lambda _l: (_ for _ in ()).throw(
+        OSError("disk went away")
+    ))
+    journal.record("op_create", ok=True, seconds=0.01)
+    assert journal.not_being_kept()
+
+    monkeypatch.undo()
+    journal.record("op_create", ok=True, seconds=0.01)
+    assert journal.not_being_kept() == ""
+
+
+def test_a_journal_that_cannot_be_read_is_not_an_empty_one(monkeypatch):
+    journal.record("op_create", ok=True, seconds=0.01)
+
+    real = journal.Path.read_text
+
+    def refuse(self, *args, **kwargs):
+        if self.name == "calls.jsonl":
+            raise PermissionError("Operation not permitted")
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(journal.Path, "read_text", refuse)
+    assert journal.read() == []
+    assert "cannot be read" in journal.format_calls(journal.read())
+
+
+def test_an_empty_journal_that_is_simply_empty_says_nothing_extra():
+    assert journal.not_being_kept() == ""
+    assert "not being written" not in journal.format_calls(journal.read())
+
+
+# -- the token cache ---------------------------------------------------------
+
+def test_a_rotated_token_is_scrubbed_not_the_old_one():
+    """`td-atlas install` rewrites config.json in place. The cache was keyed on
+    the path alone, so a long-lived MCP server went on removing the *previous*
+    token and wrote the live one into the log in clear."""
+    _write_config("old-token-aaaaaaaaaaaaaaaa")
+    journal.record("op_create", ok=True, seconds=0.01,
+                   params={"owner": "old-token-aaaaaaaaaaaaaaaa"})
+
+    new = "new-token-bbbbbbbbbbbbbbbb"
+    _write_config(new)
+    # A rotation inside one timestamp tick is the residual gap the cache
+    # cannot close, so the test moves the mtime the way a real second would.
+    stamp = cfg.config_path().stat().st_mtime + 2
+    os.utime(cfg.config_path(), (stamp, stamp))
+
+    journal.record("op_create", ok=True, seconds=0.01, params={"owner": new})
+
+    written = journal.journal_path().read_text()
+    assert new not in written
+    assert written.count("<token redacted>") == 2
