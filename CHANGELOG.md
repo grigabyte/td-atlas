@@ -19,6 +19,16 @@ either from the code they are running:
 Nothing has been released yet, so everything below is the state of the first
 release rather than a change from a previous one.
 
+### Added
+
+- `scripts/publish.sh` gates a release on a clean working tree, a bundle built
+  from the current `HEAD`, a free version tag, and a green test run — before
+  anything goes outward.
+- `README.md` covers installation from a clone, troubleshooting, and what the
+  connector may and may not change in a project.
+- A `live` pytest marker. `pytest` runs the suite that needs no TouchDesigner;
+  `pytest -m live` runs the tests that drive a running instance.
+
 ### Changed
 
 - **The bridge speaks protocol 5, and protocol 5 is now also the minimum the
@@ -49,6 +59,15 @@ release rather than a change from a previous one.
 - Network walks and the frame capture buffer are bounded (5000 nodes, 512 MiB).
   Every request runs on TouchDesigner's main thread, so an unbounded walk is a
   freeze of the application.
+- The CLI and the MCP surface no longer disagree about how many results a
+  search or a project-wide grep returns by default: `td-atlas search --limit`
+  and `td-atlas project grep --limit` now match `td_search_operators` and
+  `td_project_grep`. `td-atlas search` gained `--family`, `td-atlas op` gained
+  `--include-hidden` and `td-atlas project grep` gained `--limit`, none of
+  which the terminal had. Every remaining difference between the two surfaces
+  is written down in `AGENTS.md` and held there by a test.
+
+### Removed
 
 - Three bridge methods no longer exist: `perf`, `par_get` and `save`. Nothing
   on the host called any of them and no test covered them, and `save` called
@@ -57,13 +76,6 @@ release rather than a change from a previous one.
   loses them; `health_sample` and `op_info` carry what the first two returned.
   `PROTOCOL_VERSION` is unchanged at 5, because the protocol as exercised
   between this package's own two halves did not move.
-- The CLI and the MCP surface no longer disagree about how many results a
-  search or a project-wide grep returns by default: `td-atlas search --limit`
-  and `td-atlas project grep --limit` now match `td_search_operators` and
-  `td_project_grep`. `td-atlas search` gained `--family`, `td-atlas op` gained
-  `--include-hidden` and `td-atlas project grep` gained `--limit`, none of
-  which the terminal had. Every remaining difference between the two surfaces
-  is written down in `AGENTS.md` and held there by a test.
 
 ### Fixed
 
@@ -75,13 +87,3 @@ release rather than a change from a previous one.
 - The bridge token is scrubbed from journal lines using the *current* token.
   The cache holding it never expired, so a token rotated by `td-atlas install`
   went into the log in clear while the previous one was removed.
-
-### Added
-
-- `scripts/publish.sh` gates a release on a clean working tree, a bundle built
-  from the current `HEAD`, a free version tag, and a green test run — before
-  anything goes outward.
-- `README.md` covers installation from a clone, troubleshooting, and what the
-  connector may and may not change in a project.
-- A `live` pytest marker. `pytest` runs the suite that needs no TouchDesigner;
-  `pytest -m live` runs the tests that drive a running instance.

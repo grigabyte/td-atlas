@@ -10,11 +10,6 @@
 # AGENTS.md). The tests that shell out to `toeexpand`/`toecollapse` or read a
 # shipped example library skip, because there is no installation to find. A
 # red run is a failure; a skipped one of these is the expected shape.
-#
-# The passed count moves with every test added and is not worth pinning here.
-# The two that do not: 24 deselected and 22 skipped. Measured 2026-09-06 on a
-# clean checkout of this commit, Python 3.11, TD_ATLAS_INSTALL pointed at a
-# path that does not exist — 860 passed, 22 skipped, 24 deselected in 5.6 s.
 name: CI
 
 on:

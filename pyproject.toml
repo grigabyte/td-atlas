@@ -24,8 +24,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
     # Classifiers below list only versions actually run, not requires-python's
     # intent. Add one when it's been run, not because it "should work".
-    # 3.11: the whole suite run on it 2026-09-06 (882 passed) on this machine,
-    # and every push runs it in CI.
+    # 3.11: the whole suite was run on it on this machine 2026-09-06, and every
+    # push runs it in CI. Counts belong to a run, not to a classifier.
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.14",
     "Topic :: Multimedia :: Graphics",
