@@ -53,7 +53,16 @@ _MAX_EVICTIONS_PER_CALL = 25
 
 
 def _tool(install: TDInstall, name: str) -> Path:
-    """Locate toeexpand/toecollapse inside an installation."""
+    """Locate toeexpand/toecollapse inside an installation.
+
+    The macOS branch is measured: both binaries sit in `Contents/MacOS` beside
+    the application, and every test in this repository that expands a file has
+    run through it. UNVERIFIED on a live Windows machine: the four locations
+    the else-branch tries are read off Derivative's published install tree, not
+    observed. Which of them is right — and whether the extensionless names are
+    ever present there at all — is a question only a Windows run can settle,
+    which is why all four are tried rather than one asserted.
+    """
     candidates = (
         [install.root / "Contents" / "MacOS" / name]
         if platform.system() == "Darwin"

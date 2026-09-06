@@ -110,6 +110,17 @@ def _candidates_macos() -> list[Path]:
 
 
 def _candidates_windows() -> list[Path]:
+    """Where a Windows install might be.
+
+    UNVERIFIED on a live Windows machine. The installer's default target is
+    `%ProgramFiles%\\Derivative\\TouchDesigner<build>`, per Derivative's own
+    published instructions; `ProgramW6432` and `LOCALAPPDATA` are here because
+    a 32-bit host process sees the first under a different name and a per-user
+    install lands under the third — both read off documentation, neither
+    observed. Nothing downstream trusts this list on its own: `_build` rejects
+    a candidate that holds no `Config/` or `Samples/`, so a wrong guess here
+    surfaces as "no installation found" rather than as a broken one.
+    """
     found: list[Path] = []
     for env in ("ProgramFiles", "ProgramW6432", "LOCALAPPDATA"):
         base = os.environ.get(env)
