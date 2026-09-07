@@ -139,6 +139,27 @@ wrong:
 If a heuristic can be confidently wrong, prefer leaving the answer unresolved,
 or derive the real mapping from TouchDesigner.
 
+## Invariants a change has to keep
+
+Two gates are not obvious from the code that has to satisfy them, and each is
+held by a named test rather than by a reviewer remembering it. They are stated
+here because `project/rebuild.py` and `tests/test_health.py` point at this
+section for the rule they exist to serve.
+
+- **The round trip is empty.** Dump a project to network text, build it back,
+  dump it again — the two texts are identical. That is the gate the rebuild
+  path exists to satisfy, and it is what makes the rebuild a patcher rather
+  than a generator: a text-only build would drop panel layouts and custom
+  parameter definitions and the second dump would show it.
+  `tests/test_rebuild.py::test_the_round_trip_invariant_holds_on_a_shipped_component`
+  runs it on a shipped palette component, and the edited variant beside it
+  keeps an identity copy from passing for free.
+- **Every new `td_health` section states its own cost in a test.** A silent
+  failure detector that itself costs a frame is not an improvement, and the
+  cost of parsing a section is measurable on the host with no TouchDesigner
+  running — so a new section arrives with the measurement rather than with an
+  intention to take one later. `tests/test_health.py` prints the number.
+
 ## Running things
 
 ```bash

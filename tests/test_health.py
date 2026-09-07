@@ -325,8 +325,8 @@ def test_prints_what_each_new_section_costs():
     separate pass costing 0.84–1.90 ms. No network of thousands of nodes was
     available to time, so scaling is not measured either side.
 
-    Printed per `memory-bank/contract.md`: every new td_health section states
-    its own cost in a test.
+    Printed per the invariant in `AGENTS.md` ("Invariants a change has to
+    keep"): every new td_health section states its own cost in a test.
     """
     count = 2000
     plain = [node(f"/p/n{i}", 100 + i) for i in range(count)]

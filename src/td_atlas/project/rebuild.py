@@ -1,8 +1,9 @@
 """Writing a network back: JSON text -> the tree `toeexpand` made -> `collapse()`.
 
 `serialize.py` prints a network as text; this is the return leg. The gate it
-exists to satisfy is the round-trip invariant in `memory-bank/contract.md` —
-dump to text, build back, dump again, and the two texts are identical.
+exists to satisfy is the round-trip invariant `AGENTS.md` states under
+"Invariants a change has to keep" — dump to text, build back, dump again, and
+the two texts are identical.
 
 **This is a patcher, not a generator, and that is a measured decision.** A
 `toeexpand` tree holds 40+ kinds of file (measured over the 222 expansions in

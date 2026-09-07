@@ -260,7 +260,7 @@ def test_no_skill_text_recommends_the_textport_shortcut():
     """The keyboard shortcut opens the textport only when TouchDesigner is
     focused and on the current desktop. Otherwise the keys land in the network
     editor and create operators in the artist's project — measured, and the
-    reason `memory-bank/runbook.md` gives the menu path instead."""
+    reason SKILL.md gives the menu path instead."""
     offenders = [
         path.name
         for path in _SKILL_TEXTS

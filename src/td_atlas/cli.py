@@ -253,8 +253,8 @@ def cmd_install(args: argparse.Namespace) -> int:
     print()
     # The menu path, not the shortcut: a blind key combination sent to a
     # window that is not focused lands in the network editor and creates
-    # operators in the artist's project. Measured the hard way; see
-    # memory-bank/runbook.md.
+    # operators in the artist's project. Measured the hard way;
+    # plugin/skills/touchdesigner/SKILL.md tells an agent the same thing.
     print(
         "Paste this into TouchDesigner's textport "
         "(Dialogs \u2192 Textport and DATs), once per project:"

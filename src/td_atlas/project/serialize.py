@@ -4,9 +4,9 @@
 whole network, losslessly, for an agent that has to reason about it — every
 operator's type, position, flags, wiring, parameters and DAT contents.
 
-Two choices here were settled by measurement (the numbers live in
-`memory-bank/research/2026-08-28-формат-сериализации-сети.md`) and are the
-reason this is not a two-line `json.dumps`:
+Two choices here were settled by measurement (the numbers, and what the same
+measurement ruled out, are in docs/formats.md under "The network text, and why
+it is JSON") and are the reason this is not a two-line `json.dumps`:
 
 - **Standard JSON, non-standard printer.** DAT text is emitted as an array of
   lines rather than one string with `\\n` escapes. Editing one line inside a
@@ -15,7 +15,7 @@ reason this is not a two-line `json.dumps`:
   maps and short flat lists stay on one line, which is what keeps a node from
   spreading over thirty. The result is still ordinary JSON: `json.loads` reads
   it with no custom parser, and there is no parser here to drift out of step
-  with the printer. Hand-written line-based and YAML formats were measured 1.5x
+  with the printer. Hand-written line-based and YAML formats were measured
   smaller and rejected for exactly that reason — both of their prototypes lost
   data (Table DAT cells, trailing spaces in parameter values) on real files.
 
