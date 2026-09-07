@@ -67,14 +67,18 @@ one call may do is bounded. When a bound is reached the reply says so instead of
 looking complete — a partial answer read as a whole one is the expensive
 mistake here.
 
-`td_network` marks three separate cuts. `childrenHidden` is printed under the
+`td_network` marks four separate cuts. `childrenHidden` is printed under the
 component whose listing was shortened, and gives the number left out — printed
 even where nothing was listed at all, since the invisible cut is the dangerous
 one. Over the whole reply, `truncated` with `hidden` says how many operators
 were dropped against the overall budget, `limit` and `maxChildren` say which
 two bounds applied, and `depthLimited` carries the depth you asked for when it
-was reduced to the deepest this tool walks. The repair is always the same: ask
-again with a narrower `path`.
+was reduced to the deepest this tool walks. A component sitting at the depth
+you asked for is listed with the number of *direct* children it has that were
+not walked — a leaf and a component holding a thousand operators are otherwise
+the same line. That count is a floor as well: what hangs below those children
+was never looked at. The repair is always the same: ask again with a narrower `path`,
+or a larger `depth`.
 
 `td_errors` and `td_health` bound their walk by node count, and both take the
 subtree to walk as `path`. `scanned` is how many operators were actually looked

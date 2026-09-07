@@ -557,6 +557,24 @@ def td_network(path: str = "/project1", depth: int = 1) -> str:
                     f"{' ' * (indent + 2)}... {node['childrenHidden']} more "
                     f"child(ren) not listed"
                 )
+            elif not node.get("children") and node.get("numChildren"):
+                # The depth the caller asked for is a cut like any other, and
+                # it was the one cut nothing said out loud: the handler does
+                # not recurse past `depth` and sets no marker there, so a leaf
+                # and a component holding thousands of operators arrived as
+                # the same line. `numChildren` has always been in the reply
+                # and was simply never printed — measured 2026-09-07,
+                # `path=/ depth=1` listed /perform (a real leaf) and /ui
+                # (22,635 operators below it) identically. Named as the
+                # caller's own depth rather than counted into `hidden`: that
+                # total is about this tool's node budget, and a depth cut
+                # reported against it would name the wrong bound and the
+                # wrong repair.
+                lines.append(
+                    f"{' ' * (indent + 2)}... {node['numChildren']} direct "
+                    f"child(ren), not walked at depth {result.get('depth')} "
+                    f"— what is under them is not counted"
+                )
 
     walk(result["children"], 2)
     if result.get("childrenHidden"):

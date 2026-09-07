@@ -62,6 +62,11 @@ release rather than a change from a previous one.
   method rather than a new method, so a bridge staged before this change still
   reports protocol 6 and still walks `/`; the host detects that by the absent
   field and says so instead of trusting the answer.
+- `td_network` says how many direct children a component at the edge of the
+  requested depth has. The walk stops there without recursing and without a marker, so a
+  leaf and a component holding thousands of operators came back as the same
+  line — `/perform` and `/ui` on an open session. The count was in the reply
+  all along and only the printing was missing.
 - `td_health` reports its own blind spots: a script-error read that fails is a
   finding in the report, not silence. Its sampling interval is bounded, so a
   large `interval` can no longer block the server process.

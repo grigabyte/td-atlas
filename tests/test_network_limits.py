@@ -193,3 +193,89 @@ def test_an_untruncated_reply_says_nothing_about_limits(monkeypatch):
 
     assert "TRUNCATED" not in text
     assert "not listed" not in text
+
+
+# -- the cut the caller asked for --------------------------------------------
+
+def test_a_component_at_the_depth_limit_is_not_printed_as_a_leaf(monkeypatch):
+    """Depth is a cut too, and it was the one no line named.
+
+    `walk` stops at `depth` without recursing and without setting
+    `childrenHidden`, so the reply carried nothing to tell a leaf from a
+    component with thousands of operators under it. `numChildren` was in the
+    payload all along and simply never printed: measured live 2026-09-07,
+    `path=/ depth=1` listed `/perform` (no children) and `/ui` (22,635
+    operators below it) as the same line.
+    """
+    text = _render(
+        monkeypatch,
+        {
+            "path": "/",
+            "type": "baseCOMP",
+            "depth": 1,
+            "children": [
+                {"path": "/perform", "name": "perform", "type": "windowCOMP",
+                 "inputs": [], "numChildren": 0},
+                {"path": "/ui", "name": "ui", "type": "baseCOMP",
+                 "inputs": [], "numChildren": 8},
+            ],
+        },
+    )
+
+    assert "8 direct child(ren), not walked at depth 1" in text
+    # A direct-child count is not a subtree count, and says so: the same
+    # lower-bound-read-as-a-total that `hidden` was reworded for.
+    assert "what is under them is not counted" in text
+    # The leaf stays a leaf: a marker on everything is a marker on nothing.
+    assert text.count("direct child(ren)") == 1
+    assert "TRUNCATED" not in text
+
+
+def test_a_component_whose_children_were_all_listed_gets_no_depth_line(monkeypatch):
+    text = _render(
+        monkeypatch,
+        {
+            "path": "/project1",
+            "type": "containerCOMP",
+            "depth": 2,
+            "children": [
+                {
+                    "path": "/project1/geo1",
+                    "name": "geo1",
+                    "type": "geometryCOMP",
+                    "inputs": [],
+                    "numChildren": 1,
+                    "children": [
+                        {"path": "/project1/geo1/box1", "name": "box1",
+                         "type": "boxSOP", "inputs": [], "numChildren": 0}
+                    ],
+                }
+            ],
+        },
+    )
+
+    assert "direct child(ren)" not in text
+
+
+def test_a_budget_cut_is_still_reported_as_a_budget_cut(monkeypatch):
+    """Two different cuts, two different repairs — never both on one node."""
+    text = _render(
+        monkeypatch,
+        {
+            "path": "/project1",
+            "type": "containerCOMP",
+            "depth": 3,
+            "children": [
+                {"path": "/project1/a", "name": "a", "type": "containerCOMP",
+                 "inputs": [], "numChildren": 40, "childrenHidden": 40,
+                 "children": []}
+            ],
+            "truncated": True,
+            "hidden": 40,
+            "limit": 5000,
+            "maxChildren": 2000,
+        },
+    )
+
+    assert "40 more child(ren) not listed" in text
+    assert "direct child(ren)" not in text
