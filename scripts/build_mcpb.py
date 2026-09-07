@@ -35,6 +35,14 @@ audio hardware — and the bridge token lives in `~/.td-atlas/config.json` at
 exclusion list would have to name them, and would miss the next such file.
 `_assert_bundle_is_clean` checks the packed listing against an allowlist
 anyway, because a gate that reruns is worth more than an argument.
+
+**Every file written here names its encoding.** `write_text` without one uses
+the locale encoding, which on Windows is cp1252: the em dash in
+`LONG_DESCRIPTION` came back out of `packaging/manifest.json` as three
+characters, and `tests/test_packaging.py` — reading it the same unpinned way —
+reported the committed manifest stale on Windows only (measured in CI, run
+34111353871, 2026-09-07). A manifest built there would have shipped inside the
+bundle in cp1252, which is not a JSON encoding any host is required to read.
 """
 
 from __future__ import annotations
@@ -353,9 +361,10 @@ def stage(manifest: dict) -> None:
     subprocess.run(["tar", "-x", "-C", str(STAGE)], input=archive.stdout, check=True)
 
     (STAGE / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
-    (STAGE / "server.py").write_text(LAUNCHER)
+    (STAGE / "server.py").write_text(LAUNCHER, encoding="utf-8")
     shutil.copyfile(MCPBIGNORE, STAGE / ".mcpbignore")
 
     # Zip entries carry mtimes, so the packed bytes depend on them. git
@@ -445,7 +454,10 @@ def main() -> int:
     version = meta["version"]
 
     manifest = build_manifest()
-    MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    MANIFEST.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
 
     _warn_if_head_is_not_what_you_edited()
     DIST.mkdir(exist_ok=True)
@@ -463,7 +475,8 @@ def main() -> int:
         sha256=digest,
     )
     (DIST / "server.json").write_text(
-        json.dumps(submission, indent=2, ensure_ascii=False) + "\n"
+        json.dumps(submission, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
 
     # Which commit this bundle came out of. `_warn_if_head_is_not_what_you_edited`
@@ -476,7 +489,8 @@ def main() -> int:
             {"commit": _head_commit(), "bundle": bundle.name, "version": version},
             indent=2,
         )
-        + "\n"
+        + "\n",
+        encoding="utf-8",
     )
 
     _say("")
