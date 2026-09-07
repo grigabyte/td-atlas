@@ -341,9 +341,10 @@ interpreter the application ships.
 What is still unverified on Windows, precisely: the install-discovery layout
 follows Derivative's published install tree rather than measurement;
 `toeexpand`'s path separators are inferred from its macOS output; the clipboard
-copy (`clip`) has never been run. And two things are now *known* to be weaker
-there. `~/.td-atlas` and the token file in it are narrowed with `chmod`, which
-on Windows sets only the read-only attribute — measured: the directory reports
+copy (`clip`) has never been run. And three things are now *known* to be
+weaker there; the third is the closed-port probe two paragraphs down.
+`~/.td-atlas` and the token file in it are narrowed with `chmod`, which on
+Windows sets only the read-only attribute — measured: the directory reports
 mode 0o777 where 0o700 was asked for, so other accounts are kept out by
 whatever ACL the user profile already carries and by nothing this project does.
 And the call journal cannot report a home that refuses writes, because
