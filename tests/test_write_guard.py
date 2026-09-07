@@ -1,8 +1,9 @@
 """Neither surface repacks over a file that is already there.
 
 The guard existed only in the MCP tool. `td-atlas project write` went straight
-into `rebuild()`, and `toecollapse` renames whatever sits at its destination to
-`.bkp` — so the CLI could quietly displace a user's file while the MCP tool
+into `rebuild()`, and `toecollapse` moves whatever sits at its destination
+aside to a `.bkp1` name — so the CLI could quietly displace a user's file
+while the MCP tool
 refused the same request. The check now lives in `rebuild()`, which both reach.
 
 Nothing here unpacks anything: the refusal happens before `toeexpand` is looked

@@ -709,13 +709,15 @@ def rebuild(
     """Write `text` back over `source` and collapse the result into `output`.
 
     Nothing is written beside `source`: the expansion is copied into the cache
-    first, because `toecollapse` renames whatever already sits at its
-    destination to `.bkp` and must never do that to a user's file.
+    first, because `toecollapse` moves whatever already sits at its
+    destination aside to a `.bkp1` name and must never do that to a user's
+    file.
 
     `output` must not exist. The check lives here rather than on one of the
     two surfaces because both of them reach this function and only the MCP
     tool had it: `td-atlas project write` went straight past into
-    `toecollapse`, which renames whatever is already there to `.bkp` — the
+    `toecollapse`, which moves whatever is already there aside to `.bkp1` —
+    the
     exact thing this module exists to prevent.
     """
     import json

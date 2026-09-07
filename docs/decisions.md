@@ -10,8 +10,8 @@ where rather than repeating the argument.
 decision by number ("for the reason decision 22 records"), so the numbering is
 kept as it was assigned, gaps and all. A gap is a decision that shaped how
 this project is *worked on* rather than how it is built — the owner's working
-notes, positioning, method — and those are not a reader's business. Forty-eight
-of sixty are here; the twelve left out are the project's stance on its
+notes, positioning, method — and those are not a reader's business. Forty-nine
+of sixty are here; the eleven left out are the project's stance on its
 neighbours, one decision cancelled the day it was taken, the owner's machine
 and working method, the genre rules of the owner's own working notes, and the
 decision to keep those notes out of the repository — which is about process
@@ -71,6 +71,7 @@ what happened to it.
 
 | # | Date | Decision |
 | --- | --- | --- |
+| 5 | 2026-08-28 | **No artist-facing content ships** — no shader templates, no scene generators, no keyboard shortcuts. This connector describes and drives what the artist built; it does not hand them starting material. The one exception is the status panel the bridge draws inside TouchDesigner, which exists so a person can see what an agent is doing to their project (see [README](../README.md#the-call-journal)). |
 | 9 | 2026-08-28 | The MCP launch string uses `sys.executable` **without resolving the symlink**: resolving it loses an editable install. Measured in both directions. |
 | 10 | 2026-08-28 | The package classifiers list only what has actually been run: Windows and Linux are absent — Windows was never verified, and TouchDesigner does not exist for Linux. |
 | 6 | 2026-08-28 | Windows is supported **blind, now** rather than later: path and separator handling is written for it and tested against `PureWindowsPath`. It is marked unverified in the README until it runs on a real machine. |

@@ -34,7 +34,8 @@ things follow:
 
 - **Restore is a file copy, not a rebuild.** The stored copy *is* the state at
   save time; the text was printed from it. Nothing is repacked, so
-  `toecollapse` never runs and never renames a user's file to `.bkp`.
+  `toecollapse` never runs and never moves a user's file aside to a `.bkp1`
+  name.
 - **A changed original cannot corrupt a restore.** The manifest still records
   the original's path, size and SHA-256, and `drift()` reports `unchanged`,
   `changed` or `missing` — but that is information, not a gate, because the

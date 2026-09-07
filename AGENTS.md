@@ -36,7 +36,7 @@ so an agent cannot edit the wrong project in silence.
 
 The two surfaces are compared capability by capability, and the comparison is
 a test rather than an intention: `tests/test_cli_mcp_parity.py` reads the
-three tables below, walks `build_parser()` and the `@mcp.tool()` definitions,
+four tables below, walks `build_parser()` and the `@mcp.tool()` definitions,
 and fails when the code and this section disagree. That test exists because
 the previous version of this rule was prose — "keep that parity" — and by the
 time anyone counted, five gaps were declared and eleven were not.
@@ -315,9 +315,12 @@ unbalanced quote and SQLite raises rather than returning nothing.
 
 ## Things to be careful with
 
-- **Never write beside a user's file.** `toeexpand`/`toecollapse` work in place
-  and rename originals to `.bkp`; `project/expand.py` always copies into a
-  cache first. Preserve that.
+- **Never write beside a user's file.** Both helpers work in place, but not
+  in the same way: `toeexpand` writes `<file>.dir` and `<file>.toc` beside its
+  input and leaves the input itself alone, while `toecollapse` moves whatever
+  already sits at its destination aside to `<file>.bkp1` — `<file>.bkp2` on a
+  second run (measured 2026-09-07, `docs/formats.md`). `project/expand.py`
+  always copies into a cache first. Preserve that.
 - **`td_snapshot` must not repoint the session.** `project.save(path)` is a
   Save As and moves the artist's working file; the tool saves a component
   instead.

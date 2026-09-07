@@ -1,7 +1,9 @@
 """Driving TouchDesigner's `toeexpand` / `toecollapse` helpers.
 
-Both tools work in place: they write their output beside their input and, in
-the case of `toecollapse`, rename the original to a `.bkp` file. Everything
+Both tools work in place, and not in the same way: `toeexpand` writes
+`<file>.dir` and `<file>.toc` beside its input and leaves the input alone,
+while `toecollapse` moves whatever already sits at its destination aside to
+`<file>.bkp1` — `<file>.bkp2` on a second run. Everything
 here therefore operates on a copy in a cache directory, so reading a project
 never modifies or litters next to the user's own files.
 """

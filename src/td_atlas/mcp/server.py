@@ -1265,8 +1265,8 @@ def td_variant_restore(file: str, label: str, output: str) -> str:
     """Write a saved variant back out as a .toe/.tox file.
 
     A byte copy of what was saved, not a repack: nothing is collapsed, so
-    TouchDesigner's toecollapse never runs and never renames a user's file to
-    .bkp. `output` must not exist — hand back a new path and compare with
+    TouchDesigner's toecollapse never runs and never moves a user's file aside
+    to a .bkp1 name. `output` must not exist — hand back a new path and compare with
     td_project_diff rather than replacing anything in place. A directory as
     `output` keeps the name the file had when it was saved.
     """

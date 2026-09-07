@@ -14,7 +14,9 @@ unpacks a container into a directory tree; `toecollapse` repacks one.
 directory appearing, never by the exit code.
 
 Both tools work in place: `toeexpand` writes `<name>.dir/` and `<name>.toc`
-beside its input, and `toecollapse` renames any existing target to `.bkp1`.
+beside its input, and `toecollapse` renames any existing target to `.bkp1`,
+and to `.bkp2` on a second run (measured 2026-09-07 by collapsing the same
+directory twice).
 Always operate on a copy.
 
 `toecollapse` requires the `.toc` listing beside the `.dir`. Repacking is a

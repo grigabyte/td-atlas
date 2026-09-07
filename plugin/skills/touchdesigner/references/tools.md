@@ -57,7 +57,8 @@ against the server, and so is that count.
 | `td_project_diff(before, after, show_moves, include_text)` | Semantic comparison of two files. |
 | `td_variant_save(file, label, note, path)` | Keep the current state of a `.toe`/`.tox` before trying a direction. A variant is the network text plus a byte copy of the file, under `~/.td-atlas/variants` — the text alone cannot rebuild a `.toe`, and the copy costs a median 19% on top of the text. A label already in use is refused, never overwritten. |
 | `td_variant_list(file)` | What has been saved — of one project, or of every project that has any. Says whether the original has changed since each save; that is information, not a warning, because a restore reads the variant's own copy. |
-| `td_variant_restore(file, label, output)` | Write a saved state back out. A copy, not a repack: `toecollapse` never runs, so nothing of the user's is renamed to `.bkp`. `output` must not exist; a directory keeps the saved file name. |
+| `td_variant_restore(file, label, output)` | Write a saved state back out. A copy, not a repack: `toecollapse` never runs, so nothing of the user's is moved aside to a
+`.bkp1` file. `output` must not exist; a directory keeps the saved file name. |
 | `td_variant_diff(file, before, after, show_moves, include_text)` | Compare two saved states with the same semantic diff `td_project_diff` runs. |
 
 ## When a reply is cut short

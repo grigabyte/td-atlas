@@ -584,7 +584,8 @@ def test_the_cli_writes_the_file_and_reports_a_gap_in_its_exit_code(tmp_path, ca
 
 def test_the_mcp_tool_refuses_to_overwrite_an_existing_file(tmp_path):
     """Repacking writes the file whole, so it must never land on one of the
-    user's — the same rule `expand.py` follows for `toecollapse`'s `.bkp`."""
+    user's — the same rule `expand.py` follows for `toecollapse`'s `.bkp1`
+    displacement."""
     from td_atlas.mcp.server import td_project_write
 
     existing = tmp_path / "there.tox"

@@ -159,8 +159,8 @@ def build_tox(
     """Assemble the bridge `.tox` and copy it to `output`.
 
     The tree and `toecollapse` both work inside the cache, because
-    `toecollapse` renames whatever already sits at its destination to `.bkp`
-    and must never do that beside a user's own files.
+    `toecollapse` moves whatever already sits at its destination aside to a
+    `.bkp1` name and must never do that beside a user's own files.
     """
     output = Path(output or DEFAULT_OUTPUT).expanduser()
     if install is None:

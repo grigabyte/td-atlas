@@ -51,8 +51,8 @@ release rather than a change from a previous one.
   its size, and `td-atlas doctor --clear-cache` empties it.
 - Refusing to overwrite an existing output file moved out of the MCP tool and
   into the layer both surfaces share, so `td-atlas project write` is now
-  covered by it too. It was not, and `toecollapse` renames whatever it finds in
-  the way to `.bkp`.
+  covered by it too. It was not, and `toecollapse` moves whatever it finds in
+  the way aside to `<file>.bkp1`.
 - Answers that had to be cut short now say so. `td_network` reports
   `truncated`, `childrenHidden` and `depthLimited`; `td_errors` and `td_health`
   report how much of the network went unvisited. A partial read used to be

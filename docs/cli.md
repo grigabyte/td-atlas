@@ -214,8 +214,10 @@ scrubbed from every line.
 
 `td-atlas project` reads, searches, compares and rewrites `.toe`/`.tox` files
 from disk. Every action works on a **copy** in a cache keyed by the file's
-path, size and mtime: `toeexpand` and `toecollapse` work in place and rename
-what they find to `.bkp`, so nothing here ever touches your file. A changed
+path, size and mtime: both helpers work in place — `toeexpand` writes
+`<name>.tox.dir` and `<name>.tox.toc` beside its input, and `toecollapse`
+moves an existing target aside to `<name>.tox.bkp1`, or `<name>.tox.bkp2` on a
+second run — so nothing here ever touches your file. A changed
 project is re-expanded without being asked; `--refresh` is for a cache damaged
 from outside this program.
 

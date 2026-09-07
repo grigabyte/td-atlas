@@ -40,6 +40,14 @@ _TOKEN_LOADED = False
 _MAX_REPR = 4000
 _MAX_CHILDREN = 2000
 
+# How to read every "a-b ms" in the two ceiling blocks below: it is the
+# spread of the repeated runs that were taken — the fastest and the slowest
+# seen — and not a limit. How many runs each spread covers was not recorded,
+# so a run slower than the top of a range is not excluded by it. Re-measuring
+# 2026-09-07 landed outside two of them (12.2-15.9 ms and 62.3-77.1 ms where
+# 13-15 and 65-77 stand recorded below), which is what a spread of samples
+# does and what a bound would not.
+
 # Depth and node ceilings for a network walk. Measured on the largest
 # component TouchDesigner ships, kantanMapper.tox: 4080 operators, widest
 # parent 143 children, nesting 11 levels below its own root. The first two
@@ -65,7 +73,8 @@ _MAX_NETWORK_NODES = 5000
 # open session of 36,144 operators — a small project, TouchDesigner's own
 # /ui and /sys, and kantanMapper loaded for the measurement — a full
 # 5000-node walk took 13-15 ms through `errors`
-# and 65-77 ms through `health_sample`. Timed on
+# and 65-77 ms through `health_sample` — spreads of repeated runs, both
+# widened by the 2026-09-07 re-measurement noted above. Timed on
 # the host with perf_counter around the call, so both include HTTP and JSON
 # and are an upper bound on the work done here. The estimate this replaces
 # read 0.3 s, extrapolated from a text serialisation that does far more per
@@ -2718,7 +2727,8 @@ def m_errors(params):
     954 from /sys, the walk died at path level 5, and a warning planted eight
     levels below /project1 was invisible while fifteen findings from /ui and
     /sys came back as the whole answer. The same walk of the project alone
-    costs 0.0-0.1 ms and is complete.
+    costs 0.0-0.1 ms across repeated runs — a spread, not a ceiling — and is
+    complete.
 
     Bounded still: every request runs on the main thread, nothing bounds how
     large a project can be, and a walk that stopped early says so rather than
