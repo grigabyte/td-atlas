@@ -26,7 +26,10 @@ jobs:
     # macOS is the platform the project is developed and measured on. Windows
     # is in the matrix because the Windows code paths — `install.py`
     # `_candidates_windows`, `expand.py` `_tool`, the `PureWindowsPath`
-    # handling in the project reader — have never run on a Windows machine.
+    # handling in the project reader — cannot be read anywhere else. The first
+    # run of this leg (2026-09-07, run 34111353871) found eleven failures, four
+    # of them defects in the code; what it still cannot reach is TouchDesigner
+    # itself, which no runner has.
     # Their unit tests pass on macOS; only this leg says whether the paths
     # they describe are real.
     name: ${{ matrix.os }} / py${{ matrix.python }}

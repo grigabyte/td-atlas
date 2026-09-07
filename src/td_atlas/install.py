@@ -107,7 +107,11 @@ def _candidates_macos() -> list[Path]:
 def _candidates_windows() -> list[Path]:
     """Where a Windows install might be.
 
-    UNVERIFIED on a live Windows machine. The installer's default target is
+    UNVERIFIED against a TouchDesigner installed on Windows — a distinction
+    worth keeping since 2026-09-07, when the Windows leg of CI first ran: the
+    code below executes there, on a machine with no TouchDesigner on it, so
+    what is tested is the search and not what it would find. The installer's
+    default target is
     `%ProgramFiles%\\Derivative\\TouchDesigner<build>`, per Derivative's own
     published instructions; `ProgramW6432` and `LOCALAPPDATA` are here because
     a 32-bit host process sees the first under a different name and a per-user
@@ -140,8 +144,10 @@ def _build(root: Path) -> TDInstall | None:
         # resource tree is actually there. Without this check any directory
         # whose name merely started with "TouchDesigner" was accepted as an
         # install and the failure surfaced much later, as a missing help file.
-        # UNVERIFIED on a live Windows machine: the layout is taken from
-        # Derivative's published install tree, not measured here.
+        # UNVERIFIED against a TouchDesigner installed on Windows: the layout
+        # is taken from Derivative's published install tree. CI's Windows leg
+        # exercises this branch against a tree a test builds, which reads the
+        # logic and not the layout.
         if not any((root / name).is_dir() for name in ("Config", "Samples")):
             return None
         tfs = root

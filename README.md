@@ -335,22 +335,37 @@ interpreter the application ships.
 | | |
 | --- | --- |
 | macOS | developed and measured here; every number in this README comes from it |
-| Windows | supported by intent, **unverified** — no Windows machine with TouchDesigner on it was ever involved |
+| Windows | the code paths run in CI (`windows-latest`, Python 3.11-3.14, first run 2026-09-07); **TouchDesigner on Windows is unverified** — no Windows machine with TouchDesigner on it was ever involved |
 | Linux | not supported: TouchDesigner is not released for it |
 
-What is unverified on Windows, precisely: the install-discovery layout follows
-Derivative's published install tree rather than measurement; `toeexpand`'s path
-separators are inferred from its macOS output; the clipboard copy (`clip`) has
-never been run. And one thing is known to be weaker there — the token file is
-narrowed with `chmod`, which on Windows sets only the read-only attribute and
-does not keep other accounts on the machine out.
+What is still unverified on Windows, precisely: the install-discovery layout
+follows Derivative's published install tree rather than measurement;
+`toeexpand`'s path separators are inferred from its macOS output; the clipboard
+copy (`clip`) has never been run. And two things are now *known* to be weaker
+there. `~/.td-atlas` and the token file in it are narrowed with `chmod`, which
+on Windows sets only the read-only attribute — measured: the directory reports
+mode 0o777 where 0o700 was asked for, so other accounts are kept out by
+whatever ACL the user profile already carries and by nothing this project does.
+And the call journal cannot report a home that refuses writes, because
+`os.access` does not see a refusal there.
 
-CI has a `windows-latest` leg (`.github/workflows/ci.yml`), and it does not
-close that gap: a GitHub runner has no TouchDesigner and cannot have one, so
-the leg exercises the unit tests and the linter while everything that
-discovers an installation or shells out to `toeexpand` skips. A green Windows
-column means the Windows code paths import and their unit tests pass, not that
-the paths they describe exist on a real machine.
+CI's `windows-latest` leg (`.github/workflows/ci.yml`) ran for the first time
+on 2026-09-07, and that is what turned those from inferences into readings. It
+found eleven failures. Four were defects in this code: both of the registry's
+liveness probes (a refused port and a running process each read as "cannot
+tell" on Windows, so a dead bridge could not be pruned and a live one could
+not be confirmed), the project path written into a bridge's registry record,
+and the encoding of the generated bundle manifest. One was a test asserting a
+POSIX separator about a Windows filesystem path. The remaining six are checks
+whose premise Windows does not have — `os.chmod` there can neither narrow a
+mode nor make a path refuse access — and they skip with that reason written
+out, in `tests/windows_gaps.py`.
+
+What the leg does not close: a GitHub runner has no TouchDesigner and cannot
+have one, so everything that discovers an installation or shells out to
+`toeexpand` skips. A green Windows column means the Windows code paths run and
+their unit tests pass — not that TouchDesigner on Windows has ever been driven
+by this code.
 
 **What this can change in your project.** Worth reading before pointing an
 agent at work you care about.

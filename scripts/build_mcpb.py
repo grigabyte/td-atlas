@@ -131,8 +131,9 @@ def _licence(classifiers: list[str]) -> str | None:
 def _platforms(classifiers: list[str]) -> list[str]:
     """Only platforms the package actually claims.
 
-    README is explicit that Windows is unverified and Linux unsupported, and
-    the classifiers were trimmed to match on purpose. Deriving the manifest's
+    README is explicit that TouchDesigner on Windows is unverified (the OS
+    itself runs in CI) and that Linux is unsupported, and the classifiers were
+    trimmed to match on purpose. Deriving the manifest's
     `compatibility.platforms` from them keeps one statement of that fact
     instead of two that can disagree.
     """
@@ -266,8 +267,10 @@ Two things this bundle does not carry, by design:
   pasted into TouchDesigner's textport. The offline project-reader tools
   work without it.
 
-Developed and measured on macOS. Windows is unverified and Linux is not
-supported, because TouchDesigner is not released for it.
+Developed and measured on macOS. On Windows the code paths run in CI but no
+TouchDesigner on Windows has ever been driven by them, so that half is
+unverified. Linux is not supported, because TouchDesigner is not released for
+it.
 """
 
 

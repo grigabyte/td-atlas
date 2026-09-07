@@ -11,7 +11,7 @@ decision by number ("for the reason decision 22 records"), so the numbering is
 kept as it was assigned, gaps and all. A gap is a decision that shaped how
 this project is *worked on* rather than how it is built — the owner's working
 notes, positioning, method — and those are not a reader's business.
-Fifty-two of sixty-three are here; the eleven left out are the project's stance on its
+Fifty-three of sixty-five are here; the twelve left out are the project's stance on its
 neighbours, one decision cancelled the day it was taken, the owner's machine
 and working method, the genre rules of the owner's own working notes, and the
 decision to keep those notes out of the repository — which is about process
@@ -78,7 +78,8 @@ what happened to it.
 | 9 | 2026-08-28 | The MCP launch string uses `sys.executable` **without resolving the symlink**: resolving it loses an editable install. Measured in both directions. |
 | 10 | 2026-08-28 | The package classifiers list only what has actually been run: Windows and Linux are absent — Windows was never verified, and TouchDesigner does not exist for Linux. |
 | 6 | 2026-08-28 | Windows is supported **blind, now** rather than later: path and separator handling is written for it and tested against `PureWindowsPath`. It is marked unverified in the README until it runs on a real machine. |
-| 20 | 2026-08-28 | No claim about Windows is made anywhere in the code without a note that it is unverified. |
+| 20 | 2026-08-28 | No claim about Windows is made anywhere in the code without a note that it is unverified. Refined by decision 65: the operating system has since been read, so the note has to say *which* half is unverified. |
+| 65 | 2026-09-07 | "Unverified on Windows" is **two claims**, and every note about Windows says which one it means: the operating system runs in CI (`windows-latest`, Python 3.11-3.14, first run 2026-09-07), TouchDesigner on Windows has still never driven this code. That first run found eleven failures — four defects in this code (both registry liveness probes, the project path in a registry record, the bundle manifest's encoding), one test asserting a POSIX separator about a Windows path, and six checks whose premise the platform does not have. The six skip with the missing thing named, in one place (`tests/windows_gaps.py`); a skip is never allowed to stand in for a defect. |
 | 18 | 2026-08-28 | Linux installation discovery was **deleted**, not kept with a caveat: TouchDesigner is not released for Linux. An unknown system gets an error naming `--install-path` and `TD_ATLAS_INSTALL`. |
 | 15 | 2026-08-28 | The global `--port`/`--project` and the same-named flag on `install` are separated by what they address, and a selector handed to a command that does not reach a bridge is an **error, not silence**. See [cli.md](cli.md#global-flags-go-before-the-subcommand). |
 | 16 | 2026-08-28 | The MCP surface deliberately **cannot** aim at a chosen instance: `discover()` raises, and a tool must return text rather than an exception. In exchange there is a `td_instances` tool and an ambiguity warning on every reply. The gap is declared in [AGENTS.md](../AGENTS.md#cli--mcp-parity). |

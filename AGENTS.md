@@ -220,7 +220,10 @@ one release:
 - **`packaging/manifest.json` is generated, not edited.** Everything it shares
   with the package is read from `pyproject.toml`, including the platform list —
   which is why the classifiers are the one place to state that Windows is
-  unverified. `tests/test_packaging.py` fails when the committed copy drifts.
+  unverified. Unverified means TouchDesigner on Windows: the OS itself has run
+  in CI since 2026-09-07, and README's Compatibility table keeps the two apart.
+  `tests/test_packaging.py` fails when the committed copy drifts — including on
+  its encoding, which is why every file the builder writes names UTF-8.
 - **Only tracked files are packed.** The staging tree comes from `git archive`,
   so the index and the bridge token — both untracked, both machine-specific —
   are absent by construction rather than by an exclusion list that would have

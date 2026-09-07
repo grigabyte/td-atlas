@@ -59,11 +59,14 @@ def _tool(install: TDInstall, name: str) -> Path:
 
     The macOS branch is measured: both binaries sit in `Contents/MacOS` beside
     the application, and every test in this repository that expands a file has
-    run through it. UNVERIFIED on a live Windows machine: the four locations
-    the else-branch tries are read off Derivative's published install tree, not
-    observed. Which of them is right — and whether the extensionless names are
-    ever present there at all — is a question only a Windows run can settle,
-    which is why all four are tried rather than one asserted.
+    run through it. UNVERIFIED against a TouchDesigner installed on Windows:
+    the four locations the else-branch tries are read off Derivative's
+    published install tree, not observed. CI's Windows leg (first run
+    2026-09-07) runs this function but has no installation to find, so which
+    of the four is right — and whether the extensionless names are present
+    there at all — is still a question only a Windows machine with
+    TouchDesigner on it can settle. Hence all four are tried, not one
+    asserted.
     """
     candidates = (
         [install.root / "Contents" / "MacOS" / name]
@@ -239,7 +242,8 @@ def _toc_entry(relative: PurePath) -> str:
     silent: the template lines stop matching the files on disk, the original
     ordering is lost, and the listing handed back to toecollapse is written
     in a separator it was never seen to use.
-    UNVERIFIED: the '/' was measured in toeexpand's macOS output only.
+    UNVERIFIED: the '/' was measured in toeexpand's macOS output only, and
+    CI's Windows leg cannot add to that — it has no toeexpand to run.
     """
     return relative.as_posix()
 

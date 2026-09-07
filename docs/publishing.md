@@ -56,15 +56,17 @@ that sentence goes with the heading.
 
 ## What none of this checks
 
-- **A live Windows machine.** No Windows machine with TouchDesigner on it has
-  ever run this code. CI has a `windows-latest` leg, and it does not close the
-  gap: a GitHub runner has no TouchDesigner and cannot have one, so the leg
-  exercises the unit tests and the linter while everything that discovers an
-  installation or shells out to `toeexpand` skips. The install-discovery
+- **TouchDesigner on Windows.** No Windows machine with TouchDesigner on it
+  has ever run this code. The operating system itself is no longer unread:
+  CI's `windows-latest` leg first ran on 2026-09-07 and found eleven failures,
+  four of them defects in this code (see README under Compatibility). What it
+  cannot close is the half that matters for a release — a GitHub runner has no
+  TouchDesigner and cannot have one, so everything that discovers an
+  installation or shells out to `toeexpand` skips there. The install-discovery
   layout, `toeexpand`'s path separators and the clipboard copy (`clip`) stay
-  unverified, and the `chmod` narrowing of the token file is known to be
-  weaker there. `README.md` says so under Compatibility, and the package
-  classifiers deliberately omit Windows.
+  unverified; the `chmod` narrowing of `~/.td-atlas` and the token file is now
+  *measured* to do nothing there. The package classifiers deliberately omit
+  Windows, and that is still the right claim.
 - **That the release channel exists.** `dist/server.json`'s download URL names
   `…/releases/download/v<version>/<bundle>`, and `publish.sh` step 1 is what
   creates it. Nothing verifies the URL before it is published, because before
