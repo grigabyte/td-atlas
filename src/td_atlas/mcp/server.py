@@ -562,11 +562,22 @@ def td_network(path: str = "/project1", depth: int = 1) -> str:
     if result.get("childrenHidden"):
         lines.append(f"  ... {result['childrenHidden']} more child(ren) not listed")
     if result.get("truncated"):
+        # "at least", because `hidden` counts only the operators the walk had
+        # already discovered and did not describe; whatever hangs below one of
+        # those was never looked at and is not guessed at (see the handler's
+        # `walk`). Measured live 2026-09-07 on a 36,144-operator project:
+        # `network path=/ depth=16` reported hidden=66 while 31,144 operators
+        # went undescribed. Phrased as a total, that number invites the reader
+        # to think the reply is 66 operators short of complete — which is the
+        # same wrong reading a silent cut produces, only with a number on it.
+        # td_errors already says "at least" about its own remainder.
         lines.append(
-            f"TRUNCATED: {result['hidden']} operator(s) were left out — this "
-            f"reply describes at most {result.get('limit')} operators, and at "
-            f"most {result.get('maxChildren')} children of any one component. "
-            f"Ask for a subtree with a narrower `path` to see the rest."
+            f"TRUNCATED: at least {result['hidden']} operator(s) were left "
+            f"out — this reply describes at most {result.get('limit')} "
+            f"operators, and at most {result.get('maxChildren')} children of "
+            f"any one component. What hangs below a component that was cut "
+            f"was never walked, so the real remainder is larger. Ask for a "
+            f"subtree with a narrower `path` to see the rest."
         )
     if result.get("depthLimited"):
         lines.append(

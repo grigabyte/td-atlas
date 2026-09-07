@@ -158,7 +158,9 @@ def test_td_network_prints_the_cut_rather_than_hiding_it(monkeypatch):
 
     assert "4 more child(ren) not listed" in text
     assert "12 more child(ren) not listed" in text
-    assert "TRUNCATED: 16 operator(s) were left out" in text
+    # "at least": `hidden` counts only what the walk discovered and did not
+    # describe, never what hangs below a component it cut.
+    assert "TRUNCATED: at least 16 operator(s) were left out" in text
 
 
 def test_td_network_says_when_the_depth_it_was_given_was_reduced(monkeypatch):
