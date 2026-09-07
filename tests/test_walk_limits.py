@@ -234,21 +234,10 @@ def test_findings_name_the_subtree_too(monkeypatch):
     assert "/project1/movie" in text
 
 
-def test_a_bridge_without_the_path_argument_is_not_read_as_an_answer(monkeypatch):
-    """Same protocol number, different question answered.
-
-    A bridge staged before `path` existed ignores it and walks from `/`. The
-    missing `root` key is what catches that, since the version cannot.
-    """
-    text = _errors_text(
-        monkeypatch,
-        {"count": 0, "nodes": [], "scanned": 5000, "truncated": True,
-         "notScanned": 9454, "limit": 5000},
-        path="/project1",
-    )
-
-    assert "predates the `path` argument" in text
-    assert "td-atlas reload" in text
+# A bridge that ignores `path` and walks from `/` used to be caught here, by
+# the absent `root` key in its reply. It is now caught at connect by the
+# version check — `path` is part of protocol 7 — and that refusal is held in
+# `tests/test_bridge_client.py::test_a_bridge_one_version_below_the_minimum_is_refused`.
 
 
 # -- m_health_sample --------------------------------------------------------

@@ -423,7 +423,7 @@ mean.
 | --- | --- | --- |
 | `doctor` says `bridge : absent` | a state, not a fault: no TouchDesigner has registered a bridge and nothing is listening on the port | open the project and paste the `td-atlas install` bootstrap line into the textport |
 | a live tool refuses with *"nothing answered on the bridge port"* | TouchDesigner is not running, or is running without the bridge | `td-atlas doctor`, then the bootstrap line |
-| *"the bridge and this host speak different protocol versions"* | the staged bridge is older (or newer) than this checkout. The oldest bridge accepted is protocol 6; an older one is refused at connect rather than allowed to fail later on the first new method | `td-atlas reload` — it is the one command that talks to a bridge the version check would otherwise reject |
+| *"the bridge and this host speak different protocol versions"* | the staged bridge is older (or newer) than this checkout. The oldest bridge accepted is protocol 7; an older one is refused at connect rather than allowed to fail later on the first new method | `td-atlas reload` — it is the one command that talks to a bridge the version check would otherwise reject |
 | a call comes back `UnknownMethod` | same cause, seen from the other side: the bridge has no such method because it was staged from an older package | `td-atlas reload`, then repeat the call |
 | *"the bridge rejected the token this host sent"* | the bridge's token and `~/.td-atlas/config.json` disagree | `td-atlas doctor` compares them; `td-atlas install` re-stages against the current one |
 | *"something answered on that port but not with a bridge reply"* | another program holds the port, or the Web Server DAT is misconfigured | `td-atlas doctor`, then `td-atlas install` |

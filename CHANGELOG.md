@@ -31,12 +31,17 @@ release rather than a change from a previous one.
 
 ### Changed
 
-- **The bridge speaks protocol 6, and protocol 6 is now also the minimum the
+- **The bridge speaks protocol 7, and protocol 7 is now also the minimum the
   host accepts.** A bridge component laid into a project by an older build is
   refused at connection time with the fix in the message, instead of being
-  accepted and then answering `UnknownMethod` to every newer call. Re-lay the
-  component with `td-atlas reload`, which is exempt from the check so that the
-  one command able to replace an old handler can still reach one.
+  accepted and then answering `UnknownMethod` to every newer call — or, worse,
+  answering a different question in silence. Re-lay the component with
+  `td-atlas reload`, which is exempt from the check so that the one command
+  able to replace an old handler can still reach one. What counts as a
+  protocol change is now written down in `AGENTS.md` and held by
+  `tests/test_protocol_fingerprint.py`: the method table, each method's
+  parameters and the reply shape the host reads are all the wire, and the
+  number moves with any of them.
 - The Claude Code plugin now lives in `plugin/` rather than at the repository
   root. Installing it brings the TouchDesigner skill and nothing else;
   previously it pulled in every tracked file in the repository.
@@ -59,9 +64,10 @@ release rather than a change from a previous one.
   on an open session it answered "no operators are reporting errors" about a
   project it had never looked at. The reply now also names the subtree it
   walked, in every branch. `path` is a new argument to an existing bridge
-  method rather than a new method, so a bridge staged before this change still
-  reports protocol 6 and still walks `/`; the host detects that by the absent
-  field and says so instead of trusting the answer.
+  method rather than a new method, and it is the second reason the protocol
+  number is 7: a bridge staged before this change accepts the argument,
+  ignores it and walks `/` anyway, and nothing in its reply distinguishes that
+  from a correct answer. Such a bridge is refused at connect on its version.
 - `td_network` says how many direct children a component at the edge of the
   requested depth has. The walk stops there without recursing and without a marker, so a
   leaf and a component holding thousands of operators came back as the same
@@ -88,10 +94,11 @@ release rather than a change from a previous one.
   `project.save()` — a Save As that moves the artist's working file. Anything
   reaching the bridge directly (this package is not the only thing that can)
   loses them; `health_sample` and `op_info` carry what the first two returned.
-  This removal is why `PROTOCOL_VERSION` is 6: the method table is the wire,
-  so which methods exist is part of the protocol even though nothing this
-  package's own two halves exchange changed shape. Leaving the number at 5
-  would have let one version name two different method sets.
+  This removal is the first of the two reasons `PROTOCOL_VERSION` is 7: the
+  method table is the wire, so which methods exist is part of the protocol
+  even though nothing this package's own two halves exchange changed shape.
+  Leaving the number at 5 would have let one version name two different method
+  sets.
 
 ### Fixed
 

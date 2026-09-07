@@ -123,6 +123,31 @@ def test_newer_than_expected_refuses_with_host_upgrade_instruction(monkeypatch):
     assert "Update the td-atlas package on this host" in message
 
 
+def test_a_bridge_one_version_below_the_minimum_is_refused(monkeypatch):
+    """The real constants, not monkeypatched ones — the version answers for it.
+
+    This is the case the number exists for. A bridge staged before `errors`
+    took a `path` argument accepts the argument, ignores it and walks from `/`,
+    so its reply describes a different question than the one asked. Nothing in
+    the reply distinguishes that from a correct one; the protocol number does,
+    which is why `path` moved the number to 7 and why the minimum went with
+    it. The host used to detect that bridge by an absent `root` field in the
+    reply — a convention the protocol never stated.
+    """
+    calls: list[str] = []
+    _install_fake_bridge(monkeypatch, MIN_PROTOCOL_VERSION - 1, calls)
+    client = _client()
+
+    with pytest.raises(BridgeUnavailable) as excinfo:
+        client.errors(path="/project1")
+
+    message = str(excinfo.value)
+    assert str(MIN_PROTOCOL_VERSION - 1) in message
+    assert "td-atlas reload" in message
+    # Refused at connect: the walk was never asked for.
+    assert "errors" not in calls
+
+
 # -- once per client, not per call -------------------------------------------
 
 def test_version_check_runs_once_per_client(monkeypatch):

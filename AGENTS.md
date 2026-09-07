@@ -233,6 +233,23 @@ TouchDesigner's embedded **Python 3.11**, not the host interpreter. Constraints:
   injected globals (`op`, `app`, `me`, ...) pushed inside function bodies —
   keep it that way, since the host import depends on it, not just habit.
 
+**Any change to the `METHODS` table raises `PROTOCOL_VERSION`, and
+`MIN_PROTOCOL_VERSION` follows it.** Not only adding or removing a method: a
+change to a method's name, to the set of parameters it reads, or to the shape
+of the reply the host reads back is equally a protocol change. The reason is
+the delivery, not the wire format — host and bridge ride in one `.mcpb`
+bundle, so they cannot legitimately disagree, and the only way they ever do is
+a bridge component left inside a project across an upgrade. Such a bridge
+answers with the number it was laid down with; if that number did not move,
+the host has no way to tell it from a current one, and the failure it produces
+is a plausible-looking answer to a different question rather than an error.
+This has been got wrong twice — a removed method and an added parameter — so
+`tests/test_protocol_fingerprint.py` now derives the method names and their
+parameter keys from the source and compares them with a listing recorded
+against the current number. Reply shape it cannot see; that half is held by
+this rule, the review, and the `CHANGELOG.md` obligation in
+`CONTRIBUTING.md`.
+
 Probe snippets in `atoms/probe.py` are `%`-formatted templates. A literal `%`
 inside one must be written `%%`.
 

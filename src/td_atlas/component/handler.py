@@ -18,13 +18,17 @@ import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
 
-# The method table below *is* the wire, so a change to which methods exist is
-# a protocol change even when no surviving method changed shape. 6 exists
-# because `perf`, `save` and `par_get` were removed while the number still
-# said 5, which left one version naming two different method sets — and a
-# bridge laid down before that removal answers `UnknownMethod` to nothing the
-# host asks, so it looks fine until something reaches those methods directly.
-PROTOCOL_VERSION = 6
+# The method table below *is* the wire, and so is each method's parameter set
+# and the shape the host reads back, so any change to those is a protocol
+# change even when no method was added or removed. The number left 5 because
+# `perf`, `save` and `par_get` were removed while it still said 5, which left
+# one version naming two different method sets; it left 6 because `errors`
+# gained a `path` parameter, and a bridge laid down before that ignores the
+# argument in silence — it answers about the whole root while reporting the
+# same number, which no reader can tell from a correct answer.
+# `tests/test_protocol_fingerprint.py` reddens when the table moves without
+# this number; the rule is written down in `AGENTS.md`.
+PROTOCOL_VERSION = 7
 
 # The shared secret, read from ~/.td-atlas/config.json when the server starts —
 # see _load_token(). It is not baked into this text: a released .tox is one file

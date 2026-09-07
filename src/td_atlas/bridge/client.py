@@ -34,7 +34,7 @@ from ..config import (
 # refusal at connect time names the fix once instead. Written as a literal so
 # the two bounds stay separate knobs; lowering it re-opens the warning band
 # below.
-MIN_PROTOCOL_VERSION = 6
+MIN_PROTOCOL_VERSION = 7
 
 # The version this client was built against. This is *imported*, not copied,
 # from `component/handler.py` — the single owner of PROTOCOL_VERSION — so the

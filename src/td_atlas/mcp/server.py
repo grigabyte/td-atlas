@@ -1006,24 +1006,18 @@ def td_errors(path: str = "/project1") -> str:
     # Which subtree this covers, said before any verdict and in every branch:
     # "nothing is wrong" is a claim about one subtree, and a reader who does
     # not know which one reads it as a claim about the project.
-    walked = result.get("root")
-    if walked is None:
-        # A bridge laid down before `path` existed ignores the argument and
-        # walks from `/` — same protocol number, different question answered.
-        # The missing key is what catches it, since the version cannot.
-        where = (
-            f"This bridge predates the `path` argument: it ignored "
-            f"path={path!r} and walked from / instead, so what follows may "
-            f"describe none of your project. Run 'td-atlas reload', then ask "
-            f"again."
-        )
-    else:
-        where = f"Checked {result.get('scanned')} operator(s) at and under {walked}."
+    # A bridge that ignores `path` and walks from `/` is refused at connect by
+    # the version check: `path` is part of protocol 7, and 7 is the minimum
+    # this host accepts. This used to be worked out here instead, from which
+    # keys the reply did or did not carry — a convention the protocol never
+    # stated, and one the version number is the right owner of.
+    walked = result["root"]
+    where = f"Checked {result.get('scanned')} operator(s) at and under {walked}."
     cut = ""
     if result.get("truncated"):
         cut = (
             f"\nTRUNCATED: the walk stopped after {result.get('limit')} "
-            f"operator(s) below {walked or '/'}; at least "
+            f"operator(s) below {walked}; at least "
             f"{result.get('notScanned')} more were not checked, and the real "
             f"remainder is larger — the children of the operators it never "
             f"visited were never counted either. Nothing is known about any "
