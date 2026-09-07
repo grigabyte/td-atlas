@@ -105,15 +105,18 @@ TouchDesigner (TouchDesigner Non-Commercial) — 61/60 fps, 16/51 operators cook
 [ERROR] 1 output operator(s) switched off — these produce nothing and report
         no error
          /project1/AV/aout (audio output)
-[WARN ] 1 operator(s) cost more than 8 ms per cook
+[WARN ] 1 operator(s) cost more than 8 ms per cook (a whole frame at
+        60 fps is 16.7 ms)
          /project1/src_b (430 ms)
 [note ] Non-Commercial licence: resolution is capped at 1280x1280, realtime
         H.264/H.265 export on Nvidia GPUs is unavailable, and the result may
         not be used in paid work
 ```
 
-Findings from a real session, wrapped for this page and with the path lists
-cut: the real output prints up to six paths under a finding and then `+N more`.
+Findings from a real session, re-rendered by the printer the code has now and
+wrapped for this page. The path lists are cut to what was recorded: the real
+output prints up to six paths under a finding and then `+N more`, and the
+clamped-resolution finding names its operators too.
 
 Every one of those was hit while building a real composition; none of them
 raised an error. It also distinguishes a genuinely dead network from a paused
@@ -472,7 +475,7 @@ mean.
 | --- | --- | --- |
 | `doctor` says `bridge : absent` | a state, not a fault: no TouchDesigner has registered a bridge and nothing is listening on the port | open the project and paste the `td-atlas install` bootstrap line into the textport |
 | a live tool refuses with *"nothing answered on the bridge port"* | TouchDesigner is not running, or is running without the bridge | `td-atlas doctor`, then the bootstrap line |
-| *"the bridge and this host speak different protocol versions"* (an MCP tool), or *"the running bridge reports protocol N, below the minimum 7 this client supports"* (the CLI) | the staged bridge is older (or newer) than this checkout. The oldest bridge accepted is protocol 7; an older one is refused at connect rather than allowed to fail later on the first new method | `td-atlas reload` — it is the one command that talks to a bridge the version check would otherwise reject |
+| *"The running bridge reports protocol N, below the minimum 7 this client supports"* — and, from an MCP tool, that line plus the hint *"the bridge and this host speak different protocol versions"* | the staged bridge is older (or newer) than this checkout. The oldest bridge accepted is protocol 7; an older one is refused at connect rather than allowed to fail later on the first new method | `td-atlas reload` — it is the one command that talks to a bridge the version check would otherwise reject |
 | a call comes back `UnknownMethod` | same cause, seen from the other side: the bridge has no such method because it was staged from an older package | `td-atlas reload`, then repeat the call |
 | *"the bridge rejected the token this host sent"* | the bridge's token and `~/.td-atlas/config.json` disagree | `td-atlas doctor` compares them; `td-atlas install` re-stages against the current one |
 | *"something answered on that port but not with a bridge reply"* | another program holds the port, or the Web Server DAT is misconfigured | `td-atlas doctor`, then `td-atlas install` |

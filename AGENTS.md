@@ -147,13 +147,15 @@ here because `project/rebuild.py` and `tests/test_health.py` point at this
 section for the rule they exist to serve.
 
 - **The round trip is empty.** Dump a project to network text, build it back,
-  dump it again — the two texts are identical. That is the gate the rebuild
-  path exists to satisfy, and it is what makes the rebuild a patcher rather
-  than a generator: a text-only build would drop panel layouts and custom
-  parameter definitions and the second dump would show it.
+  dump it again — the two texts are identical.
   `tests/test_rebuild.py::test_the_round_trip_invariant_holds_on_a_shipped_component`
   runs it on a shipped palette component, and the edited variant beside it
-  keeps an identity copy from passing for free.
+  keeps an identity copy from passing for free. Note what this gate can and
+  cannot see: it holds everything the text *describes*. What the text does not
+  describe — panel layouts, custom parameter definitions, CHOP caches — is
+  held by the rebuild being a patcher instead of a generator, and no dump can
+  test that, because a generator that dropped those would round-trip
+  identically. The argument for the patcher is in `project/rebuild.py`.
 - **Every new `td_health` section states its own cost in a test.** A silent
   failure detector that itself costs a frame is not an improvement, and the
   cost of parsing a section is measurable on the host with no TouchDesigner

@@ -10,8 +10,8 @@ where rather than repeating the argument.
 decision by number ("for the reason decision 22 records"), so the numbering is
 kept as it was assigned, gaps and all. A gap is a decision that shaped how
 this project is *worked on* rather than how it is built — the owner's working
-notes, positioning, method — and those are not a reader's business. Forty-six
-of fifty-eight are here; the twelve left out are the project's stance on its
+notes, positioning, method — and those are not a reader's business. Forty-eight
+of sixty are here; the twelve left out are the project's stance on its
 neighbours, one decision cancelled the day it was taken, the owner's machine
 and working method, the genre rules of the owner's own working notes, and the
 decision to keep those notes out of the repository — which is about process
@@ -86,3 +86,5 @@ what happened to it.
 | 46 | 2026-09-06 | Live tests sit behind a **marker**, `live`, deselected by default in `pyproject.toml` — not behind a skip. The old arrangement said two dozen checks had run when none of them had. |
 | 47 | 2026-09-06 | The ruff rule set is `E4, E7, E9, F, W`. The rest were dropped case by case rather than by the size of a counter, with the reason for each in `pyproject.toml`. Restoring any one of them is work on the code, not a line in a config. |
 | 51 | 2026-09-06 | The version lives in `pyproject.toml` and a test holds the other three copies to it; a `CHANGELOG.md` entry is obligatory for a `PROTOCOL_VERSION` change and for anything that alters what the connector may do inside a user's project. CI runs `pytest` and `ruff` on macOS and Windows, Python 3.11–3.14. |
+| 59 | 2026-09-07 | Two gates a change has to keep are written down in [AGENTS.md](../AGENTS.md#invariants-a-change-has-to-keep) rather than left in the owner's notes, because `project/rebuild.py` and `tests/test_health.py` point at them: the network text's empty round trip, and every new `td_health` section stating its own cost in a test. `CONTRIBUTING.md` was the alternative and lost — that page is the short version of how to run the checks, these are rules about what a change may not break. |
+| 60 | 2026-09-07 | The three addresses that resolve to nothing before the first release — the clone URL, the plugin marketplace, and the release `dist/server.json` points at — are **marked where they appear** rather than removed or moved into an "after publication" section, which would have cut the install path in two. A paragraph at the head of [Install](../README.md#install) names all three. Struck at the first release, when they stop being 404s. |
