@@ -148,15 +148,19 @@ def test_a_corrupt_record_is_skipped_not_fatal(registry):
 def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch):
     """One smoke test against the real OS, so the fakes above stay honest.
 
-    Both probes are asked for both answers, and on purpose: each of them read
-    only one of the two on Windows. `port_listening` never returned False
-    there — `connect_ex` reports WSAECONNREFUSED (10061), which the POSIX
-    `errno.ECONNREFUSED` this compared against does not equal — so a record
-    could not be pruned and `alive` could not be False. `pid_alive` never
-    returned False either: `os.kill(pid, 0)` on Windows is not an existence
-    check but a console control event, since `signal.CTRL_C_EVENT` is 0. Both
-    were measured by CI run 34111353871 and both are fixes in `config.py`, so
-    this test runs on Windows rather than skipping there.
+    Both probes are asked for both answers, and on purpose: neither was
+    working on Windows, in two different ways. `port_listening` could not
+    return False there — `connect_ex` reports WSAECONNREFUSED (10061), which
+    the POSIX `errno.ECONNREFUSED` this compared against does not equal — so
+    a record could not be pruned and `alive` could not be False; CI run
+    34111353871 read that directly. `pid_alive` was answering a different
+    question: `signal.CTRL_C_EVENT` is 0, so `os.kill(pid, 0)` on Windows
+    sends a console control event instead of asking whether a process
+    exists. That run measured it returning True for a live pid; what it would
+    have said about a pid that was gone was never read, because nobody had
+    asked it that. Both are fixes in `config.py`, so this test runs on
+    Windows rather than skipping there — and the dead-pid assertion below is
+    the first reading of the replacement.
 
     The dead pid is a child that has been waited on, which is the only pid a
     test can be sure about: POSIX has reaped it, Windows still holds an exited
