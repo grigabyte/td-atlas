@@ -10,6 +10,7 @@ behind by a dead process is never mistaken for a live bridge.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
@@ -182,7 +183,21 @@ def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch)
         server.listen(1)
         port = server.getsockname()[1]
         assert cfg.port_listening(port) is True
-    assert cfg.port_listening(port) is False
+    # A raw connect_ex to the port that just closed, reported alongside the
+    # verdict: CI run 34114021234 read None here on windows-latest, meaning the
+    # code it returns is in neither branch, and no run has printed which code
+    # that is. Guessing at the number is the confident wrong answer this project
+    # refuses, so the assertion carries the measurement.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    probe.settimeout(0.25)
+    try:
+        raw = probe.connect_ex(("127.0.0.1", port))
+    finally:
+        probe.close()
+    assert cfg.port_listening(port) is False, (
+        "connect_ex on the closed port returned %r (%s); _REFUSED holds %r"
+        % (raw, errno.errorcode.get(raw, "no errno name"), sorted(cfg._REFUSED))
+    )
 
 
 # -- selection --------------------------------------------------------------
