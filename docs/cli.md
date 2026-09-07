@@ -248,8 +248,9 @@ refuse the restore; the drift is reported instead.
 
 ## The MCP side
 
-Seventeen of these commands have an MCP tool that does the same thing, and the
-two surfaces differ in twenty-four tools and nine subcommands. Which, and why
+Seventeen capabilities on this page have an MCP tool that does the same thing,
+counting each `project` action separately; the two surfaces then differ in
+twenty-four tools and nine subcommands. Which, and why
 each gap exists, is declared in
 [AGENTS.md](../AGENTS.md#cli--mcp-parity) and held to the code by a test. The
 tools themselves are listed in
