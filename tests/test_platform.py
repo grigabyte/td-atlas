@@ -1,11 +1,18 @@
 """What the code does on a platform this machine is not.
 
-Nothing here proves td-atlas works on Windows — no Windows machine was
-involved. What it pins down is the part that is decidable from here: path
-handling that is written in string form and would produce a *different*
-answer under Windows separators, and the "does this look like an install"
-check, which is pure filesystem logic and can be exercised on any OS by
-building a fake tree and telling `install.py` which system it is on.
+Nothing here proves td-atlas works on Windows — no TouchDesigner on Windows
+has ever run it, and a CI runner has none. What it pins down is the part that
+is decidable from a macOS machine: path handling that is written in string
+form and would produce a *different* answer under Windows separators, and the
+"does this look like an install" check, which is pure filesystem logic and can
+be exercised on any OS by building a fake tree and telling `install.py` which
+system it is on.
+
+Since 2026-09-07 these same tests also run *on* Windows in CI, which is a
+second thing and not the same one: the run reads the code's behaviour there,
+never the layout it describes. That is where the empty-TD_ATLAS_HOME case
+below first failed — the three sides agreed about the directory and disagreed
+about the string that names it.
 """
 
 from __future__ import annotations
@@ -193,8 +200,17 @@ def _component_function(module_name, name):
 
 
 def test_an_empty_td_atlas_home_counts_as_unset_everywhere(monkeypatch):
+    """All three sides, and in the *same* spelling of the same directory.
+
+    The expectation is joined, not expanded from "~/.td-atlas" in one piece,
+    because that is what the code does and the difference is the whole point
+    of this test on Windows: `expanduser` substitutes only the leading "~", so
+    the one-piece form leaves a "/" in the middle of a path the host writes
+    with backslashes. That is exactly how this failed in CI (run 34111353871)
+    — three sides naming one directory in two separators.
+    """
     monkeypatch.setenv("TD_ATLAS_HOME", "")
-    default = os.path.expanduser("~/.td-atlas")
+    default = os.path.join(os.path.expanduser("~"), ".td-atlas")
 
     assert str(cfg_home()) == default
     assert handler_home() == default
