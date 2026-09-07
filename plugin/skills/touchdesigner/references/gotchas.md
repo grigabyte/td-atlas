@@ -157,7 +157,9 @@ Warning: Cook dependency loop detected. ...
 ```
 
 on `Lgrade` — and `td_errors` and `td_network` both name it, in either call
-order, on repeated calls. What *does* differ is **before the loop has cooked**:
+order, on repeated calls. Both are asked for the subtree the loop is in:
+`td_errors` walks the project by default and takes any other `path` by name,
+so a loop built outside the project is only reported when it is asked for. What *does* differ is **before the loop has cooked**:
 freshly built with nothing pulling it, every operator sat at `0` cooks and both
 tools reported nothing at all. Adding a `cacheTOP` with `alwayscook` took them
 to 90 cooks, and from then on both tools carried the full text. So the silence
