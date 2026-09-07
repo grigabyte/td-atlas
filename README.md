@@ -450,7 +450,9 @@ official MCP registry, carrying the SHA-256 of the bundle built beside it. The
 download URL inside that submission names a GitHub release that does not exist
 yet. Publishing is a separate, deliberate step — `scripts/publish.sh`, which
 is what creates that release — and until it has been run the bundle is
-something you build and open locally, not something to hand out.
+something you build and open locally, not something to hand out. What that
+step checks first, and what it does not,
+is in [`docs/publishing.md`](docs/publishing.md).
 
 Two things the bundle does not carry, and cannot: the index, which is built on
 your machine from your installation and holds machine-specific values, and the
@@ -504,6 +506,7 @@ timestamps, after the fact; `td_log` is the same for an agent.
 | [`docs/cli.md`](docs/cli.md) | Every `td-atlas` subcommand and flag, and what each one needs |
 | [`docs/decisions.md`](docs/decisions.md) | A dated register of the decisions that shaped the code |
 | [`docs/formats.md`](docs/formats.md) | The reverse-engineered `.toe`/`.tox` format, with evidence |
+| [`docs/publishing.md`](docs/publishing.md) | What is checked before a release, and by which command |
 
 ## Development
 
@@ -547,7 +550,8 @@ td-atlas/
 │   ├── architecture.md     the three layers and the reasoning
 │   ├── cli.md              every subcommand and flag, and what it needs
 │   ├── decisions.md        the dated register of decisions behind the code
-│   └── formats.md          the undocumented .toe format, measured
+│   ├── formats.md          the undocumented .toe format, measured
+│   └── publishing.md       the release gates, each with its command
 ├── .claude-plugin/
 │   └── marketplace.json    this repository as a marketplace
 ├── packaging/
