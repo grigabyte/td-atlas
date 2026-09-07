@@ -22,6 +22,7 @@ from td_atlas import config as cfg
 from td_atlas.bridge.client import BridgeClient
 from td_atlas.cli import main
 from td_atlas.component import handler
+from windows_gaps import posix_mode_bits_only
 
 # Captured before any test fakes them, so a test can ask for the real world back.
 REAL_PID_ALIVE = cfg.pid_alive
@@ -145,11 +146,32 @@ def test_a_corrupt_record_is_skipped_not_fatal(registry):
 
 
 def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch):
-    """One smoke test against the real OS, so the fakes above stay honest."""
+    """One smoke test against the real OS, so the fakes above stay honest.
+
+    Both probes are asked for both answers, and on purpose: each of them read
+    only one of the two on Windows. `port_listening` never returned False
+    there — `connect_ex` reports WSAECONNREFUSED (10061), which the POSIX
+    `errno.ECONNREFUSED` this compared against does not equal — so a record
+    could not be pruned and `alive` could not be False. `pid_alive` never
+    returned False either: `os.kill(pid, 0)` on Windows is not an existence
+    check but a console control event, since `signal.CTRL_C_EVENT` is 0. Both
+    were measured by CI run 34111353871 and both are fixes in `config.py`, so
+    this test runs on Windows rather than skipping there.
+
+    The dead pid is a child that has been waited on, which is the only pid a
+    test can be sure about: POSIX has reaped it, Windows still holds an exited
+    process object for it, and both must read as "not running".
+    """
     import socket
+    import subprocess
+    import sys
 
     monkeypatch.undo()
     assert cfg.pid_alive(os.getpid()) is True
+
+    finished = subprocess.Popen([sys.executable, "-c", "pass"])
+    finished.wait()
+    assert cfg.pid_alive(finished.pid) is False
 
     with socket.socket() as server:
         server.bind(("127.0.0.1", 0))
@@ -635,6 +657,7 @@ def test_without_a_registry_or_a_session_the_port_comes_from_the_config(registry
 
 # -- the state directory's permissions do not depend on who arrives first ---
 
+@posix_mode_bits_only
 def test_the_bridge_creates_the_state_directory_narrowed(bridge, tmp_path, monkeypatch):
     """TouchDesigner starting before any install must not widen ~/.td-atlas."""
     fresh = tmp_path / "never-installed"
@@ -646,6 +669,7 @@ def test_the_bridge_creates_the_state_directory_narrowed(bridge, tmp_path, monke
     assert stat.S_IMODE(fresh.stat().st_mode) == 0o700
 
 
+@posix_mode_bits_only
 def test_a_state_directory_that_already_exists_is_narrowed_too(bridge, tmp_path, monkeypatch):
     """The chmod is re-applied, because mkdir does nothing to an existing one."""
     loose = tmp_path / "loose"
@@ -658,6 +682,7 @@ def test_a_state_directory_that_already_exists_is_narrowed_too(bridge, tmp_path,
     assert stat.S_IMODE(loose.stat().st_mode) == 0o700
 
 
+@posix_mode_bits_only
 def test_the_host_narrows_the_state_directory_as_well(tmp_path, monkeypatch):
     """Both sides do it, so the answer does not depend on arrival order."""
     home = tmp_path / "host-first"

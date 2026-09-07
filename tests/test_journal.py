@@ -18,6 +18,7 @@ from td_atlas import journal
 from td_atlas.bridge.client import BridgeClient, BridgeError, BridgeUnavailable
 from td_atlas.component import handler
 from td_atlas.mcp import hints
+from windows_gaps import posix_access_refusal_only
 
 TOKEN = "s3cret-token-abcdefghijklmnop"
 
@@ -544,6 +545,7 @@ def test_a_home_that_does_not_exist_yet_is_not_a_complaint(tmp_path, monkeypatch
     assert "not being written" not in journal.format_calls(journal.read())
 
 
+@posix_access_refusal_only
 def test_a_home_that_exists_and_refuses_writes_is(tmp_path, monkeypatch):
     home = tmp_path / "read-only"
     home.mkdir()

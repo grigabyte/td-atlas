@@ -21,6 +21,7 @@ import pytest
 
 from td_atlas.component import handler
 from td_atlas.project import release, serialize
+from windows_gaps import posix_access_refusal_only
 
 
 # -- the printer, held in step with the host's ------------------------------
@@ -341,6 +342,7 @@ def test_a_writer_that_fails_any_way_at_all_does_not_escape(tmp_path, error):
     assert list(tmp_path.iterdir()) == []
 
 
+@posix_access_refusal_only
 def test_a_folder_that_cannot_be_written_does_not_escape(tmp_path):
     read_only = tmp_path / "locked"
     read_only.mkdir()

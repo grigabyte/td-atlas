@@ -37,7 +37,18 @@ import build_mcpb  # noqa: E402
 
 @pytest.fixture(scope="module")
 def committed() -> dict:
-    return json.loads((ROOT / "packaging" / "manifest.json").read_text())
+    """The committed manifest, read as the UTF-8 the builder writes.
+
+    The encoding is named because `read_text()` without one uses the locale's:
+    on Windows that is cp1252, the em dash in `long_description` came back as
+    three characters, and this file reported the manifest stale on Windows
+    only (CI run 34111353871). The generator names its encoding too now —
+    without that a manifest built on Windows would have been written in cp1252
+    and shipped inside the bundle that way.
+    """
+    return json.loads(
+        (ROOT / "packaging" / "manifest.json").read_text(encoding="utf-8")
+    )
 
 
 @pytest.fixture(scope="module")
@@ -67,10 +78,12 @@ def test_the_version_is_the_same_string_in_every_file_that_states_it(pyproject):
         "pyproject.toml": pyproject["version"],
         "src/td_atlas/__init__.py": importlib.import_module("td_atlas").__version__,
         "packaging/manifest.json": json.loads(
-            (ROOT / "packaging" / "manifest.json").read_text()
+            (ROOT / "packaging" / "manifest.json").read_text(encoding="utf-8")
         )["version"],
         "plugin/.claude-plugin/plugin.json": json.loads(
-            (ROOT / "plugin" / ".claude-plugin" / "plugin.json").read_text()
+            (ROOT / "plugin" / ".claude-plugin" / "plugin.json").read_text(
+                encoding="utf-8"
+            )
         )["version"],
     }
     assert len(set(stated.values())) == 1, (
@@ -112,12 +125,17 @@ def test_the_manifest_names_no_tool_it_would_have_to_keep_in_step(committed):
 # -- claims the project has already decided it will not make ----------------
 
 def _packaging_text() -> str:
+    # Every read names UTF-8, for the reason the `committed` fixture records:
+    # the locale encoding on Windows is cp1252, and these files carry em
+    # dashes that it decodes into something else.
     parts = [
-        (ROOT / "packaging" / "manifest.json").read_text(),
-        (ROOT / "plugin" / ".claude-plugin" / "plugin.json").read_text(),
-        (ROOT / ".claude-plugin" / "marketplace.json").read_text(),
-        (ROOT / "scripts" / "build_mcpb.py").read_text(),
-        (ROOT / "scripts" / "publish.sh").read_text(),
+        (ROOT / "packaging" / "manifest.json").read_text(encoding="utf-8"),
+        (ROOT / "plugin" / ".claude-plugin" / "plugin.json").read_text(
+            encoding="utf-8"
+        ),
+        (ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"),
+        (ROOT / "scripts" / "build_mcpb.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts" / "publish.sh").read_text(encoding="utf-8"),
     ]
     return "\n".join(parts)
 

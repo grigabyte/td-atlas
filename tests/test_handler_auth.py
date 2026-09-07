@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from td_atlas.component import handler
+from windows_gaps import posix_access_refusal_only
 
 
 @pytest.fixture
@@ -100,6 +101,7 @@ def test_a_config_that_is_not_an_object_is_reported(td_home, capsys):
     hasattr(os, "geteuid") and os.geteuid() == 0,
     reason="root reads unreadable files",
 )
+@posix_access_refusal_only
 def test_unreadable_config_is_reported_not_raised(td_home, capsys):
     path = _write_config(td_home, {"token": "unreachable"})
     path.chmod(0o000)
@@ -115,7 +117,9 @@ def test_unreadable_config_is_reported_not_raised(td_home, capsys):
 
 def test_home_defaults_to_the_dot_directory(monkeypatch):
     monkeypatch.delenv("TD_ATLAS_HOME", raising=False)
-    expected = os.path.join(os.path.expanduser("~/.td-atlas"), "config.json")
+    expected = os.path.join(
+        os.path.expanduser("~"), ".td-atlas", "config.json"
+    )
     assert handler._config_path() == expected
 
 

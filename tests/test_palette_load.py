@@ -173,7 +173,9 @@ def test_a_category_resolves_the_ambiguity(world, monkeypatch):
 
     text = load(monkeypatch, fake, name="abletonLevel", category="Live 11")
 
-    assert fake.calls[0][1]["file"].endswith("live11/abletonLevel.tox")
+    assert fake.calls[0][1]["file"] == str(
+        world / "Palette" / "live11" / "abletonLevel.tox"
+    )
     assert "[Live 11+]" in text
 
 
