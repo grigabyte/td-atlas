@@ -97,6 +97,27 @@ A request runs on TouchDesigner's main thread during a cook, which bounds what
 a handler may do and means frames cannot advance inside one call. That is why
 contact sheets and health checks are driven from the host in two or more calls.
 
+## Which instance, and whether it is there
+
+Several TouchDesigner processes can run at once, each with its own bridge on
+its own port, so `~/.td-atlas` also holds a registry of them. An entry counts
+as **live** when the port is listening *and* the process still exists — the
+two facts host and bridge can check identically. The process *name* is
+deliberately not recorded: from inside TouchDesigner you see its embedded
+interpreter, from outside you see the application, and a registry that
+disagreed with itself about what it was looking at would be worse than none.
+
+Registration happens on whichever install path was used. Through the released
+`.tox` the Web Server DAT's `onServerStart` callback fires and does it. Through
+the pasted bootstrap line it does not — toggling `active` from a script does
+not fire that callback, measured — so `bootstrap.py` registers the instance
+itself.
+
+`td-atlas instances` is therefore the one command that answers a question
+about bridges without dialling one, which is exactly when the answer matters.
+The CLI's `--port`/`--project` select among them; the MCP surface deliberately
+cannot, for the reason `AGENTS.md` gives.
+
 ## The project reader
 
 `toeexpand` turns a container into a tree of small text files. Reading it gives

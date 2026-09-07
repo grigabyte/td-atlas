@@ -452,6 +452,8 @@ timestamps, after the fact; `td_log` is the same for an agent.
 | [`AGENTS.md`](AGENTS.md) | Agents *contributing to* this repository |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to run the tests and the linter before a pull request |
 | [`docs/architecture.md`](docs/architecture.md) | How the three layers fit together, and why |
+| [`docs/cli.md`](docs/cli.md) | Every `td-atlas` subcommand and flag, and what each one needs |
+| [`docs/decisions.md`](docs/decisions.md) | A dated register of the decisions that shaped the code |
 | [`docs/formats.md`](docs/formats.md) | The reverse-engineered `.toe`/`.tox` format, with evidence |
 
 ## Development
@@ -488,6 +490,8 @@ td-atlas/
 │   └── ISSUE_TEMPLATE/     build, OS and `td-atlas doctor` output
 ├── docs/
 │   ├── architecture.md     the three layers and the reasoning
+│   ├── cli.md              every subcommand and flag, and what it needs
+│   ├── decisions.md        the dated register of decisions behind the code
 │   └── formats.md          the undocumented .toe format, measured
 ├── .claude-plugin/
 │   └── marketplace.json    this repository as a marketplace
@@ -504,9 +508,6 @@ td-atlas/
 │       └── touchdesigner/  the agent skill
 │           ├── SKILL.md
 │           └── references/{gotchas,tools}.md
-├── memory-bank/            the project's own working memory (Russian):
-│                           decisions with dates, measured numbers, a per-shift
-│                           journal. Not needed to use or build td-atlas.
 ├── src/td_atlas/
 │   ├── install.py          locate a TouchDesigner installation
 │   ├── config.py           the ~/.td-atlas handshake between host and TD

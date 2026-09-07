@@ -67,6 +67,59 @@ examples, not a law. Against the text, the copy costs a median 19% and no
 measurable time, which is why `project/variants.py` stores both. The expanded tree adds half the text again — and 9,647 files for
 `kantanMapper` — for something `toeexpand` reproduces on demand.
 
+## The network text, and why it is JSON
+
+The rows above measure one of the formats on this page that Derivative did not
+invent: the network text `td-atlas project text` prints and
+`td-atlas project write` reads back. Its shape was settled by measurement
+rather than taste, and the choice is worth stating because a serialisation
+format is easy to get wrong in a way that only shows up in a diff months
+later.
+
+**Standard JSON, non-standard printer.** Four syntaxes were compared over one
+canonical model — nested tree, sibling references by name, parameters sorted —
+so that what was being measured was the syntax and not the model. Plain JSON,
+JSON with a custom printer, YAML, and a line-oriented format of our own. The
+line-oriented one is the smallest at every size and plain JSON the largest, by
+1.8x to 3.4x. Size lost the argument anyway:
+
+- **The parser costs nothing.** JSON reads back with `json.loads`. YAML and the
+  line-oriented format each needed a hand-written pair — an emitter and a
+  parser, 139 and 86 lines in two places — and any disagreement between the two
+  halves is a silent loss of data. That is not hypothetical: on six test
+  networks each of the two hand-written formats round-tripped four of them,
+  losing 5–6 and 11–90 operators respectively. Table DAT cells whose data
+  contained the separator, parameter values with a trailing space, and the
+  final newline of a YAML block scalar. JSON round-tripped all six with
+  nothing lost.
+- **DAT text is an array of lines, not one string with `\n` escapes.** Editing
+  one line inside a DAT is the single most common real change, and it is where
+  naive JSON is worst: the whole payload is one string, so the diff is the
+  whole payload. Measured at 57–123 bytes of diff for the array form against
+  1,209–5,985 for the naive one. Vectors and short lists print on one line for
+  the same reason — a dragged node should not cost four lines of diff.
+
+Two things the same measurement **ruled out**:
+
+- **Node positions do not need a section of their own.** A drag already costs
+  two lines, because `tile` is one line inside its node. A position section
+  keyed by path is rewritten across a node's whole subtree when the node is
+  renamed: two lines against sixty-eight on a component of 35 operators.
+- **Defaults do not need stripping.** `toeexpand` already writes only the
+  differences into `.parm`. Of 27,336 parameters, 554 equalled their default —
+  2.1%, worth 0.5–2% of the bytes. A pass to compare every value against the
+  index does not pay for itself.
+
+Those comparisons were run on 2026-08-28, against prototypes that were not
+kept — so they are evidence for the choice and not numbers to re-run. The
+shipped printer's own sizes are the table above, and they are re-measured by a
+test rather than remembered: the same `kantanMapper.tox` prints 106,082 lines
+and 6,111,237 bytes. The prototype's byte counts came out 7–24% lower,
+probably because the shipped printer emits `family`, `custom_parms`, `table`
+and `color` in every node even when they are empty. The comparison between the
+four formats is unaffected — the correction moves all four columns the same
+way.
+
 ## `.n` — nodes
 
 ```
