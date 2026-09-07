@@ -341,10 +341,9 @@ interpreter the application ships.
 What is still unverified on Windows, precisely: the install-discovery layout
 follows Derivative's published install tree rather than measurement;
 `toeexpand`'s path separators are inferred from its macOS output; the clipboard
-copy (`clip`) has never been run. And three things are now *known* to be
-weaker there; the third is the closed-port probe two paragraphs down.
-`~/.td-atlas` and the token file in it are narrowed with `chmod`, which on
-Windows sets only the read-only attribute — measured: the directory reports
+copy (`clip`) has never been run. And two things are now *known* to be weaker
+there. `~/.td-atlas` and the token file in it are narrowed with `chmod`, which
+on Windows sets only the read-only attribute — measured: the directory reports
 mode 0o777 where 0o700 was asked for, so other accounts are kept out by
 whatever ACL the user profile already carries and by nothing this project does.
 And the call journal cannot report a home that refuses writes, because
@@ -360,17 +359,27 @@ whose premise Windows does not have — `os.chmod` there can neither narrow a
 mode nor make a path refuse access — and they skip with that reason written
 out, in `tests/windows_gaps.py`.
 
-Three of those four are fixed. The fourth is not, and the first diagnosis of
-it was wrong: a port with nothing on it was said to read as "cannot tell"
-because Windows returns WSA error numbers that the POSIX `errno` names did not
-match. Windows' `errno` *is* the WSA table, so it matched all along; what the
-next run actually printed was 10035, CPython's way of reporting that
-`connect_ex`'s own timeout elapsed. A closed loopback port on that runner does
-not refuse inside the 0.25 s this project allows it, and how long it does take
-has not been measured — so the budget has not been raised on a guess. On
-Windows a bridge that is gone reads as "cannot tell" rather than as absent,
-which means `td-atlas instances` will not prune its record there. That is the
-one gap in this list that is open rather than closed.
+All four are fixed, but the fourth took three more runs and two wrong
+diagnoses. A port with nothing on it read as "cannot tell" there, and that was
+first blamed on WSA error numbers the POSIX `errno` names did not match —
+Windows' `errno` *is* the WSA table, so they matched all along. It was then
+blamed on the connection not resolving at all, because the next run printed
+10035, CPython's way of saying its own timeout elapsed. Both were guesses about
+a duration nobody had measured. Instrumented, the runner answered: a closed
+loopback port there refuses in about **two seconds** — eight samples across
+the four Python versions, 2002 to 2041 ms — against 0.04 ms on macOS. The
+0.25 s the probe allowed was simply short, so it is now 3 s on both systems,
+and a bridge that is gone reads as absent on Windows too. What that costs is
+about two seconds, once, for each dead record `td-atlas instances` prunes
+there; the number and the trade are written on `config.py`'s `PROBE_BUDGET`.
+
+One more reading came out of those runs, on Python 3.11 alone: `time.time()`
+on Windows stepped in ~15.6 ms jumps until CPython 3.13, so a test that asked
+whether one registry write followed another read both as the same instant. The
+timestamp is right — the host is a different process and compares it against
+its own wall clock — so the test stopped asking a clock for a resolution it
+does not have. Its reasoning is in
+`tests/test_instances.py::test_the_record_is_refreshed_by_traffic_but_not_by_every_request`.
 
 What the leg does not close: a GitHub runner has no TouchDesigner and cannot
 have one, so everything that discovers an installation or shells out to

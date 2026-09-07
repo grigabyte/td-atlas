@@ -10,7 +10,6 @@ behind by a dead process is never mistaken for a live bridge.
 
 from __future__ import annotations
 
-import errno
 import json
 import os
 import stat
@@ -50,7 +49,7 @@ def registry(tmp_path, monkeypatch):
     running = {LIVE_PID, OTHER_PID}
     listening = {9977, 9978}
     monkeypatch.setattr(cfg, "pid_alive", lambda pid: int(pid) in running)
-    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=0.25: int(port) in listening)
+    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=None: int(port) in listening)
     home.joinpath("config.json").write_text(json.dumps({"port": 9977, "token": "s3cret"}))
     return home
 
@@ -94,7 +93,7 @@ def test_both_live_instances_are_listed(registry):
 
 
 def test_a_record_whose_process_is_gone_is_not_live(registry, monkeypatch):
-    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=0.25: True)
+    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=None: True)
     write_record(registry, 9977, "Abandoned.toe", pid=DEAD_PID)
 
     (record,) = cfg.read_instances(prune=False)
@@ -119,7 +118,7 @@ def test_an_unanswerable_probe_counts_as_alive(registry, monkeypatch):
     Burying a live bridge is the expensive mistake: it was made once, against a
     running TouchDesigner, by a check whose two sides could not agree.
     """
-    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=0.25: None)
+    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=None: None)
     write_record(registry, 9977, "Vessel.toe", pid=LIVE_PID)
 
     (record,) = cfg.read_instances(prune=False)
@@ -160,19 +159,21 @@ def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch)
     in `config.py`, so this test runs on Windows rather than skipping there —
     and the dead-pid assertion below is the first reading of the replacement.
 
-    `port_listening` is still open on Windows, and the diagnosis it was given
-    first was wrong. It was blamed on an errno mismatch — WSAECONNREFUSED
-    10061 against a POSIX `errno.ECONNREFUSED` said to be 107 there — and two
-    WSA literals were added to `_REFUSED`. Run 34114387968 printed
-    `sorted(_REFUSED)` as `[10054, 10061]` from a four-member set, so the
-    POSIX names had been those numbers all along and the literals changed
-    nothing; the same assertion failed identically before and after. What that
-    run actually read is 10035, which is CPython's `SOCK_TIMEOUT_ERR` on
-    Windows and not a Winsock error at all: the connection attempt had not
-    resolved either way inside `port_listening`'s 0.25 s. So a closed port on
-    `windows-latest` takes longer than that to refuse, or never refuses, and
-    nobody has measured which. The probes below read the number instead of
-    guessing at it, and the assertion carries them.
+    `port_listening` took three runs and two wrong diagnoses. It was blamed
+    first on an errno mismatch — WSAECONNREFUSED 10061 against a POSIX
+    `errno.ECONNREFUSED` said to be 107 there — and two WSA literals were
+    added to `_REFUSED`; run 34114387968 printed `sorted(_REFUSED)` as
+    `[10054, 10061]` from a four-member set, so the POSIX names had been those
+    numbers all along and nothing changed. What that run read was 10035,
+    CPython's own timeout signal, so the second diagnosis was "the connection
+    does not resolve there" — also wrong. This assertion carried temporary
+    instrumentation for one run, two raw `connect_ex` probes with a 5 s budget
+    instead of the product's 0.25 s, and run 34116622022 answered: 10061,
+    `ECONNREFUSED`, after 2005.453 ms on a just-closed port and 2010.290 ms on
+    a port nothing had ever listened on, eight samples across the four Python
+    versions spanning 2002.4-2040.6 ms. A refusal on that runner takes two
+    seconds. The instrumentation is gone and the budget moved to
+    `config.py`'s `PROBE_BUDGET`, where those readings are written down.
 
     The dead pid is a child that has been waited on, which is the only pid a
     test can be sure about: POSIX has reaped it, Windows still holds an exited
@@ -195,41 +196,13 @@ def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch)
         server.listen(1)
         port = server.getsockname()[1]
         assert cfg.port_listening(port) is True
-    # Two raw probes with a budget far past the product's 0.25 s, reported
-    # alongside the verdict. This is temporary instrumentation, and it is here
-    # because two CI runs said only "None": the number `port_listening` gets
-    # back, and how long it waits for it, is the one thing needed to decide
-    # whether the default budget is too small on Windows or whether connecting
-    # cannot answer the question there at all. The second probe is the
-    # discriminator — a port nothing ever listened on, so a slow answer on the
-    # first and a fast one on the second would point at the un-accepted
-    # connection left behind above rather than at the runner.
-    def raw_probe(target, timeout=5.0):
-        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        probe.settimeout(timeout)
-        started = time.perf_counter()
-        try:
-            code = probe.connect_ex(("127.0.0.1", target))
-        finally:
-            probe.close()
-        elapsed = (time.perf_counter() - started) * 1000.0
-        return "%r (%s) after %.3f ms" % (
-            code,
-            errno.errorcode.get(code, "no errno name"),
-            elapsed,
-        )
-
-    never = socket.socket()
-    never.bind(("127.0.0.1", 0))
-    fresh = never.getsockname()[1]
-    never.close()
-
-    closed_reading = raw_probe(port)
-    fresh_reading = raw_probe(fresh)
-    assert cfg.port_listening(port) is False, (
-        "connect_ex, 5 s budget: just-closed port %s; never-listened port %s. "
-        "port_listening's own budget is 0.25 s; _REFUSED holds %r"
-        % (closed_reading, fresh_reading, sorted(cfg._REFUSED))
+    started = time.perf_counter()
+    verdict = cfg.port_listening(port)
+    elapsed = (time.perf_counter() - started) * 1000.0
+    assert verdict is False, (
+        "a just-closed port did not refuse inside the %.1f s budget: %r after "
+        "%.3f ms; _REFUSED holds %r"
+        % (cfg.PROBE_BUDGET, verdict, elapsed, sorted(cfg._REFUSED))
     )
 
 
@@ -363,7 +336,7 @@ def test_instances_command_reports_and_removes_a_dead_record(registry, capsys):
 
 
 def test_a_dead_pid_removal_still_names_the_port(registry, capsys, monkeypatch):
-    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=0.25: None)
+    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=None: None)
     write_record(registry, 9977, "Crashed.toe", pid=DEAD_PID)
 
     assert main(["instances"]) == 0
@@ -450,6 +423,14 @@ def _record_on_disk(home, port=9977):
     return json.loads((home / "instances" / f"{port}.json").read_text())
 
 
+def _backdate(home, when, port=9977):
+    """Mark the record on disk, so a rewrite is visible without a fine clock."""
+    path = home / "instances" / f"{port}.json"
+    record = json.loads(path.read_text())
+    record["updated"] = when
+    path.write_text(json.dumps(record))
+
+
 def test_the_bridge_writes_its_record_when_the_server_starts(bridge, capsys):
     handler.onServerStart(_Dat(9977))
 
@@ -479,18 +460,41 @@ def test_the_record_never_carries_the_token(bridge):
 
 
 def test_the_record_is_refreshed_by_traffic_but_not_by_every_request(bridge):
-    """Every write costs frame time, so requests refresh at most once a window."""
+    """Every write costs frame time, so requests refresh at most once a window.
+
+    Both halves are read off a record deliberately dated a minute into the
+    past, not off two consecutive `time.time()` readings, because that clock
+    does not step finely everywhere. On Windows `time.time()` moved in ~15.6 ms
+    jumps until CPython 3.13 switched it to `GetSystemTimePreciseAsFileTime`
+    (gh-116822, merged 2024-03-18: 238 ns instead of 15.6 ms), so two writes a
+    millisecond apart carry the same number there. CI run 34116622022 read
+    exactly that, `assert 1788778897.114709 > 1788778897.114709`, on
+    `windows-latest` / Python 3.11. Python 3.12 has the same coarse clock in
+    CPython's source and passed both runs it was in; why it passed is not
+    measured, which is one more reason not to gate this on a version.
+
+    The record's timestamp stays wall-clock, and that is not the defect: the
+    host is another process and compares it against its own `time.time()`
+    (`config.py`'s `Instance.age`), where a monotonic counter would mean
+    nothing — and `time.monotonic` was just as coarse on Windows before 3.13.
+    Nothing here needs sub-tick resolution; `REGISTRY_INTERVAL` is 30 s. So the
+    test stops asking the platform for a resolution it does not have and reads
+    a minute-wide gap instead, which no granularity can hide.
+    """
     dat = _Dat(9977)
     handler.onServerStart(dat)
     first = _record_on_disk(bridge)["updated"]
+    _backdate(bridge, first - 60.0)
 
     handler.onHTTPRequest(dat, _request(), {})
-    assert _record_on_disk(bridge)["updated"] == first, "wrote twice inside the window"
+    assert _record_on_disk(bridge)["updated"] == first - 60.0, (
+        "wrote twice inside the window"
+    )
 
-    # Wind the clock past the interval without waiting for it.
+    # Wind the interval clock past the window without waiting for it.
     handler._registry_last -= handler.REGISTRY_INTERVAL + 1
     handler.onHTTPRequest(dat, _request(), {})
-    assert _record_on_disk(bridge)["updated"] > first
+    assert _record_on_disk(bridge)["updated"] >= first
 
 
 def test_an_unauthenticated_caller_cannot_drive_writes(bridge):

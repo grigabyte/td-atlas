@@ -218,7 +218,7 @@ def _pid_alive_windows(pid: int) -> bool:
 # identically in CI runs 34111353871 and 34114021234, before and after.
 #
 # What actually goes wrong on Windows is a budget, not a number, and it is
-# recorded on `port_listening` below.
+# recorded on `PROBE_BUDGET` below.
 #
 # One number must never be added to this set: `connect_ex` reports its own
 # timeout as `SOCK_TIMEOUT_ERR` (CPython `Modules/socketmodule.c`), which is
@@ -226,6 +226,36 @@ def _pid_alive_windows(pid: int) -> bool:
 # "no answer yet", and a slow-accepting port returns it as readily as an empty
 # one, so reading it as a refusal would print a live bridge as dead.
 _REFUSED = frozenset({errno.ECONNREFUSED, errno.ECONNRESET})
+
+
+# How long a refusal is given to arrive, on either platform. Measured, and the
+# two platforms are two orders of magnitude apart.
+#
+# macOS, this machine: a closed loopback port refuses in 0.04 ms — 36 us,
+# the median of the 500 probes `port_listening` records below.
+# `windows-latest`, CI run 34116622022: eight samples, four Python versions
+# times two ports (one whose listening socket had just closed, one nothing had
+# ever listened on), a 5 s budget on each. Seven distinct values — 2002.4,
+# 2005.3, 2005.5, 2010.3, 2017.3, 2028.9, 2040.6 ms — a spread of 39 ms, under
+# 2%. The two the failure text quotes in full both returned 10061,
+# `ECONNREFUSED`. So a refusal on that runner's loopback takes about two
+# seconds, and the previous 0.25 s budget was expiring before it arrived: the
+# earlier run 34114387968 read that expiry as 10035, CPython's own timeout
+# signal, and it was read as "cannot tell".
+#
+# One number, not one per platform. The budget is a ceiling on waiting, not a
+# duration, and on macOS a refusal arrives 75000 times inside it — raising the
+# ceiling changes no measured POSIX path, while a second branch would be a
+# second behaviour to keep true. What the ceiling costs is paid on Windows and
+# only by a record that is actually dead: about 2 s once, after which the
+# record is pruned and never probed again. The 0.25 s ceiling charged 0.25 s
+# for that record on every `instances` and every `doctor`, for ever, and never
+# pruned it — so the trade pays for itself from the eighth call on. A live
+# bridge answers in 48 us and is untouched by either number.
+#
+# Overshooting the budget is still None, which is what Windows already
+# returned: a host slower than this one loses nothing it had.
+PROBE_BUDGET = 3.0
 
 
 def pid_alive(pid: int) -> bool:
@@ -249,7 +279,7 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
-def port_listening(port: int, timeout: float = 0.25) -> bool | None:
+def port_listening(port: int, timeout: float = PROBE_BUDGET) -> bool | None:
     """Is anything accepting connections on 127.0.0.1:PORT?
 
     True, False (the connection was actively refused — nothing is there), or
@@ -264,15 +294,12 @@ def port_listening(port: int, timeout: float = 0.25) -> bool | None:
     TouchDesigner frame; the far side pays only for accepting and closing one
     connection.
 
-    The timings above are macOS. On `windows-latest` a port whose listening
-    socket had just been closed did not refuse inside this 0.25 s budget:
-    `connect_ex` returned 10035, which is CPython's timeout signal and not a
-    Winsock error (see `_REFUSED`), so the answer there was None — correct, and
-    useless. How long it does take on Windows has not been measured, so the
-    budget is not raised on a guess; `Instance.alive` is therefore None rather
-    than False for a dead bridge on Windows, and a stale record cannot be
-    pruned there. The reading is instrumented in
-    `tests/test_instances.py::test_the_real_probes_agree_about_this_process_and_a_real_socket`.
+    The timings above are macOS. On `windows-latest` a refusal takes about two
+    seconds rather than 0.04 ms, which is why the budget is `PROBE_BUDGET` and
+    not the 0.25 s it was: the eight readings and what the ceiling costs are
+    written above the constant. All three answers survive the change — the
+    refusal that used to expire into None now arrives as False, and a
+    connection that resolves neither way is still None.
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(timeout)

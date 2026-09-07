@@ -138,7 +138,7 @@ def world(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cfg, "pid_alive", lambda pid: int(pid) == LIVE_PID)
     monkeypatch.setattr(
-        cfg, "port_listening", lambda port, timeout=0.25: int(port) == PORT
+        cfg, "port_listening", lambda port, timeout=None: int(port) == PORT
     )
     (home / "instances" / f"{PORT}.json").write_text(
         json.dumps(
@@ -256,7 +256,7 @@ def test_an_index_that_is_not_a_database_fails_rather_than_raising(world):
 
 def test_an_empty_registry_with_a_silent_port_is_a_state_not_a_failure(world, monkeypatch):
     (world.home / "instances" / f"{PORT}.json").unlink()
-    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=0.25: False)
+    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=None: False)
 
     result = checks(world)
     assert result["bridge"].status == cli.ABSENT
@@ -323,7 +323,7 @@ def test_a_bridge_that_rejects_the_token_is_told_apart_from_a_silent_one(world):
 def test_a_registered_bridge_whose_port_is_silent_fails(world, monkeypatch):
     # The record is still there and its process still runs, but nothing
     # answers the port: a different repair from a rejected token.
-    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=0.25: None)
+    monkeypatch.setattr(cfg, "port_listening", lambda port, timeout=None: None)
 
     def refuse(request, timeout=None):
         raise client_mod.urllib.error.URLError("Connection refused")

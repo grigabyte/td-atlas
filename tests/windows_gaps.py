@@ -7,14 +7,17 @@ Windows leg of CI ran for the first time on 2026-09-07 (run 34111353871,
 A skip here is a statement that the *check* cannot be built on Windows, never
 that the behaviour is unimportant or that the code is excused. Where the code
 itself was wrong on Windows, the fix went into the code and the test still
-runs there — see `config.py`'s `pid_alive`, `component/handler.py`'s `_home`
-and `_project_path`. One of that run's findings is still open and does not
-skip either: `config.py`'s `port_listening` cannot say "nothing is there" on
-Windows inside its budget, its test fails there rather than skipping, and the
-reason is written where the code and the test are. What is skipped below is
-POSIX permission semantics, which `os.chmod` cannot express on Windows at all:
-the platform keeps other accounts out with ACLs, which this project neither
-sets nor has measured.
+runs there — see `config.py`'s `pid_alive` and `PROBE_BUDGET`,
+`component/handler.py`'s `_home` and `_project_path`. The budget was that
+run's one open finding, and it stayed open across three more: `port_listening`
+could not say "nothing is there" on Windows inside 0.25 s, its test failed
+there rather than skipping, and it is closed now that run 34116622022 measured
+how long a refusal actually takes (two seconds) and the budget was raised to
+that reading. Nothing about Windows is skipped
+because a number was inconvenient. What is skipped below is POSIX permission
+semantics, which `os.chmod` cannot express on Windows at all: the platform
+keeps other accounts out with ACLs, which this project neither sets nor has
+measured.
 
 Also worth being plain about: on Windows these two gaps are not only
 untestable, they are real. `~/.td-atlas` is not narrowed to its owner there,
