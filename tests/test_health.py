@@ -324,8 +324,9 @@ def test_prints_what_each_new_section_costs():
     Collection was timed separately on a live instance (build 2025.32460, a
     32-node project): one recursive scriptErrors call at the root cost 0.02 ms,
     and reading compileResult inside the walk that already exists replaced a
-    separate pass costing 0.84–1.90 ms — the spread of the runs taken, not a
-    ceiling. No network of thousands of nodes was available to time, so
+    separate pass measured at 1.90 ms over those 32 nodes, or 0.84 ms with
+    the type filter this one uses — two conditions, not a range, and neither
+    a ceiling. No network of thousands of nodes was available to time, so
     scaling is not measured either side.
 
     Printed per the invariant in `AGENTS.md` ("Invariants a change has to

@@ -82,12 +82,13 @@ was never looked at. The repair is always the same: ask again with a narrower `p
 or a larger `depth`.
 
 `td_errors` and `td_health` bound their walk by node count, and both take the
-subtree to walk as `path`. `scanned` is how many operators were actually looked
-at, `notScanned` how many were not, and `truncated` marks that it happened;
+subtree to walk as `path`. `scanned` is how many operators were actually
+looked at, the named subtree's own root included, so it never exceeds `limit`;
+`notScanned` is how many were not, and `truncated` marks that it happened;
 `limit` is the bound. `notScanned` is a floor, not a total: it counts operators
 the walk had already found and not visited, and never what hangs below them.
-Read "nothing is wrong" as covering `scanned` operators under the subtree the
-reply names, and no others.
+Read "nothing is wrong" as covering `scanned` operators at and under the
+subtree the reply names, and no others.
 
 `td_health` also reports `scriptErrorsUnread` — the places where reading
 TouchDesigner's own script errors raised, with the reason. That is *unknown*,

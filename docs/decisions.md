@@ -10,8 +10,8 @@ where rather than repeating the argument.
 decision by number ("for the reason decision 22 records"), so the numbering is
 kept as it was assigned, gaps and all. A gap is a decision that shaped how
 this project is *worked on* rather than how it is built — the owner's working
-notes, positioning, method — and those are not a reader's business. Forty-nine
-of sixty are here; the eleven left out are the project's stance on its
+notes, positioning, method — and those are not a reader's business.
+Fifty-two of sixty-three are here; the eleven left out are the project's stance on its
 neighbours, one decision cancelled the day it was taken, the owner's machine
 and working method, the genre rules of the owner's own working notes, and the
 decision to keep those notes out of the repository — which is about process
@@ -55,6 +55,7 @@ what happened to it.
 | 50 | 2026-09-06 | The journal names its own failures: a write error is remembered and printed under the report, so an unreadable file is distinguishable from an absent one. The token-scrubbing cache is keyed on the path **and** the mtime of `config.json`; the previous key never expired, and a live token reached the log in clear text. One race in `_trim` is deliberately not fixed, for the reason `journal.py` gives. |
 | 55 | 2026-09-07 | `errors` walks from `/project1`, not from `/`: a breadth-first walk spent its 5000-node budget on TouchDesigner's own `/ui` and `/sys` and never reached the project. A `path` argument was added, the budget kept (the cost is linear and nothing bounds a project's size), and the reply names the subtree it covered. TouchDesigner's own interface errors are now behind `path=/`. |
 | 56 | 2026-09-07 | A node at the depth limit prints **its own child count** rather than getting a truncation marker: raising `truncated` there would have named the wrong limit. |
+| 61 | 2026-09-07 | The subtree root of a bounded walk is **charged against the node budget**, in `errors` and in `health_sample` alike. Uncharged, `td_errors` printed "checked 5001 operator(s)" beside a declared limit of 5000, and the same reply key meant one thing in one method and another in the other. The reply's shape did not change, so the protocol number did not move. |
 
 ## Reading and writing project files
 
@@ -72,6 +73,8 @@ what happened to it.
 | # | Date | Decision |
 | --- | --- | --- |
 | 5 | 2026-08-28 | **No artist-facing content ships** — no shader templates, no scene generators, no keyboard shortcuts. This connector describes and drives what the artist built; it does not hand them starting material. The one exception is the status panel the bridge draws inside TouchDesigner, which exists so a person can see what an agent is doing to their project (see [README](../README.md#the-call-journal)). |
+| 62 | 2026-09-07 | An invariant that says a named test holds it **gets the test**, rather than being softened to match what the tests do. The `td_health` cost rule said so and did not have one: the test printed three numbers and asserted two findings existed, so a third section could arrive unmeasured. It now derives every finding kind from the source and fails on one absent from the listing of costs. What it cannot see is named, in the test and in [AGENTS.md](../AGENTS.md#invariants-a-change-has-to-keep). |
+| 63 | 2026-09-07 | A version number written in prose a reader acts on is **read by a test**. `README.md` stated the accepted protocol twice and nothing checked either; the next bump would have left both stale in silence. The scan covers the README whole and the changelog's unreleased section only — below it a past protocol number stays true. |
 | 9 | 2026-08-28 | The MCP launch string uses `sys.executable` **without resolving the symlink**: resolving it loses an editable install. Measured in both directions. |
 | 10 | 2026-08-28 | The package classifiers list only what has actually been run: Windows and Linux are absent — Windows was never verified, and TouchDesigner does not exist for Linux. |
 | 6 | 2026-08-28 | Windows is supported **blind, now** rather than later: path and separator handling is written for it and tested against `PureWindowsPath`. It is marked unverified in the README until it runs on a real machine. |
