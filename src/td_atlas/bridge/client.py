@@ -26,14 +26,15 @@ from ..config import (
 )
 
 # Oldest bridge protocol this client still talks to. Held equal to the
-# expected version by the owner's decision of 2026-09-06: every method the
-# host calls arrived by protocol 5, so an older bridge is refused outright
-# rather than accepted with a warning. Accepting it only postponed the
-# failure to the first new method, which came back as `UnknownMethod` from a
-# call the agent had no reason to think would fail — a refusal at connect
-# time names the fix once instead. Written as a literal so the two bounds
-# stay separate knobs; lowering it re-opens the warning band below.
-MIN_PROTOCOL_VERSION = 5
+# expected version by the owner's decision of 2026-09-06, renewed at 6 on
+# 2026-09-07: no version back is supported, so an older bridge is refused
+# outright rather than accepted with a warning. Accepting it only postponed
+# the failure to the first method whose presence differs, which came back as
+# `UnknownMethod` from a call the agent had no reason to think would fail — a
+# refusal at connect time names the fix once instead. Written as a literal so
+# the two bounds stay separate knobs; lowering it re-opens the warning band
+# below.
+MIN_PROTOCOL_VERSION = 6
 
 # The version this client was built against. This is *imported*, not copied,
 # from `component/handler.py` — the single owner of PROTOCOL_VERSION — so the

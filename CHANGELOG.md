@@ -31,7 +31,7 @@ release rather than a change from a previous one.
 
 ### Changed
 
-- **The bridge speaks protocol 5, and protocol 5 is now also the minimum the
+- **The bridge speaks protocol 6, and protocol 6 is now also the minimum the
   host accepts.** A bridge component laid into a project by an older build is
   refused at connection time with the fix in the message, instead of being
   accepted and then answering `UnknownMethod` to every newer call. Re-lay the
@@ -74,8 +74,10 @@ release rather than a change from a previous one.
   `project.save()` — a Save As that moves the artist's working file. Anything
   reaching the bridge directly (this package is not the only thing that can)
   loses them; `health_sample` and `op_info` carry what the first two returned.
-  `PROTOCOL_VERSION` is unchanged at 5, because the protocol as exercised
-  between this package's own two halves did not move.
+  This removal is why `PROTOCOL_VERSION` is 6: the method table is the wire,
+  so which methods exist is part of the protocol even though nothing this
+  package's own two halves exchange changed shape. Leaving the number at 5
+  would have let one version name two different method sets.
 
 ### Fixed
 

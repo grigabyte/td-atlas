@@ -1,6 +1,6 @@
 """`td-atlas reload` is the one command a protocol refusal must not stop.
 
-With MIN_PROTOCOL_VERSION at 5, a bridge older than that is refused, and the
+With MIN_PROTOCOL_VERSION at 6, a bridge older than that is refused, and the
 refusal names `td-atlas reload` as the repair. But reload dials the same client
 and would be refused for the same reason — the command whose job is to replace
 the out-of-date handler would be the one command that cannot run against it.
