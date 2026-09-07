@@ -968,34 +968,57 @@ def td_glossary(term: str, limit: int = 5) -> str:
 
 @mcp.tool()
 @guarded
-def td_errors() -> str:
-    """Every operator in the project currently reporting an error or warning.
+def td_errors(path: str = "/project1") -> str:
+    """Every operator at or under `path` currently reporting an error or warning.
 
     Node errors are shown as colours in the TouchDesigner UI and are otherwise
     invisible to you; check this after building something.
+
+    The default is the project, not `/`, and asking for `/` is usually the
+    wrong move: the walk is breadth-first and bounded, and on an open session
+    TouchDesigner's own `/ui` and `/sys` are thousands of operators wide at
+    the shallow levels, so the budget runs out before the walk reaches
+    anything of yours. Point it at the component you built instead.
     """
     client = bridge()
     try:
-        result = client.errors()
+        result = client.errors(path=path)
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
-    # Said in both branches, and first in the clean one: "nothing is wrong"
-    # over part of a project is the sentence this reply must never imply.
+    # Which subtree this covers, said before any verdict and in every branch:
+    # "nothing is wrong" is a claim about one subtree, and a reader who does
+    # not know which one reads it as a claim about the project.
+    walked = result.get("root")
+    if walked is None:
+        # A bridge laid down before `path` existed ignores the argument and
+        # walks from `/` — same protocol number, different question answered.
+        # The missing key is what catches it, since the version cannot.
+        where = (
+            f"This bridge predates the `path` argument: it ignored "
+            f"path={path!r} and walked from / instead, so what follows may "
+            f"describe none of your project. Run 'td-atlas reload', then ask "
+            f"again."
+        )
+    else:
+        where = f"Checked {result.get('scanned')} operator(s) at and under {walked}."
     cut = ""
     if result.get("truncated"):
         cut = (
-            f"\nTRUNCATED: only the first {result.get('scanned')} operator(s) "
-            f"were checked (the limit is {result.get('limit')}); at least "
-            f"{result.get('notScanned')} more were not. Nothing is known "
-            f"about those."
+            f"\nTRUNCATED: the walk stopped after {result.get('limit')} "
+            f"operator(s) below {walked or '/'}; at least "
+            f"{result.get('notScanned')} more were not checked, and the real "
+            f"remainder is larger — the children of the operators it never "
+            f"visited were never counted either. Nothing is known about any "
+            f"of them. Ask again with a narrower `path`."
         )
     if not result["count"]:
         return (
             _warn(client)
-            + "No operators are reporting errors or warnings."
+            + where
+            + " No operators are reporting errors or warnings."
             + cut
         )
-    lines = [f"{result['count']} operator(s) reporting problems:"]
+    lines = [f"{where} {result['count']} operator(s) reporting problems:"]
     for node in result["nodes"]:
         detail = node["errors"] or node["warnings"]
         kind = "ERROR" if node["errors"] else "warning"

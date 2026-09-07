@@ -53,6 +53,15 @@ release rather than a change from a previous one.
   report how much of the network went unvisited. A partial read used to be
   indistinguishable from a complete one — including a "nothing wrong found"
   that had only looked at a corner of the network.
+- **`td_errors` takes a `path` and walks the project by default, not `/`.** It
+  used to sweep from the root, where its 5000-node budget is spent on
+  TouchDesigner's own `/ui` and `/sys` before the walk reaches the project — so
+  on an open session it answered "no operators are reporting errors" about a
+  project it had never looked at. The reply now also names the subtree it
+  walked, in every branch. `path` is a new argument to an existing bridge
+  method rather than a new method, so a bridge staged before this change still
+  reports protocol 6 and still walks `/`; the host detects that by the absent
+  field and says so instead of trusting the answer.
 - `td_health` reports its own blind spots: a script-error read that fails is a
   finding in the report, not silence. Its sampling interval is bounded, so a
   large `interval` can no longer block the server process.

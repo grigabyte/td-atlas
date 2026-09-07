@@ -85,25 +85,85 @@ def test_something_with_no_children_at_all_is_not_an_error():
 
 # -- m_errors ---------------------------------------------------------------
 
-def test_errors_marks_a_sweep_that_did_not_reach_the_whole_project(monkeypatch):
+@pytest.fixture
+def asked(monkeypatch):
+    """Record the path `m_errors` resolves, and answer with a given subtree."""
+    seen: list[str] = []
+
+    def install(target):
+        def resolve(path):
+            seen.append(path)
+            return target
+
+        monkeypatch.setattr(handler, "_resolve", resolve)
+        return seen
+
+    return install
+
+
+def test_errors_marks_a_sweep_that_did_not_reach_the_whole_project(
+    monkeypatch, asked
+):
     monkeypatch.setattr(handler, "_MAX_WALK_NODES", 4)
-    monkeypatch.setattr(handler, "root", _tree(10), raising=False)
+    asked(_tree(10))
 
     reply = handler.m_errors({})
 
-    assert reply["scanned"] == 4
+    # Four descendants plus the component the walk was pointed at.
+    assert reply["scanned"] == 5
     assert reply["truncated"] is True
     assert reply["notScanned"] == 6
     assert reply["limit"] == 4
 
 
-def test_errors_over_a_small_project_carries_no_truncation_marker(monkeypatch):
-    monkeypatch.setattr(handler, "root", _tree(3), raising=False)
+def test_errors_over_a_small_project_carries_no_truncation_marker(
+    monkeypatch, asked
+):
+    asked(_tree(3))
 
     reply = handler.m_errors({})
 
-    assert reply["scanned"] == 3
+    assert reply["scanned"] == 4
     assert "truncated" not in reply
+
+
+def test_errors_walks_the_project_by_default_and_not_the_whole_session(asked):
+    """The defect this default repairs, measured live 2026-09-07.
+
+    Breadth-first from `/` on a 32,063-operator session spent all 5000 nodes
+    on TouchDesigner's own /ui and /sys — root lists them before /project1 —
+    and a warning planted eight levels inside the project came back as
+    "nothing is reporting errors".
+    """
+    seen = asked(_tree(3))
+
+    handler.m_errors({})
+
+    assert seen == ["/project1"]
+
+
+def test_errors_walks_the_component_it_was_given(asked):
+    seen = asked(_tree(3, parent="/project1/geo1"))
+
+    reply = handler.m_errors({"path": "/project1/geo1"})
+
+    assert seen == ["/project1/geo1"]
+    assert reply["root"] == "/project1/geo1"
+
+
+def test_the_component_asked_about_is_checked_and_not_only_its_children(asked):
+    """From `/` it was covered as a child of root; from a named path it is not.
+
+    A reply that says nothing about the very component it was pointed at is
+    the partial-answer-read-as-whole failure this tool exists to prevent.
+    """
+    target = _tree(2)
+    target._warnings = "Warning: File not found"
+    asked(target)
+
+    reply = handler.m_errors({})
+
+    assert [node["path"] for node in reply["nodes"]] == ["/project1"]
 
 
 class FakeClient:
@@ -112,21 +172,23 @@ class FakeClient:
 
     def __init__(self, reply):
         self.reply = reply
+        self.asked: list[str] = []
 
-    def errors(self):
+    def errors(self, path="/project1"):
+        self.asked.append(path)
         return self.reply
 
 
-def _errors_text(monkeypatch, reply):
+def _errors_text(monkeypatch, reply, path="/project1"):
     monkeypatch.setattr(server, "bridge", lambda: FakeClient(reply))
-    return server.td_errors()
+    return server.td_errors(path)
 
 
 def test_a_clean_but_partial_sweep_does_not_read_as_a_clean_project(monkeypatch):
     text = _errors_text(
         monkeypatch,
-        {"count": 0, "nodes": [], "scanned": 5000, "truncated": True,
-         "notScanned": 120, "limit": 5000},
+        {"count": 0, "nodes": [], "root": "/", "scanned": 5000,
+         "truncated": True, "notScanned": 120, "limit": 5000},
     )
 
     assert "No operators are reporting errors" in text
@@ -135,9 +197,58 @@ def test_a_clean_but_partial_sweep_does_not_read_as_a_clean_project(monkeypatch)
 
 
 def test_a_complete_sweep_says_nothing_about_limits(monkeypatch):
-    text = _errors_text(monkeypatch, {"count": 0, "nodes": [], "scanned": 32})
+    text = _errors_text(
+        monkeypatch, {"count": 0, "nodes": [], "root": "/project1", "scanned": 32}
+    )
 
     assert "TRUNCATED" not in text
+
+
+def test_a_clean_reply_names_the_subtree_it_covers(monkeypatch):
+    """"Nothing is wrong" is a claim about one subtree, so it names it."""
+    text = _errors_text(
+        monkeypatch,
+        {"count": 0, "nodes": [], "root": "/project1/geo1", "scanned": 7},
+        path="/project1/geo1",
+    )
+
+    assert "/project1/geo1" in text
+    assert "7" in text
+
+
+def test_findings_name_the_subtree_too(monkeypatch):
+    text = _errors_text(
+        monkeypatch,
+        {
+            "count": 1,
+            "root": "/project1",
+            "scanned": 12,
+            "nodes": [
+                {"path": "/project1/movie", "type": "moviefileinTOP",
+                 "errors": "Error: File not found", "warnings": None}
+            ],
+        },
+    )
+
+    assert "at and under /project1" in text
+    assert "/project1/movie" in text
+
+
+def test_a_bridge_without_the_path_argument_is_not_read_as_an_answer(monkeypatch):
+    """Same protocol number, different question answered.
+
+    A bridge staged before `path` existed ignores it and walks from `/`. The
+    missing `root` key is what catches that, since the version cannot.
+    """
+    text = _errors_text(
+        monkeypatch,
+        {"count": 0, "nodes": [], "scanned": 5000, "truncated": True,
+         "notScanned": 9454, "limit": 5000},
+        path="/project1",
+    )
+
+    assert "predates the `path` argument" in text
+    assert "td-atlas reload" in text
 
 
 # -- m_health_sample --------------------------------------------------------

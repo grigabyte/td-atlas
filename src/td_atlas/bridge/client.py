@@ -368,8 +368,11 @@ class BridgeClient:
         )
         return base64.b64decode(result.pop("data")), result
 
-    def errors(self) -> dict:
-        return self.call("errors")
+    def errors(self, path: str = "/project1") -> dict:
+        # Default matches the handler's, and both are the project rather than
+        # `/`: a breadth-first walk from the root spends its node budget on
+        # TouchDesigner's own /ui and /sys before it reaches the project.
+        return self.call("errors", path=path)
 
     def batch(
         self,

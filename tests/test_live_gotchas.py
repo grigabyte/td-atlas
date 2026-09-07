@@ -336,8 +336,15 @@ _LOOP = (
 
 
 def _loop_warnings(client):
-    """What each tool says about the loop, `errors` asked first every time."""
-    errors = client.call("errors")["nodes"]
+    """What each tool says about the loop, `errors` asked first every time.
+
+    `errors` is asked for this subtree by name. It used to be asked for the
+    whole session, which worked only because this holder happens to sit near
+    the top: from `/` the walk's node budget goes to TouchDesigner's own /ui
+    and /sys, and anything deeper than about five path levels is never
+    reached (measured 2026-09-07).
+    """
+    errors = client.call("errors", path=ROOT + "/loop")["nodes"]
     from_errors = [
         n["path"] for n in errors
         if n["warnings"] and "dependency loop" in n["warnings"]

@@ -38,7 +38,7 @@ against the server, and so is that count.
 | `td_flags(path)` | The flags that decide whether a node runs and what is visible: display, render, bypass, cooking, and which ones this operator does not have. Check it when a correct-looking network produces nothing. |
 | `td_set_flags(path, flags, owner)` | Turn those flags on or off. Every write is read back, so a flag the family will not take is a refusal rather than a silence. |
 | `td_render(path, width, height)` | A TOP's image, returned to you. |
-| `td_errors()` | Operators reporting an error or warning. The walk is bounded, so "no operators are reporting errors" can be true of only the part that was walked — the reply says when that happened; see *When a reply is cut short* below. |
+| `td_errors(path)` | Operators reporting an error or warning, at and under `path` — the project by default. Do not ask for `/`: the walk is breadth-first and bounded, and TouchDesigner's own `/ui` and `/sys` are thousands of operators wide near the top, so the budget runs out before anything of yours is reached (measured: 5000 nodes from `/` covered 3,979 of `/ui` and 954 of `/sys`, and missed a warning planted inside the project). The reply names the subtree it walked and says when the walk stopped early; see *When a reply is cut short* below. |
 | `td_exec(code)` | Arbitrary Python inside TouchDesigner. Last resort. |
 | `td_undo(redo)` | Undo or redo, including whole `td_build` batches. Cannot be a step inside `td_build` — that is refused, because two of them in a row reach past the batch into the artist's own history. |
 | `td_snapshot(label, path)` | Save a component for later diffing. |
@@ -76,10 +76,13 @@ two bounds applied, and `depthLimited` carries the depth you asked for when it
 was reduced to the deepest this tool walks. The repair is always the same: ask
 again with a narrower `path`.
 
-`td_errors` and `td_health` bound their walk by node count. `scanned` is how
-many operators were actually looked at, `notScanned` how many were not, and
-`truncated` marks that it happened; `limit` is the bound. Read "nothing is
-wrong" as covering `scanned` operators and no others.
+`td_errors` and `td_health` bound their walk by node count, and both take the
+subtree to walk as `path`. `scanned` is how many operators were actually looked
+at, `notScanned` how many were not, and `truncated` marks that it happened;
+`limit` is the bound. `notScanned` is a floor, not a total: it counts operators
+the walk had already found and not visited, and never what hangs below them.
+Read "nothing is wrong" as covering `scanned` operators under the subtree the
+reply names, and no others.
 
 `td_health` also reports `scriptErrorsUnread` — the places where reading
 TouchDesigner's own script errors raised, with the reason. That is *unknown*,

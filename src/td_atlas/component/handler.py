@@ -59,16 +59,27 @@ _MAX_NETWORK_NODES = 5000
 # component, so 5000 leaves it whole. What it costs past that is measured
 # rather than estimated, as of 2026-09-07 on build 2025.32460: against an
 # open session of 36,144 operators — a small project, TouchDesigner's own
-# /ui and /sys, which this walk starts above, and kantanMapper loaded for
-# the measurement — a full 5000-node walk took 13-15 ms through `errors`
+# /ui and /sys, and kantanMapper loaded for the measurement — a full
+# 5000-node walk took 13-15 ms through `errors`
 # and 65-77 ms through `health_sample`. Timed on
 # the host with perf_counter around the call, so both include HTTP and JSON
 # and are an upper bound on the work done here. The estimate this replaces
 # read 0.3 s, extrapolated from a text serialisation that does far more per
-# operator; it was four to twenty times pessimistic. The reason for a
-# ceiling is unchanged: every request runs on the main thread, so an
-# unbounded walk is a freeze whose length the caller chooses, and nothing
-# bounds how large a project can be.
+# operator; it was four to twenty times pessimistic.
+#
+# The reason for a ceiling survived that measurement, because the cost is
+# linear and nothing bounds a project's size. Timed inside the handler the
+# same day, without HTTP or JSON: the `errors` walk over all 32,063
+# operators of that session (kantanMapper unloaded) took 45.7-50.7 ms, or
+# about 1.5 us an operator — three dropped frames at 60 fps, and ten times
+# that on a session ten times the size. At 5000 nodes the same walk is
+# 6.9-9.6 ms, inside one frame. So the ceiling stays where it is; what
+# changed 2026-09-07 is where `errors` starts walking from, which is what
+# actually kept it out of the project (see m_errors). A ceiling of its own,
+# raised above 5000 for `errors` alone, was measured and rejected: it is
+# moot once the walk starts at the project, and it would fork a constant
+# shared with `health_sample`, whose per-operator cost is an order of
+# magnitude higher (59-81 ms of wall time for 4080 nodes).
 _MAX_WALK_NODES = 5000
 
 # One captured frame is a float32 RGBA array the size of the TOP:
@@ -2689,16 +2700,35 @@ def m_contact_sheet(params):
     }
 
 
-def m_errors(_params):
-    """Every operator currently reporting an error or warning.
+def m_errors(params):
+    """Every operator at or under one component reporting an error or warning.
 
-    Bounded: a walk of the whole project runs on the main thread, and one that
-    stopped early says so rather than let a partial sweep read as "nothing is
-    wrong here".
+    `path` defaults to the project rather than to `/`, and that default is the
+    repair for a measured failure: from `/` this tool answered "nothing is
+    wrong" about a project it had never reached. The walk is breadth-first, so
+    the node budget is spent on whatever is widest at the shallow levels — and
+    on an open session that is TouchDesigner's own interface. Measured
+    2026-09-07 on build 2025.32460 against a session of 32,063 operators
+    (22,635 under /ui, 9,351 under /sys, 11 in the project, and root lists /ui
+    and /sys before /project1): the first 5,000 nodes were 3,979 from /ui and
+    954 from /sys, the walk died at path level 5, and a warning planted eight
+    levels below /project1 was invisible while fifteen findings from /ui and
+    /sys came back as the whole answer. The same walk of the project alone
+    costs 0.0-0.1 ms and is complete.
+
+    Bounded still: every request runs on the main thread, nothing bounds how
+    large a project can be, and a walk that stopped early says so rather than
+    let a partial sweep read as "nothing is wrong here".
     """
+    start = _resolve(params.get("path") or "/project1")
     found = []
-    scanned, unvisited = _bounded_descendants(root, _MAX_WALK_NODES)
-    for target in scanned:
+    scanned, unvisited = _bounded_descendants(start, _MAX_WALK_NODES)
+    # The named operator is checked as well as its descendants. From `/` it
+    # was covered as a child of root; from a named path it would not be, and a
+    # reply silent about the very component it was pointed at is the same
+    # partial answer read as a whole one that the budget marker exists for.
+    # It is one operator, so it is not charged against the budget.
+    for target in [start] + scanned:
         try:
             errors = target.errors(recurse=False)
             warnings = target.warnings(recurse=False)
@@ -2713,7 +2743,16 @@ def m_errors(_params):
                     "warnings": warnings or None,
                 }
             )
-    result = {"count": len(found), "nodes": found, "scanned": len(scanned)}
+    result = {
+        "count": len(found),
+        "nodes": found,
+        # Which subtree was walked. The host prints it in every branch: "no
+        # operators are reporting errors" is a claim about one subtree, and
+        # which one it was is the difference between a clean project and a
+        # walk that never got there.
+        "root": start.path,
+        "scanned": len(scanned) + 1,
+    }
     if unvisited:
         result["truncated"] = True
         result["notScanned"] = unvisited
