@@ -213,7 +213,7 @@ def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch)
         finally:
             probe.close()
         elapsed = (time.perf_counter() - started) * 1000.0
-        return "%r (%s) after %.1f ms" % (
+        return "%r (%s) after %.3f ms" % (
             code,
             errno.errorcode.get(code, "no errno name"),
             elapsed,
