@@ -32,9 +32,14 @@ def _home():
     ~/.td-atlas beside a live TD_ATLAS_HOME, a constant here read the old
     handler.py and installed a previous version of the bridge silently — the
     install looked fine and only surfaced later as a protocol mismatch. An
-    empty value counts as unset, as it does in handler.py and config.py.
+    empty value counts as unset, as it does in handler.py and config.py, and
+    the default is joined rather than expanded in one piece for the reason
+    handler.py's `_home` records: expanding "~/.td-atlas" leaves the "/" in
+    place, which on Windows spells one directory in two separators.
     """
-    return os.environ.get("TD_ATLAS_HOME") or os.path.expanduser("~/.td-atlas")
+    return os.environ.get("TD_ATLAS_HOME") or os.path.join(
+        os.path.expanduser("~"), ".td-atlas"
+    )
 
 
 def _load_config():

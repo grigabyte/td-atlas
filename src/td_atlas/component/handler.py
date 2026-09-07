@@ -109,7 +109,21 @@ _MAX_CAPTURE_FRAMES = 64
 # -- authentication ---------------------------------------------------------
 
 def _home():
-    return os.environ.get("TD_ATLAS_HOME") or os.path.expanduser("~/.td-atlas")
+    """Where the host and this bridge meet; see src/td_atlas/config.py.
+
+    Joined rather than expanded from "~/.td-atlas" in one piece:
+    `os.path.expanduser` only substitutes the leading "~" and leaves the rest
+    of the string alone, so on Windows that form returned
+    "C:\\Users\\a/.td-atlas" — the same directory the host's `config.home()`
+    means, spelled in two separators at once. Measured in CI (run 34111353871,
+    windows-latest, 2026-09-07) as the two sides disagreeing over the string
+    while agreeing about the directory. Nothing broke on it yet, and nothing
+    should get the chance: this path is printed in warnings and compared with
+    the host's answer by `td-atlas doctor`.
+    """
+    return os.environ.get("TD_ATLAS_HOME") or os.path.join(
+        os.path.expanduser("~"), ".td-atlas"
+    )
 
 
 def _config_path():
@@ -257,6 +271,31 @@ def _instance_path(port):
     return os.path.join(_home(), "instances", "%d.json" % int(port))
 
 
+def _project_path(folder, name):
+    """`project.folder` + `project.name`, in the separator the folder uses.
+
+    TouchDesigner hands out `project.folder` in its own notation, and what
+    that notation is on Windows is not something this project has measured —
+    no TouchDesigner on Windows has ever run this code. `os.path.join` answers
+    for it regardless: on Windows it inserts a backslash, so a folder reported
+    as "C:/Users/a/td" became "C:/Users/a/td\\Vessel.toe" (measured in CI, run
+    34111353871, windows-latest, 2026-09-07, against a POSIX-shaped folder).
+    That record is what the host prints and what `--project` matches a
+    fragment against, so one separator in the middle of another notation costs
+    the artist a match on a path they can see.
+
+    Reusing whichever separator the folder already carries keeps the record in
+    one notation without this side having to know which one TouchDesigner
+    picked. A folder with neither gets "/", the notation TouchDesigner uses
+    for everything else it reports.
+    """
+    folder = str(folder or "")
+    if not folder:
+        return name
+    separator = "\\" if "\\" in folder and "/" not in folder else "/"
+    return folder.rstrip("/\\") + separator + name
+
+
 def _instance_record(port, component_path):
     """What this bridge claims about itself. Never the token.
 
@@ -267,7 +306,7 @@ def _instance_record(port, component_path):
     return {
         "port": int(port),
         "project": project.name,
-        "projectPath": os.path.join(project.folder, project.name),
+        "projectPath": _project_path(project.folder, project.name),
         "build": app.build,
         "pid": os.getpid(),
         "component": component_path,

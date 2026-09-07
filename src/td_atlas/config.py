@@ -151,12 +151,88 @@ def ensure_config(port: int | None = None, auth: bool = True) -> dict:
 # thing the client actually needs to be true.
 
 
-def pid_alive(pid: int) -> bool:
-    """Is there any process with this id? Signal 0 checks without delivering.
+def _pid_alive_windows(pid: int) -> bool:
+    """Does a process with this id exist? Asked of the Win32 API directly.
 
-    EPERM means the process exists but belongs to another user — still alive.
+    `os.kill(pid, 0)` cannot ask this on Windows, and the reason is a
+    coincidence of numbering: `signal.CTRL_C_EVENT` *is* 0, so signal 0 takes
+    CPython's documented console-event branch and calls
+    `GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)` — a control event sent to a
+    console process group, not a question about whether a process exists.
+    Measured in CI (run 34111353871, windows-latest, 2026-09-07): it returned
+    success for the test process's own pid, so the old code answered "alive"
+    without having read anything, and whatever it answered for a pid that is
+    gone was not a reading either.
+
+    `OpenProcess` is the question itself. ERROR_INVALID_PARAMETER means no
+    process carries that id; ERROR_ACCESS_DENIED means one does and it is not
+    ours — the case POSIX reports as EPERM and this code counts as alive. A
+    handle that does open stays signalled once the process has exited, so
+    WAIT_OBJECT_0 is "already exited" and WAIT_TIMEOUT is "still running".
+
+    Nothing here has run on a Windows desktop; the CI leg is the measurement,
+    and `tests/test_instances.py` asks it about both a live pid and a pid that
+    has been waited on.
+    """
+    import ctypes
+
+    if not 0 < pid <= 0xFFFFFFFF:
+        return False
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    # HANDLE is pointer-sized: with the default `int` restype it would be
+    # truncated on x64 and closed as the wrong handle.
+    kernel32.OpenProcess.restype = ctypes.c_void_p
+    kernel32.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+    kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+    kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+    kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+
+    synchronize = 0x00100000
+    query_limited_information = 0x1000
+    error_access_denied = 5
+    wait_object_0 = 0
+
+    handle = kernel32.OpenProcess(
+        synchronize | query_limited_information, False, pid
+    )
+    if not handle:
+        return ctypes.get_last_error() == error_access_denied
+    try:
+        return kernel32.WaitForSingleObject(handle, 0) != wait_object_0
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+# What "nothing is there" looks like as a `connect_ex` return value.
+#
+# Windows does not reuse the POSIX numbers: `connect_ex` hands back the WSA
+# error (WSAECONNREFUSED 10061, WSAECONNRESET 10054) while `errno.ECONNREFUSED`
+# is the C runtime's own 107 there, so the POSIX pair alone matched nothing and
+# a refused port read as "could not tell". Measured in CI (run 34111353871,
+# windows-latest, 2026-09-07): `port_listening` returned None for a socket that
+# had just been closed — which makes a stale record unprunable and
+# `Instance.alive` incapable of ever being False, i.e. the registry's liveness
+# test (see below) did not work on Windows at all.
+#
+# The two WSA numbers are written out rather than read from `errno`: those
+# names exist only on Windows, so a `getattr(errno, ..., None)` default would
+# drop the fix silently if they ever moved. No POSIX `connect_ex` returns a
+# value in that range, so the set is inert everywhere else.
+_REFUSED = frozenset({errno.ECONNREFUSED, errno.ECONNRESET, 10061, 10054})
+
+
+def pid_alive(pid: int) -> bool:
+    """Is there any process with this id?
+
+    On POSIX signal 0 checks without delivering, and EPERM means the process
+    exists but belongs to another user — still alive. Windows has no such
+    signal; the question goes to `OpenProcess` instead, for the reason
+    `_pid_alive_windows` sets out.
     """
     try:
+        if os.name == "nt":
+            return _pid_alive_windows(int(pid))
         os.kill(int(pid), 0)
     except ProcessLookupError:
         return False
@@ -192,7 +268,7 @@ def port_listening(port: int, timeout: float = 0.25) -> bool | None:
         sock.close()
     if error == 0:
         return True
-    if error in (errno.ECONNREFUSED, errno.ECONNRESET):
+    if error in _REFUSED:
         return False
     # Timeout, EHOSTUNREACH, a firewall — observed nothing, so claim nothing.
     return None
