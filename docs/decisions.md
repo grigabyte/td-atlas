@@ -11,9 +11,11 @@ decision by number ("for the reason decision 22 records"), so the numbering is
 kept as it was assigned, gaps and all. A gap is a decision that shaped how
 this project is *worked on* rather than how it is built — the owner's working
 notes, positioning, method — and those are not a reader's business. Forty-six
-of fifty-seven are here; the eleven left out are the project's stance on its
+of fifty-eight are here; the twelve left out are the project's stance on its
 neighbours, one decision cancelled the day it was taken, the owner's machine
-and working method, and the genre rules of the owner's own memory bank.
+and working method, the genre rules of the owner's own working notes, and the
+decision to keep those notes out of the repository — which is about process
+too, and which `.gitignore` explains where a reader actually meets it.
 
 Nothing here is a promise about the future. A line that stops being true gets
 struck rather than deleted, so a reader who found it in an old comment can see

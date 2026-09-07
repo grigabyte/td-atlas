@@ -81,7 +81,7 @@ canonical model — nested tree, sibling references by name, parameters sorted �
 so that what was being measured was the syntax and not the model. Plain JSON,
 JSON with a custom printer, YAML, and a line-oriented format of our own. The
 line-oriented one is the smallest at every size and plain JSON the largest, by
-1.8x to 3.4x. Size lost the argument anyway:
+1.8x to 3.6x. Size lost the argument anyway:
 
 - **The parser costs nothing.** JSON reads back with `json.loads`. YAML and the
   line-oriented format each needed a hand-written pair — an emitter and a
@@ -114,9 +114,9 @@ Those comparisons were run on 2026-08-28, against prototypes that were not
 kept — so they are evidence for the choice and not numbers to re-run. The
 shipped printer's own sizes are the table above, and they are re-measured by a
 test rather than remembered: the same `kantanMapper.tox` prints 106,082 lines
-and 6,111,237 bytes. The prototype's byte counts came out 7–24% lower,
-probably because the shipped printer emits `family`, `custom_parms`, `table`
-and `color` in every node even when they are empty. The comparison between the
+and 6,111,237 bytes. The shipped printer prints 12–24% more bytes (and 7% more
+lines) than the prototype did, probably because it emits `family`,
+`custom_parms`, `table` and `color` in every node even when they are empty. The comparison between the
 four formats is unaffected — the correction moves all four columns the same
 way.
 

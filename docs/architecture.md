@@ -114,7 +114,10 @@ not fire that callback, measured — so `bootstrap.py` registers the instance
 itself.
 
 `td-atlas instances` is therefore the one command that answers a question
-about bridges without dialling one, which is exactly when the answer matters.
+about bridges without making a bridge call — it opens the port and closes it
+again without sending a request, so neither the token nor the protocol version
+is involved, and an unreachable or outdated bridge is still listed. Which is
+exactly when the answer matters.
 The CLI's `--port`/`--project` select among them; the MCP surface deliberately
 cannot, for the reason `AGENTS.md` gives.
 

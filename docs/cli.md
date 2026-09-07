@@ -58,9 +58,12 @@ The three layers are separable on purpose, and this is the table that says so.
 | `exec`, `render`, `reload` | a live bridge |
 
 `instances` is the one command that answers a question about bridges without
-dialling one: it reads the registry in `~/.td-atlas` and checks each entry the
-way both sides can check it — is the port listening, does the process still
-exist. So it answers when every bridge is dead, which is when you need it.
+making a bridge call: it reads the registry in `~/.td-atlas` and checks each
+entry the way both sides can check it — does the port accept a connection,
+does the process still exist. It opens that connection and closes it again
+without sending a request, so no token and no protocol version are involved,
+and it still answers when every bridge is dead or too old to talk. Which is
+when you need it.
 
 The `project` actions read an index when one exists and work without it; the
 index only sharpens type resolution, because a saved file stores contracted
