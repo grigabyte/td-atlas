@@ -36,27 +36,39 @@ _TOKEN_LOADED = False
 _MAX_REPR = 4000
 _MAX_CHILDREN = 2000
 
-# Depth and node ceilings for a network walk. Measured 2026-09-06 on the
-# largest component TouchDesigner ships, kantanMapper.tox: 4080 operators,
-# nesting 12 levels below its own root, widest parent 143 children (counted
-# offline by expanding the .tox and walking the tree — no running instance
-# needed for either number). _MAX_DEPTH is that 12 plus room for the
-# component sitting a few levels inside a project; _MAX_NETWORK_NODES sits
-# above the 4080 so the largest shipped component still comes back whole,
-# and bounds a walk on anything bigger. Both cuts are reported in the reply:
-# a partial network described as a whole one is the failure this prevents.
+# Depth and node ceilings for a network walk. Measured on the largest
+# component TouchDesigner ships, kantanMapper.tox: 4080 operators, widest
+# parent 143 children, nesting 11 levels below its own root. The first two
+# were counted offline 2026-09-06 by expanding the .tox and walking the tree,
+# and both were confirmed live 2026-09-07 by loading the component into a
+# running instance and counting there. The nesting was not: the offline count
+# said 12 levels and the live count says 11, by longest operator path
+# (.../ui/main/gadgets/layers/treebrowser/tree/table/local/macros/row_type).
+# _MAX_DEPTH is that 11 plus room for the component sitting a few levels
+# inside a project; _MAX_NETWORK_NODES sits above the 4080 so the largest
+# shipped component still comes back whole, and bounds a walk on anything
+# bigger. Both cuts are reported in the reply: a partial network described as
+# a whole one is the failure this prevents. What the bounded walk costs is
+# measured too — 4079 operators described in 37-52 ms, and a full 5000-node
+# walk in 44-91 ms.
 _MAX_DEPTH = 16
 _MAX_NETWORK_NODES = 5000
 
 # The same ceiling for the two whole-subtree walks (errors, health_sample),
 # for the same reason: 4080 measured operators in the largest shipped
-# component, so 5000 leaves it whole. What it costs on a network past that is
-# an estimate, not a measurement — serialising 4080 operators to text inside
-# TouchDesigner took 241-250 ms (facts.md, build 2025.32460), so ~60 us an
-# operator, and a 5000-node walk lands near 0.3 s: eighteen frames at 60 fps.
-# Every request runs on the main thread, so an unbounded walk is a freeze
-# whose length the caller chooses. Not verified on a live network of that
-# size — no such network exists on this machine.
+# component, so 5000 leaves it whole. What it costs past that is measured
+# rather than estimated, as of 2026-09-07 on build 2025.32460: against an
+# open session of 36,144 operators — a small project, TouchDesigner's own
+# /ui and /sys, which this walk starts above, and kantanMapper loaded for
+# the measurement — a full 5000-node walk took 13-15 ms through `errors`
+# and 65-77 ms through `health_sample`. Timed on
+# the host with perf_counter around the call, so both include HTTP and JSON
+# and are an upper bound on the work done here. The estimate this replaces
+# read 0.3 s, extrapolated from a text serialisation that does far more per
+# operator; it was four to twenty times pessimistic. The reason for a
+# ceiling is unchanged: every request runs on the main thread, so an
+# unbounded walk is a freeze whose length the caller chooses, and nothing
+# bounds how large a project can be.
 _MAX_WALK_NODES = 5000
 
 # One captured frame is a float32 RGBA array the size of the TOP:
