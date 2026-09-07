@@ -2736,12 +2736,15 @@ def m_errors(params):
     """
     start = _resolve(params.get("path") or "/project1")
     found = []
-    scanned, unvisited = _bounded_descendants(start, _MAX_WALK_NODES)
     # The named operator is checked as well as its descendants. From `/` it
     # was covered as a child of root; from a named path it would not be, and a
     # reply silent about the very component it was pointed at is the same
     # partial answer read as a whole one that the budget marker exists for.
-    # It is one operator, so it is not charged against the budget.
+    # It is charged against the budget, hence the -1: uncharged, it made
+    # `scanned` come back one above the `limit` printed beside it, and
+    # "checked 5001 operators, at most 5000 are walked" reads as a bug in
+    # whichever of the two numbers the reader trusts less.
+    scanned, unvisited = _bounded_descendants(start, _MAX_WALK_NODES - 1)
     for target in [start] + scanned:
         try:
             errors = target.errors(recurse=False)
@@ -3090,7 +3093,12 @@ def m_health_sample(params):
 
     script_errors = {}
     nodes = []
-    scanned, unvisited = _bounded_descendants(target, _MAX_WALK_NODES)
+    # The same accounting as `errors`, and for the same reason: the subtree
+    # root is examined here too — its own scriptErrors are read below — so it
+    # is charged against the budget and counted in `scanned`. The two methods
+    # used to disagree about whether the root was one of the operators
+    # walked, which made the same number mean two things.
+    scanned, unvisited = _bounded_descendants(target, _MAX_WALK_NODES - 1)
     for child in scanned:
         try:
             entry = {
@@ -3170,7 +3178,7 @@ def m_health_sample(params):
         # unattributed beats unmentioned.
         "scriptErrors": script_errors,
         "scriptErrorsRaw": _clip(script_errors_root),
-        "scanned": len(scanned),
+        "scanned": len(scanned) + 1,
     }
     if unvisited:
         # A health verdict over part of a network must not read as a verdict

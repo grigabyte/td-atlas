@@ -261,8 +261,8 @@ def check(
         health.findings.append(
             Finding(
                 "warning", "walk-truncated",
-                f"only {second.get('scanned', len(live))} operator(s) under "
-                f"{path} were sampled (the bridge walks at most "
+                f"only {second.get('scanned', len(live))} operator(s) at and "
+                f"under {path} were sampled (the bridge walks at most "
                 f"{second.get('limit')}); at least "
                 f"{second.get('notScanned')} more were not looked at, and "
                 f"nothing below is known about them. Run this on a subtree "

@@ -1007,8 +1007,10 @@ def td_errors(path: str = "/project1") -> str:
     # "nothing is wrong" is a claim about one subtree, and a reader who does
     # not know which one reads it as a claim about the project.
     # A bridge that ignores `path` and walks from `/` is refused at connect by
-    # the version check: `path` is part of protocol 7, and 7 is the minimum
-    # this host accepts. This used to be worked out here instead, from which
+    # the version check: `path` entered the method table at protocol 7, and
+    # no bridge below the minimum this host accepts is let through — the
+    # minimum being the number, not a second copy of it here (decision 41).
+    # This used to be worked out here instead, from which
     # keys the reply did or did not carry — a convention the protocol never
     # stated, and one the version number is the right owner of.
     walked = result["root"]
@@ -1017,7 +1019,7 @@ def td_errors(path: str = "/project1") -> str:
     if result.get("truncated"):
         cut = (
             f"\nTRUNCATED: the walk stopped after {result.get('limit')} "
-            f"operator(s) below {walked}; at least "
+            f"operator(s) at and under {walked}; at least "
             f"{result.get('notScanned')} more were not checked, and the real "
             f"remainder is larger — the children of the operators it never "
             f"visited were never counted either. Nothing is known about any "

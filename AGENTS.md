@@ -160,7 +160,16 @@ section for the rule they exist to serve.
   failure detector that itself costs a frame is not an improvement, and the
   cost of parsing a section is measurable on the host with no TouchDesigner
   running — so a new section arrives with the measurement rather than with an
-  intention to take one later. `tests/test_health.py` prints the number.
+  intention to take one later.
+  `tests/test_health.py::test_prints_what_each_new_section_costs` takes the
+  measurement and prints it, and
+  `tests/test_health.py::test_every_health_section_states_its_cost` is what
+  makes the arrival compulsory: it derives every finding kind `health.py`
+  builds and fails on one absent from the listing that says what each
+  section's cost measurement is. What it cannot see is a section that adds no
+  new kind — an existing finding taught to read a new and expensive field
+  keeps its name — and that half is the review's, the way the reply shape is
+  in `test_protocol_fingerprint.py`.
 
 ## Running things
 

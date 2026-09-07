@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import pathlib
 import time
 
 import pytest
@@ -461,3 +463,114 @@ def test_a_one_line_warning_keeps_its_text_and_loses_only_the_prefix():
     assert finding.paths == [
         "/p/g (The GLSL Shader has compile errors (Use Info DAT to see details).)"
     ]
+
+
+# -- the invariant itself, not just its printout -----------------------------
+
+# Every kind of finding `td_health` can report, and what states its cost.
+# `AGENTS.md` ("Invariants a change has to keep") promises that a new section
+# arrives with a measurement rather than an intention to take one; this
+# listing is what makes that promise a gate instead of a habit. A new kind is
+# not in it, the test below reds, and the way to make it green is to time the
+# section in `test_prints_what_each_new_section_costs` and record the number
+# here.
+#
+# The two marked TIMED are the sections that arrived after the invariant was
+# written; `script-errors-unread` reads the same payload as `script-errors`
+# and is covered by that section's own timing rather than claiming one of its
+# own. The rest are read off fields the bridge's sample already carried
+# before there was a gate: they cost a dictionary lookup on a payload already
+# parsed, and no separate measurement was ever taken. That is recorded as it
+# is rather than back-filled with a number nobody measured.
+TIMED = "timed in test_prints_what_each_new_section_costs"
+WITH_SCRIPT_ERRORS = "a second reading of the script-errors payload, timed with it"
+PARSED_FIELD = "predates the gate: a lookup on the already-parsed sample"
+
+SECTION_COSTS = {
+    "shader-compile": TIMED,
+    "script-errors": TIMED,
+    "script-errors-unread": WITH_SCRIPT_ERRORS,
+    "walk-truncated": PARSED_FIELD,
+    "interval-clamped": PARSED_FIELD,
+    "resolution-clamped": PARSED_FIELD,
+    "licence": PARSED_FIELD,
+    "node-errors": PARSED_FIELD,
+    "node-warnings": PARSED_FIELD,
+    "output-off": PARSED_FIELD,
+    "not-cooking": PARSED_FIELD,
+    "paused": PARSED_FIELD,
+    "non-realtime": PARSED_FIELD,
+    "expensive": PARSED_FIELD,
+    "bypassed": PARSED_FIELD,
+    "stalled": PARSED_FIELD,
+    "slow": PARSED_FIELD,
+}
+
+
+def _finding_kinds() -> set[str]:
+    """Every `kind` literal `health.py` builds a Finding with.
+
+    Read from the source rather than by provoking each finding: provoking
+    them is what the rest of this module does, and a section nobody wrote a
+    test for is exactly the one this gate has to catch.
+    """
+    source = pathlib.Path(health_mod.__file__).read_text(encoding="utf-8")
+    kinds = set()
+    dynamic = []
+    for call in ast.walk(ast.parse(source)):
+        if not (isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "Finding"):
+            continue
+        kind = call.args[1] if len(call.args) > 1 else None
+        if isinstance(kind, ast.Constant) and isinstance(kind.value, str):
+            kinds.add(kind.value)
+        else:
+            dynamic.append(call.lineno)
+    assert not dynamic, (
+        f"health.py builds a Finding with a non-literal kind at line(s) "
+        f"{dynamic}. This gate reads kinds out of the source, so a computed "
+        f"one is invisible to it: name the kind with a literal, or replace "
+        f"this derivation with something that can see yours."
+    )
+    return kinds
+
+
+def test_every_health_section_states_its_cost():
+    """The invariant in AGENTS.md, held rather than remembered.
+
+    Before this, the invariant said every new `td_health` section states its
+    own cost in a test, and the only test involved printed three numbers and
+    asserted that two findings existed. A third section could arrive with no
+    measurement at all and nothing would go red — the clause promised a gate
+    that did not exist.
+
+    Blind spot, stated: this fires on a new *kind*. A change that makes an
+    existing kind read a new and expensive field of the sample keeps its name
+    and stays invisible here; that half is the review's, as the reply shape
+    is in `test_protocol_fingerprint.py`.
+    """
+    derived = _finding_kinds()
+    assert derived == set(SECTION_COSTS), (
+        f"missing from SECTION_COSTS: {sorted(derived - set(SECTION_COSTS))}; "
+        f"recorded but no longer built: "
+        f"{sorted(set(SECTION_COSTS) - derived)}.\n"
+        f"A new td_health section states its own cost in a test — the "
+        f"invariant in AGENTS.md. Time it in "
+        f"test_prints_what_each_new_section_costs and record the number "
+        f"beside its kind in SECTION_COSTS above."
+    )
+
+
+def test_the_sections_marked_timed_are_the_ones_the_timing_test_asserts_on():
+    """Marking a kind TIMED must mean the timing test actually names it."""
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    body = source.split("def test_prints_what_each_new_section_costs")[1]
+    body = body.split("\ndef ")[0]
+    for kind, note in SECTION_COSTS.items():
+        if note is TIMED:
+            assert f'"{kind}"' in body, (
+                f"{kind} is recorded as timed, but "
+                f"test_prints_what_each_new_section_costs does not mention "
+                f"it. Either time it there or record what it really costs."
+            )

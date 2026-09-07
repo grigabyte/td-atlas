@@ -24,6 +24,14 @@ Two blind spots, stated rather than papered over:
 - **Parameter names read through a variable.** They are recorded as
   `<dynamic>` unless the variable is a loop target over a module-level literal
   table, which is the one such pattern in the handler today.
+- **`params` reached through another name.** The walk matches the identifier
+  `params` itself, so `p = params; p["x"]`, `dict(params)["x"]` and
+  `**params` forwarded into a helper that names its argument something else
+  all read a key this listing would not show. Deciding those needs dataflow,
+  not a pattern, and there is nothing to decide today: every read in the
+  handler goes through `params` by that name, via `get`, `pop`,
+  `setdefault`, a subscript or an `in`, and those five forms are matched. A
+  new read through an alias is what review is for.
 
 The version keys the table below are labels for recorded listings, not a
 second copy of the constant: the current one is imported (decision 8) and used
@@ -34,6 +42,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import re
 
 from td_atlas.bridge.client import (
     EXPECTED_PROTOCOL_VERSION,
@@ -161,7 +170,7 @@ def _params_read(tree: ast.Module, function: ast.FunctionDef) -> set[str]:
         if (
             isinstance(sub, ast.Call)
             and isinstance(sub.func, ast.Attribute)
-            and sub.func.attr in ("get", "pop")
+            and sub.func.attr in ("get", "pop", "setdefault")
             and isinstance(sub.func.value, ast.Name)
             and sub.func.value.id == "params"
             and sub.args
@@ -249,3 +258,90 @@ def test_the_listing_covers_every_method_in_the_table():
     """A fingerprint that silently skipped a method would hold nothing."""
     named = {line.split(":", 1)[0] for line in derive().splitlines()}
     assert named == set(handler.METHODS)
+
+
+# -- the number where it is written in prose ---------------------------------
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+
+# Where the protocol number is stated in prose a reader acts on, and how much
+# of each file is a claim about the *current* number.
+#
+# `README.md` whole: its Troubleshooting table tells a reader which bridges
+# this build accepts, and every number in it is that claim.
+#
+# `CHANGELOG.md` only down to the second `## [` heading — the `[Unreleased]`
+# section. Below that is release history, where "the bridge speaks protocol 7"
+# stays true about that release forever and a version bump must not red this
+# test. Nothing has been released yet, so today the cut takes the whole file;
+# it is written as a cut rather than as a whole-file scan because the first
+# release is what moves the line, and a test that only worked before the first
+# release would fail on the release itself.
+PROSE_SOURCES = (("README.md", None), ("CHANGELOG.md", "## ["))
+
+# `protocol N` names a version; `minimum N` names one only on a line that is
+# about the protocol at all, which keeps README's "clamped minimum 0.0" out.
+_STATES_A_VERSION = re.compile(r"protocol (\d+)")
+_STATES_A_MINIMUM = re.compile(r"minimum (\d+)")
+
+
+def _prose_versions(text: str) -> list[tuple[int, str]]:
+    found = []
+    for line in text.splitlines():
+        numbers = [int(n) for n in _STATES_A_VERSION.findall(line)]
+        if "protocol" in line:
+            numbers += [int(n) for n in _STATES_A_MINIMUM.findall(line)]
+        found += [(n, line.strip()) for n in numbers]
+    return found
+
+
+def _current_prose(name: str, stop_after_first: str | None) -> str:
+    text = (REPO / name).read_text(encoding="utf-8")
+    if stop_after_first is None:
+        return text
+    lines = text.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith(stop_after_first)]
+    if len(starts) < 2:
+        return text
+    return "\n".join(lines[: starts[1]])
+
+
+def test_the_protocol_number_written_in_prose_is_the_constant():
+    """The number in the documents moves with the code, or this reds.
+
+    `README.md` states the number twice — "below the minimum 7", "the oldest
+    bridge accepted is protocol 7" — and no test read either. The next bump
+    would have left both stale in silence, which is the exact failure the
+    version exists to prevent, one level up: a reader following the document
+    is told a bridge is accepted that is refused at connect.
+
+    Two blind spots, stated rather than papered over:
+
+    - **A number not written as a numeral after `protocol` or `minimum`.**
+      "the bridge speaks seven", or a sentence that puts the digit anywhere
+      else, is not matched. What is matched is the form the documents use.
+    - **Protocol numbers that are not claims about the current version.**
+      `scripts/publish.sh` illustrates a stale bundle "speaking bridge
+      protocol 3"; `cli.py` and `bridge/client.py` record that a method has
+      been in the table "since protocol 1"; `mcp/server.py` records that
+      `path` entered the table at protocol 7. All four stay true after a
+      bump, so none is scanned. A code comment that does restate the current
+      minimum is the thing to avoid writing, not to cover here.
+    """
+    for name, cut in PROSE_SOURCES:
+        for number, line in _prose_versions(_current_prose(name, cut)):
+            assert number == MIN_PROTOCOL_VERSION, (
+                f"{name} says protocol {number} where the code says "
+                f"{MIN_PROTOCOL_VERSION}:\n  {line}\n"
+                f"MIN_PROTOCOL_VERSION and PROTOCOL_VERSION are the wire; the "
+                f"documents follow them. Update the line, or the constants."
+            )
+
+
+def test_the_prose_scan_actually_finds_the_numbers_it_is_meant_to_hold():
+    """A scan that matched nothing would pass for the wrong reason."""
+    counted = {
+        name: len(_prose_versions(_current_prose(name, cut)))
+        for name, cut in PROSE_SOURCES
+    }
+    assert counted == {"README.md": 2, "CHANGELOG.md": 2}, counted

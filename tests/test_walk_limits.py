@@ -109,10 +109,13 @@ def test_errors_marks_a_sweep_that_did_not_reach_the_whole_project(
 
     reply = handler.m_errors({})
 
-    # Four descendants plus the component the walk was pointed at.
-    assert reply["scanned"] == 5
+    # Three descendants plus the component the walk was pointed at: the
+    # component is charged against the budget, so `scanned` never exceeds the
+    # `limit` reported beside it.
+    assert reply["scanned"] == 4
+    assert reply["scanned"] <= reply["limit"]
     assert reply["truncated"] is True
-    assert reply["notScanned"] == 6
+    assert reply["notScanned"] == 7
     assert reply["limit"] == 4
 
 
@@ -273,10 +276,14 @@ def test_a_health_sample_that_stopped_early_says_so(monkeypatch, td_globals):
 
     sample = handler.m_health_sample({"path": "/project1"})
 
-    assert len(sample["nodes"]) == 4
+    # Three described children plus the subtree root, which is examined here
+    # too (its own scriptErrors are read) and counted the way `errors` counts
+    # it — the two used to disagree about the same key.
+    assert len(sample["nodes"]) == 3
     assert sample["scanned"] == 4
+    assert sample["scanned"] <= sample["limit"]
     assert sample["truncated"] is True
-    assert sample["notScanned"] == 6
+    assert sample["notScanned"] == 7
 
 
 def test_a_health_sample_of_a_small_project_is_not_marked(monkeypatch, td_globals):
@@ -284,7 +291,8 @@ def test_a_health_sample_of_a_small_project_is_not_marked(monkeypatch, td_global
 
     sample = handler.m_health_sample({"path": "/project1"})
 
-    assert sample["scanned"] == 3
+    # Three children and the root they hang under.
+    assert sample["scanned"] == 4
     assert "truncated" not in sample
 
 
