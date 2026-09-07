@@ -45,15 +45,31 @@ def _home():
 def _load_config():
     path = os.path.join(_home(), "config.json")
     try:
-        with open(path, "r") as handle:
+        with open(path, "r", encoding="utf-8") as handle:
             return json.load(handle)
     except Exception:
         return {}
 
 
 def _read_handler_source():
+    """The handler's text, as the file on disk actually holds it.
+
+    UTF-8 is named rather than left to the locale, in all three `open` calls in
+    this file. Without it Windows reads cp1252: CI run 34111353871 measured
+    exactly that on `read_text()` elsewhere in the project, where one em dash
+    (`e2 80 94`) came back as three characters. `handler.py` is full of them, so
+    this read would install a mangled handler — the text is executed in a DAT,
+    where the damage lands in comments and would surface later as something
+    else. The write below is the same keyword for a different reason: it is safe
+    today only because `json.dump` escapes non-ASCII by default, and that is a
+    default, not a guarantee this file makes.
+
+    Note that the textport line in this module's own docstring — and the copy
+    of it `td-atlas install` prints — still reads this file with the locale
+    encoding. Same defect, one step earlier, and not fixed here.
+    """
     path = os.path.join(_home(), "handler.py")
-    with open(path, "r") as handle:
+    with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
 
 
@@ -72,7 +88,7 @@ def _write_session(port, token, component_path):
         home = _home()
         os.makedirs(home, exist_ok=True)
         path = os.path.join(home, "session.json")
-        with open(path, "w") as handle:
+        with open(path, "w", encoding="utf-8") as handle:
             json.dump(session, handle, indent=2)
         # The token is a bearer credential for a socket on this machine.
         # POSIX only: on Windows this sets the read-only attribute and does

@@ -352,14 +352,24 @@ And the call journal cannot report a home that refuses writes, because
 CI's `windows-latest` leg (`.github/workflows/ci.yml`) ran for the first time
 on 2026-09-07, and that is what turned those from inferences into readings. It
 found eleven failures. Four were defects in this code: both of the registry's
-liveness probes (a refused port and a running process each read as "cannot
-tell" on Windows, so a dead bridge could not be pruned and a live one could
-not be confirmed), the project path written into a bridge's registry record,
-and the encoding of the generated bundle manifest. One was a test asserting a
+liveness probes, the project path written into a bridge's registry record, and
+the encoding of the generated bundle manifest. One was a test asserting a
 POSIX separator about a Windows filesystem path. The remaining six are checks
 whose premise Windows does not have — `os.chmod` there can neither narrow a
 mode nor make a path refuse access — and they skip with that reason written
 out, in `tests/windows_gaps.py`.
+
+Three of those four are fixed. The fourth is not, and the first diagnosis of
+it was wrong: a port with nothing on it was said to read as "cannot tell"
+because Windows returns WSA error numbers that the POSIX `errno` names did not
+match. Windows' `errno` *is* the WSA table, so it matched all along; what the
+next run actually printed was 10035, CPython's way of reporting that
+`connect_ex`'s own timeout elapsed. A closed loopback port on that runner does
+not refuse inside the 0.25 s this project allows it, and how long it does take
+has not been measured — so the budget has not been raised on a guess. On
+Windows a bridge that is gone reads as "cannot tell" rather than as absent,
+which means `td-atlas instances` will not prune its record there. That is the
+one gap in this list that is open rather than closed.
 
 What the leg does not close: a GitHub runner has no TouchDesigner and cannot
 have one, so everything that discovers an installation or shells out to

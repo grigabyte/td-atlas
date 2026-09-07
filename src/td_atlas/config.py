@@ -206,20 +206,26 @@ def _pid_alive_windows(pid: int) -> bool:
 
 # What "nothing is there" looks like as a `connect_ex` return value.
 #
-# Windows does not reuse the POSIX numbers: `connect_ex` hands back the WSA
-# error (WSAECONNREFUSED 10061, WSAECONNRESET 10054) while `errno.ECONNREFUSED`
-# is the C runtime's own 107 there, so the POSIX pair alone matched nothing and
-# a refused port read as "could not tell". Measured in CI (run 34111353871,
-# windows-latest, 2026-09-07): `port_listening` returned None for a socket that
-# had just been closed — which makes a stale record unprunable and
-# `Instance.alive` incapable of ever being False, i.e. the registry's liveness
-# test (see below) did not work on Windows at all.
+# Two POSIX names, and they are enough on Windows too: `errno` there *is* the
+# WSA table, `errno.ECONNREFUSED == 10061` and `errno.ECONNRESET == 10054`.
+# Measured, not inferred — CI run 34114387968 (windows-latest, 2026-09-07)
+# printed `sorted(_REFUSED)` as `[10054, 10061]` for a set written with four
+# members, `{ECONNREFUSED, ECONNRESET, 10061, 10054}`: it collapsed to two
+# because each literal was already its POSIX name. An earlier revision added
+# those literals and the comment here explained them by claiming
+# `errno.ECONNREFUSED` was the MSVC runtime's own 107 on Windows. That was a
+# guess, it was wrong, and it fixed nothing: the same assertion failed
+# identically in CI runs 34111353871 and 34114021234, before and after.
 #
-# The two WSA numbers are written out rather than read from `errno`: those
-# names exist only on Windows, so a `getattr(errno, ..., None)` default would
-# drop the fix silently if they ever moved. No POSIX `connect_ex` returns a
-# value in that range, so the set is inert everywhere else.
-_REFUSED = frozenset({errno.ECONNREFUSED, errno.ECONNRESET, 10061, 10054})
+# What actually goes wrong on Windows is a budget, not a number, and it is
+# recorded on `port_listening` below.
+#
+# One number must never be added to this set: `connect_ex` reports its own
+# timeout as `SOCK_TIMEOUT_ERR` (CPython `Modules/socketmodule.c`), which is
+# `EWOULDBLOCK` on POSIX and `WSAEWOULDBLOCK` (10035) on Windows. That is
+# "no answer yet", and a slow-accepting port returns it as readily as an empty
+# one, so reading it as a refusal would print a live bridge as dead.
+_REFUSED = frozenset({errno.ECONNREFUSED, errno.ECONNRESET})
 
 
 def pid_alive(pid: int) -> bool:
@@ -252,11 +258,21 @@ def port_listening(port: int, timeout: float = 0.25) -> bool | None:
     This replaces the process-name check that used to live here. Measured on
     this machine, 500 probes each: 36 us median when the port refuses, 48 us
     when it accepts — an order of magnitude under the `ps` subprocess it
-    replaces, with no subprocess at all, the same behaviour on every platform,
-    and an answer to the question the caller actually has. A pid recycled by an
-    unrelated process fails it, which is what the name check was for. It runs
-    on the host, never inside a TouchDesigner frame; the far side pays only for
-    accepting and closing one connection.
+    replaces, with no subprocess at all, and an answer to the question the
+    caller actually has. A pid recycled by an unrelated process fails it, which
+    is what the name check was for. It runs on the host, never inside a
+    TouchDesigner frame; the far side pays only for accepting and closing one
+    connection.
+
+    The timings above are macOS. On `windows-latest` a port whose listening
+    socket had just been closed did not refuse inside this 0.25 s budget:
+    `connect_ex` returned 10035, which is CPython's timeout signal and not a
+    Winsock error (see `_REFUSED`), so the answer there was None — correct, and
+    useless. How long it does take on Windows has not been measured, so the
+    budget is not raised on a guess; `Instance.alive` is therefore None rather
+    than False for a dead bridge on Windows, and a stale record cannot be
+    pruned there. The reading is instrumented in
+    `tests/test_instances.py::test_the_real_probes_agree_about_this_process_and_a_real_socket`.
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(timeout)
@@ -270,7 +286,8 @@ def port_listening(port: int, timeout: float = 0.25) -> bool | None:
         return True
     if error in _REFUSED:
         return False
-    # Timeout, EHOSTUNREACH, a firewall — observed nothing, so claim nothing.
+    # A timeout (`EWOULDBLOCK` here, `WSAEWOULDBLOCK` 10035 on Windows),
+    # EHOSTUNREACH, a firewall — observed nothing, so claim nothing.
     return None
 
 

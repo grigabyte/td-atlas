@@ -7,8 +7,11 @@ Windows leg of CI ran for the first time on 2026-09-07 (run 34111353871,
 A skip here is a statement that the *check* cannot be built on Windows, never
 that the behaviour is unimportant or that the code is excused. Where the code
 itself was wrong on Windows, the fix went into the code and the test still
-runs there — see `config.py`'s `port_listening` and `pid_alive`,
-`component/handler.py`'s `_home` and `_project_path`. What is skipped below is
+runs there — see `config.py`'s `pid_alive`, `component/handler.py`'s `_home`
+and `_project_path`. One of that run's findings is still open and does not
+skip either: `config.py`'s `port_listening` cannot say "nothing is there" on
+Windows inside its budget, its test fails there rather than skipping, and the
+reason is written where the code and the test are. What is skipped below is
 POSIX permission semantics, which `os.chmod` cannot express on Windows at all:
 the platform keeps other accounts out with ACLs, which this project neither
 sets nor has measured.

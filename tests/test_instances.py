@@ -150,18 +150,29 @@ def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch)
     """One smoke test against the real OS, so the fakes above stay honest.
 
     Both probes are asked for both answers, and on purpose: neither was
-    working on Windows, in two different ways. `port_listening` could not
-    return False there — `connect_ex` reports WSAECONNREFUSED (10061), which
-    the POSIX `errno.ECONNREFUSED` this compared against does not equal — so
-    a record could not be pruned and `alive` could not be False; CI run
-    34111353871 read that directly. `pid_alive` was answering a different
-    question: `signal.CTRL_C_EVENT` is 0, so `os.kill(pid, 0)` on Windows
-    sends a console control event instead of asking whether a process
-    exists. That run measured it returning True for a live pid; what it would
-    have said about a pid that was gone was never read, because nobody had
-    asked it that. Both are fixes in `config.py`, so this test runs on
-    Windows rather than skipping there — and the dead-pid assertion below is
-    the first reading of the replacement.
+    working on Windows, in two different ways.
+
+    `pid_alive` was answering a different question: `signal.CTRL_C_EVENT` is
+    0, so `os.kill(pid, 0)` on Windows sends a console control event instead
+    of asking whether a process exists. CI run 34111353871 measured it
+    returning True for a live pid; what it would have said about a pid that
+    was gone was never read, because nobody had asked it that. That is fixed
+    in `config.py`, so this test runs on Windows rather than skipping there —
+    and the dead-pid assertion below is the first reading of the replacement.
+
+    `port_listening` is still open on Windows, and the diagnosis it was given
+    first was wrong. It was blamed on an errno mismatch — WSAECONNREFUSED
+    10061 against a POSIX `errno.ECONNREFUSED` said to be 107 there — and two
+    WSA literals were added to `_REFUSED`. Run 34114387968 printed
+    `sorted(_REFUSED)` as `[10054, 10061]` from a four-member set, so the
+    POSIX names had been those numbers all along and the literals changed
+    nothing; the same assertion failed identically before and after. What that
+    run actually read is 10035, which is CPython's `SOCK_TIMEOUT_ERR` on
+    Windows and not a Winsock error at all: the connection attempt had not
+    resolved either way inside `port_listening`'s 0.25 s. So a closed port on
+    `windows-latest` takes longer than that to refuse, or never refuses, and
+    nobody has measured which. The probes below read the number instead of
+    guessing at it, and the assertion carries them.
 
     The dead pid is a child that has been waited on, which is the only pid a
     test can be sure about: POSIX has reaped it, Windows still holds an exited
@@ -170,6 +181,7 @@ def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch)
     import socket
     import subprocess
     import sys
+    import time
 
     monkeypatch.undo()
     assert cfg.pid_alive(os.getpid()) is True
@@ -183,20 +195,41 @@ def test_the_real_probes_agree_about_this_process_and_a_real_socket(monkeypatch)
         server.listen(1)
         port = server.getsockname()[1]
         assert cfg.port_listening(port) is True
-    # A raw connect_ex to the port that just closed, reported alongside the
-    # verdict: CI run 34114021234 read None here on windows-latest, meaning the
-    # code it returns is in neither branch, and no run has printed which code
-    # that is. Guessing at the number is the confident wrong answer this project
-    # refuses, so the assertion carries the measurement.
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    probe.settimeout(0.25)
-    try:
-        raw = probe.connect_ex(("127.0.0.1", port))
-    finally:
-        probe.close()
+    # Two raw probes with a budget far past the product's 0.25 s, reported
+    # alongside the verdict. This is temporary instrumentation, and it is here
+    # because two CI runs said only "None": the number `port_listening` gets
+    # back, and how long it waits for it, is the one thing needed to decide
+    # whether the default budget is too small on Windows or whether connecting
+    # cannot answer the question there at all. The second probe is the
+    # discriminator — a port nothing ever listened on, so a slow answer on the
+    # first and a fast one on the second would point at the un-accepted
+    # connection left behind above rather than at the runner.
+    def raw_probe(target, timeout=5.0):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.settimeout(timeout)
+        started = time.perf_counter()
+        try:
+            code = probe.connect_ex(("127.0.0.1", target))
+        finally:
+            probe.close()
+        elapsed = (time.perf_counter() - started) * 1000.0
+        return "%r (%s) after %.1f ms" % (
+            code,
+            errno.errorcode.get(code, "no errno name"),
+            elapsed,
+        )
+
+    never = socket.socket()
+    never.bind(("127.0.0.1", 0))
+    fresh = never.getsockname()[1]
+    never.close()
+
+    closed_reading = raw_probe(port)
+    fresh_reading = raw_probe(fresh)
     assert cfg.port_listening(port) is False, (
-        "connect_ex on the closed port returned %r (%s); _REFUSED holds %r"
-        % (raw, errno.errorcode.get(raw, "no errno name"), sorted(cfg._REFUSED))
+        "connect_ex, 5 s budget: just-closed port %s; never-listened port %s. "
+        "port_listening's own budget is 0.25 s; _REFUSED holds %r"
+        % (closed_reading, fresh_reading, sorted(cfg._REFUSED))
     )
 
 
