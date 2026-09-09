@@ -9,10 +9,15 @@
 # that virtualenv, builds the offline atom index, and runs `td-atlas install`
 # so the bridge is staged and the two lines to paste are printed at the end.
 #
-# Where it writes, and nowhere else:
+# Where td-atlas itself writes:
 #
 #   <the directory you choose>   the checkout and its .venv
 #   ~/.td-atlas                  the index, the staged bridge, the token
+#
+# Besides those, whichever of `uv` and `pip` does the install fills its own
+# package cache — `~/.cache/uv` or `~/Library/Caches/pip` — as it would for
+# any package. That is theirs, not this script's, and it is named here rather
+# than left out of a promise about where things land.
 #
 # No system directory is touched, nothing is installed with sudo, and no
 # shell startup file is edited — so `td-atlas` is called by its path out of
@@ -112,11 +117,12 @@ find_python() {
 
 say "td-atlas installer"
 say
-say "It writes in two places and nowhere else:"
+say "td-atlas itself writes in two places:"
 say "  the checkout and its .venv, in the directory you choose below"
 say "  $TD_HOME — the index, the staged bridge, the token"
 say
-say "No sudo, no system directory, no change to your shell startup files."
+say "Besides those, uv or pip fills its own package cache, as it would for any"
+say "package. No sudo, no system directory, no change to your shell rc."
 
 # -- what has to be there already -------------------------------------------
 
@@ -180,12 +186,18 @@ if [ -e "$DIR/.git" ]; then
     esac
     say "   an existing checkout is there — updating it rather than re-cloning"
     run git -C "$DIR" fetch --quiet origin
-    if git -C "$DIR" merge --ff-only origin/main >/dev/null 2>&1; then
-        say "   fast-forwarded to origin/main"
+    branch=$(git -C "$DIR" symbolic-ref --short -q HEAD || printf '')
+    if [ "$branch" = "main" ]; then
+        if run git -C "$DIR" merge --ff-only origin/main; then
+            :
+        else
+            say "   could not fast-forward: local commits, or local changes in the"
+            say "   way. The checkout is left exactly as it is and the rest of this"
+            say "   script runs against it."
+        fi
     else
-        say "   could not fast-forward: local commits, local changes, or a branch"
-        say "   of your own. The checkout is left exactly as it is and the rest of"
-        say "   this script runs against it."
+        say "   on ${branch:-a detached HEAD} rather than main, so nothing is merged"
+        say "   — the rest of this script runs against the checkout as it stands."
     fi
 elif [ -d "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null || true)" ]; then
     fail "$DIR already exists and is not empty, and is not a git checkout. Choose another directory."

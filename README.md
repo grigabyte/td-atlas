@@ -282,9 +282,10 @@ curl -fsSL https://raw.githubusercontent.com/grigabyte/td-atlas/main/install.sh 
 virtualenv beside it, installs the package, builds the index and stages the
 bridge — printing every command before it runs it. It asks two questions,
 where to clone and whether to build the index now, and takes the default for
-both when there is no terminal to ask. It writes in two places and no others:
-the checkout you name, and `~/.td-atlas`. No sudo, no system directory, and
-your shell startup files are left alone. Run it again on an existing checkout
+both when there is no terminal to ask. td-atlas itself lands in two places,
+the checkout you name and `~/.td-atlas`; besides those, `uv` or `pip` fills
+its own package cache as it would for any package. No sudo, no system
+directory, and your shell startup files are left alone. Run it again on an existing checkout
 and it updates that checkout rather than starting over. It is a POSIX shell
 script, so Windows takes the sequence below instead.
 
@@ -459,7 +460,7 @@ agent, with the calls it turns into:
 | *"It looks like nothing is happening."* | `td_health`, then `td_flags` on whatever it names |
 | *"Show me what that looks like right now, and the motion over a second."* | `td_render`, and a contact sheet for the motion |
 | *"What is inside `/project1` of `myproject.toe`? TouchDesigner is closed."* | `td_project_read` — the file is copied to a cache and read there |
-| *"What did you change since we started?"* | `td_variant_save` at the start, `td_project_diff` now |
+| *"What did you change since we started?"* | `td_snapshot` before and after, then `td_project_diff` on the two — components in `~/.td-atlas`, never your own file |
 | *"Undo that."* | `td_undo` — a whole `td_build` batch is one step |
 
 41 tools in three groups: **9 index** tools that work offline, **23 live**
