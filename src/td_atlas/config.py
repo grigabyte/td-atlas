@@ -77,8 +77,8 @@ def ensure_home() -> Path:
     nor narrows anything, and other accounts on the machine are kept out of
     ~/.td-atlas only by whatever ACL the user profile directory already
     carries. That ACL is the default on a single-user Windows box, but this
-    project has not measured it and does not set it — see README on which
-    platforms are verified.
+    project has not measured it and does not set it — see
+    `docs/compatibility.md` on which platforms are verified.
     """
     path = home()
     path.mkdir(parents=True, exist_ok=True)

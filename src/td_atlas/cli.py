@@ -1001,8 +1001,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         else:
             print("every link checked out.")
 
-    # Printed on both paths, not only the clean one. README's Troubleshooting
-    # table sends a user here for "~/.td-atlas/cache has grown", and a user
+    # Printed on both paths, not only the clean one. The table in
+    # `docs/troubleshooting.md` sends a user here for "~/.td-atlas/cache has
+    # grown", and a user
     # with a grown cache very often also has a broken link — an early return
     # on the broken branch withheld the number exactly when it was asked for.
     cached, kept, where = cache_summary()

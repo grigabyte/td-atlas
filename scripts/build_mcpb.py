@@ -131,7 +131,8 @@ def _licence(classifiers: list[str]) -> str | None:
 def _platforms(classifiers: list[str]) -> list[str]:
     """Only platforms the package actually claims.
 
-    README is explicit that TouchDesigner on Windows is unverified (the OS
+    `docs/compatibility.md` is explicit that TouchDesigner on Windows is
+    unverified (the OS
     itself runs in CI) and that Linux is unsupported, and the classifiers were
     trimmed to match on purpose. Deriving the manifest's
     `compatibility.platforms` from them keeps one statement of that fact

@@ -26,9 +26,9 @@ operator types the help JSON does not describe and thousands of parameters it
 does not list — mostly the ones whose defaults and menu options are only
 knowable by asking a live instance.
 
-**The counts are a property of your build, not of this README.** Run
+**The counts are a property of your build, not of this page.** Run
 `td-atlas status`: it prints the operators, parameters and wiki articles your
 index actually holds, and that line — not this page — is what the project
-treats as authoritative. For scale, on the build this README was written
+treats as authoritative. For scale, on the build this page was written
 against (2025.32460, macOS) it reads
 `667 ops, 24251 params, 2060 articles`.

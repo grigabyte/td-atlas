@@ -193,7 +193,7 @@ def test_doctor_leaves_the_cache_alone_unless_asked(
 def test_the_cache_line_survives_a_broken_link(
     monkeypatch, tmp_path, capsys, fake_toeexpand
 ):
-    """README's Troubleshooting table sends a grown-cache user to `doctor`.
+    """`docs/troubleshooting.md` sends a grown-cache user to `doctor`.
 
     That user very often also has a broken link — the two go together on a
     machine that has been read from for months. `cmd_doctor` used to return 1

@@ -2,7 +2,7 @@
 
 Not a test module: it is imported both by `tests/test_live_text_diff.py` and by
 the throwaway scripts that measure. The point of the sharing is the numbers in
-`README.md` and in `handler.py`'s comment — they were measured on *this*
+`docs/network-text.md` and in `handler.py`'s comment — they were measured on *this*
 network, and a reader who wants to check them has to be able to build it again.
 
 The build code is a string because it runs inside TouchDesigner, through the
@@ -187,7 +187,7 @@ def compare(live_root: dict, file_root: dict) -> dict:
 #
 # Every class here was measured on the network above (2025.32460, macOS) and
 # every one names the file the reader does or does not parse. The names are
-# the ones `README.md` and `handler.py`'s comment use.
+# the ones `docs/network-text.md` and `handler.py`'s comment use.
 
 CUSTOM_PLACEMENT = "custom parameter placement"
 COMP_WIRE = "COMP input wiring"

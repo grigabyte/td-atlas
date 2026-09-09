@@ -16,7 +16,7 @@ interpreter the application ships.
 
 | | |
 | --- | --- |
-| macOS | developed and measured here; every number in this README comes from it |
+| macOS | developed and measured here; every number on this page comes from it |
 | Windows | the code paths run in CI (`windows-latest`, Python 3.11-3.14, first run 2026-09-07); **TouchDesigner on Windows is unverified** — no Windows machine with TouchDesigner on it was ever involved |
 | Linux | not supported: TouchDesigner is not released for it |
 

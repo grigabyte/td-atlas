@@ -21,8 +21,8 @@ measured.
 
 Also worth being plain about: on Windows these two gaps are not only
 untestable, they are real. `~/.td-atlas` is not narrowed to its owner there,
-and the journal cannot notice a home that refuses writes. README says so under
-Compatibility; `config.py`'s `ensure_home` and `journal.py`'s `not_being_kept`
+and the journal cannot notice a home that refuses writes. `docs/compatibility.md`
+says so; `config.py`'s `ensure_home` and `journal.py`'s `not_being_kept`
 say so where the code is.
 """
 
