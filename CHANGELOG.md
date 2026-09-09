@@ -28,6 +28,27 @@ release rather than a change from a previous one.
   connector may and may not change in a project.
 - A `live` pytest marker. `pytest` runs the suite that needs no TouchDesigner;
   `pytest -m live` runs the tests that drive a running instance.
+- **`install.sh` is the whole path to a working install in one line** —
+  `curl -fsSL https://grigabyte.github.io/td-atlas/i | sh` — on a machine that
+  has git and a Python 3.11 or newer. It finds that interpreter by asking each
+  one for its `version_info` rather than parsing `--version`, clones or
+  fast-forwards the checkout, makes a virtualenv beside it, installs the
+  package, builds the offline index and runs `td-atlas install`, then reprints
+  the two lines to paste. Every command is printed before it runs. It writes in
+  td-atlas's own two places — the directory you choose and `~/.td-atlas` — and
+  nowhere else: no sudo, no system directory, no shell startup file. `uv` is
+  used when it is already on `PATH` and never installed, because uv's own
+  installer edits the shell rc this script promises to leave alone. Run a
+  second time it fast-forwards instead of re-cloning, reuses the virtualenv and
+  leaves an existing index alone, since rebuilding it would drop the runtime
+  pass only `td-atlas probe` against a live instance can put back.
+- The short install address has **no second copy of the script behind it**:
+  `.github/workflows/pages.yml` republishes the tracked `install.sh` under the
+  name `i` on every push that changes it, so the file served is the file in the
+  repository. A stale copy under a friendlier address is worse than a long URL,
+  because the person running it cannot see that it is stale. The
+  `raw.githubusercontent.com` URL stays in [the README](README.md#install) as
+  the second line, for when Pages is not answering.
 
 ### Changed
 
@@ -86,6 +107,18 @@ release rather than a change from a previous one.
   `--include-hidden` and `td-atlas project grep` gained `--limit`, none of
   which the terminal had. Every remaining difference between the two surfaces
   is written down in `AGENTS.md` and held there by a test.
+- **`README.md` closes four holes a first reader fell into.** An MCP-capable
+  agent is named in the requirements, where the reader meets it, instead of
+  surfacing six sections later as a bare `claude mcp add` line. *As an MCP
+  server* now carries seven sentences in the language a person actually uses
+  beside the calls each turns into, so "you say, it does" rests on something.
+  The skill's two reference files say at their head who the reader is — the
+  `td_` names are calls an agent makes, not commands to type. And the one-line
+  installer takes the top of *Install*, with the manual clone kept below as the
+  same steps by hand. The paragraph that declared three addresses to be 404s
+  until the first release is gone with the repository going public: two of them
+  now resolve, and the third — the release that `dist/server.json` points at —
+  is named where it appears instead.
 
 ### Removed
 
@@ -99,6 +132,14 @@ release rather than a change from a previous one.
   even though nothing this package's own two halves exchange changed shape.
   Leaving the number at 5 would have let one version name two different method
   sets.
+- `docs/decisions.md` and `docs/publishing.md` are no longer in the
+  repository. Both were written for a reader who does not exist: the register
+  of decisions explains the shape of the code to the people who chose it, and
+  the release gates are for whoever runs `scripts/publish.sh`, which is the
+  owner alone. Those five gates are written out in that script's own header,
+  where the README now sends a reader. Comments in `src/` that cited the
+  register by number carry the reason in a few words instead, so nothing in
+  the code points at a document a reader cannot open.
 
 ### Fixed
 
