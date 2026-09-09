@@ -279,8 +279,8 @@ curl -fsSL https://grigabyte.github.io/td-atlas/i | sh
 ```
 
 `/i` is this repository's `install.sh` under a shorter name: GitHub Pages
-republishes the file from `main` on every push, so there is no second copy to
-fall behind. The same bytes come straight out of the repository when Pages is
+republishes the file from `main` on every push that changes it, so there is no
+second copy to fall behind. The same bytes come straight out of the repository when Pages is
 not answering:
 
 ```bash
