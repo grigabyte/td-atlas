@@ -1,5 +1,10 @@
 # Tool reference
 
+Written for the agent that makes these calls, not for a person at a
+terminal. Every `td_` name here is an MCP tool the agent reaches for on the
+artist's behalf; what a person types is `td-atlas` at a shell, which is a
+different surface with its own page.
+
 41 MCP tools in three groups. This list is held to the code by
 `tests/test_skill_reference.py`: every name and parameter list here is compared
 against the server, and so is that count.

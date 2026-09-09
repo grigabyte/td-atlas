@@ -257,22 +257,41 @@ connector's index. Both sides are fixed.
 
 ## Install
 
-**Nothing has been released yet.** The repository is not public and no version
-has been tagged, so three of the addresses named on this page resolve to
-nothing today: the clone URL below, the plugin marketplace under
-[The skill](#the-skill), and the release the bundle's registry submission
-points at under [As a bundle](#as-a-bundle). Each of them is the address it
-will have, and each says so where it appears — a 404 there is the state of the
-project, not a mistake at your end. Everything else on this page works from a
-checkout you already have.
+Three things have to be there first.
 
-TouchDesigner has to be installed first: the index is built from *your* copy of
-the application and holds the values that copy reports, so there is nothing to
-download. Python 3.11 or newer. See [Compatibility](#compatibility) for
-platforms and for what the connector can change in your project.
+- **TouchDesigner.** The index is built from *your* copy of the application and
+  holds the values that copy reports, so there is nothing to download.
+- **Python 3.11 or newer**, on the host.
+- **An AI agent that speaks MCP**, because that is who calls these tools. This
+  was built and measured against
+  [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) — the
+  `claude mcp add` line below is its command — and any client that speaks
+  [the Model Context Protocol](https://modelcontextprotocol.io) reaches the
+  same tools. You talk to the agent; the agent talks to TouchDesigner.
+
+See [Compatibility](#compatibility) for platforms and for what the connector
+can change in your project.
+
+One line, from a terminal:
 
 ```bash
-git clone https://github.com/grigabyte/td-atlas   # public with the first release
+curl -fsSL https://raw.githubusercontent.com/grigabyte/td-atlas/main/install.sh | sh
+```
+
+[`install.sh`](install.sh) finds a Python, clones the repository, makes a
+virtualenv beside it, installs the package, builds the index and stages the
+bridge — printing every command before it runs it. It asks two questions,
+where to clone and whether to build the index now, and takes the default for
+both when there is no terminal to ask. It writes in two places and no others:
+the checkout you name, and `~/.td-atlas`. No sudo, no system directory, and
+your shell startup files are left alone. Run it again on an existing checkout
+and it updates that checkout rather than starting over. It is a POSIX shell
+script, so Windows takes the sequence below instead.
+
+By hand is the same sequence:
+
+```bash
+git clone https://github.com/grigabyte/td-atlas
 cd td-atlas
 uv venv                     # or: python3 -m venv .venv
 uv pip install -e .         # or: .venv/bin/pip install -e .
@@ -429,6 +448,20 @@ virtualenv is activated. Wiring it in by hand looks like:
 claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 ```
 
+From there the tools are the agent's and the plain language is yours. Nothing
+below is a command to type at a terminal — it is what a person says to the
+agent, with the calls it turns into:
+
+| What you say to the agent | What it calls |
+| --- | --- |
+| *"Which operator displaces an image with noise? Give me the exact parameter names before you build anything."* | `td_search_operators`, then `td_operator_schema` |
+| *"Build a noise into a blur into an out TOP in the project I have open, and check nothing is silently dead."* | `td_build` — one undo block — then `td_health` |
+| *"It looks like nothing is happening."* | `td_health`, then `td_flags` on whatever it names |
+| *"Show me what that looks like right now, and the motion over a second."* | `td_render`, and a contact sheet for the motion |
+| *"What is inside `/project1` of `myproject.toe`? TouchDesigner is closed."* | `td_project_read` — the file is copied to a cache and read there |
+| *"What did you change since we started?"* | `td_variant_save` at the start, `td_project_diff` now |
+| *"Undo that."* | `td_undo` — a whole `td_build` batch is one step |
+
 41 tools in three groups: **9 index** tools that work offline, **23 live**
 tools that act on a running instance, **9 project-file** tools that read and
 write `.toe`/`.tox` from disk. Every one of them, with its arguments and what
@@ -458,17 +491,16 @@ a licence that halves your resolution without saying so.
 
 It installs as a plugin rather than by copying the directory, so that updating
 it is one command instead of a second `cp` nobody remembers to run. This
-repository is its own marketplace — from the first release, since a
-marketplace is fetched over the network and this repository is still private:
+repository is its own marketplace, so in Claude Code:
 
 ```
 /plugin marketplace add grigabyte/td-atlas
 /plugin install touchdesigner@td-atlas
 ```
 
-Later, `/plugin marketplace update` pulls in whatever the skill has learned.
-Until the repository is public the skill is the directory in your checkout —
-point an agent at
+Later, `/plugin marketplace update` pulls in whatever the skill has learned. An
+agent whose client has no plugins reads the same thing from the checkout —
+point it at
 [`plugin/skills/touchdesigner/SKILL.md`](plugin/skills/touchdesigner/SKILL.md)
 and nothing else is missing but the one-command update.
 
@@ -579,6 +611,8 @@ td-atlas/
 ├── CLAUDE.md               entry points for an agent opening this repository
 ├── CHANGELOG.md            Keep a Changelog; every protocol change is in it
 ├── LICENSE                 MIT
+├── install.sh              the one-line install, POSIX sh, nothing outside
+│                           the checkout and ~/.td-atlas
 ├── pyproject.toml
 ├── .gitignore
 ├── .github/

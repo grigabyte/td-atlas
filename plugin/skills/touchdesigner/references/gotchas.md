@@ -1,5 +1,9 @@
 # Gotchas
 
+Written for the agent that hits these, not for a person at a terminal. The
+`td_` names are MCP tools the agent calls, and every fix below is something
+it does rather than something to hand to the artist.
+
 Every entry here was hit while building a real composition. Each one produced
 no error, no warning, and no visible sign that anything was wrong.
 
