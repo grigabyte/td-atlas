@@ -44,10 +44,11 @@ things follow:
   manifest, an output path that already exists, and a label already taken.
 
 Variants are service data, not the user's documents, so they live under
-`~/.td-atlas/variants/` rather than beside the `.toe` where decision 26 puts
-the network text. The cost of that choice is that they do not travel with the
-project and are not covered by the user's own version control; the benefit is
-that nothing this module does can write into a directory the user works in.
+`~/.td-atlas/variants/` rather than beside the `.toe`, where the network text
+goes so that the user's own version control sees it. The cost of that choice
+is that they do not travel with the project and are not covered by that
+version control; the benefit is that nothing this module does can write into
+a directory the user works in.
 """
 
 from __future__ import annotations

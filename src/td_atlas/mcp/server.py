@@ -1008,8 +1008,10 @@ def td_errors(path: str = "/project1") -> str:
     # not know which one reads it as a claim about the project.
     # A bridge that ignores `path` and walks from `/` is refused at connect by
     # the version check: `path` entered the method table at protocol 7, and
-    # no bridge below the minimum this host accepts is let through — the
-    # minimum being the number, not a second copy of it here (decision 41).
+    # no bridge below the minimum this host accepts is let through. That
+    # minimum is the version the host expects and nothing older — host and
+    # bridge ride in one bundle, so there is no earlier bridge to stay
+    # compatible with — and the check owns that number, not a copy of it here.
     # This used to be worked out here instead, from which
     # keys the reply did or did not carry — a convention the protocol never
     # stated, and one the version number is the right owner of.

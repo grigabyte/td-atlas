@@ -930,9 +930,9 @@ def m_scopes(_params):
 # and nothing outside /tdatlas is touched.
 #
 # The state it renders lives in a Table DAT beside the claims table and not in
-# a module-level dict, for the reason decision 22 records: this module's body
-# is re-executed between requests, so a module variable is rebuilt and the
-# panel would forget the previous call every time.
+# a module-level dict, for the reason the claims table is one: this module's
+# body is re-executed between requests, so a module variable is rebuilt and
+# the panel would forget the previous call every time.
 #
 # Updated once per authenticated request, at the end of it, and never on a
 # timer. Measured on 2025.32460, N=300: reading the table's rows costs 8.9 us
@@ -1074,11 +1074,11 @@ def _clock(stamp):
 def _tally_failures(state, outcome, pid):
     """Update the session's refusal count in `state`, in place. Pure.
 
-    Tied to the pid for the same reason the claims table is (decision 22): the
-    status table can be saved inside a .toe, and a count carried over from
-    another run would tell the artist their fresh session had already failed
-    seven times. A pid that does not match the running one resets the count
-    rather than continuing it, so "this session" means what it says.
+    Tied to the pid for the same reason the claims table is: the status table
+    can be saved inside a .toe, and a count carried over from another run
+    would tell the artist their fresh session had already failed seven times.
+    A pid that does not match the running one resets the count rather than
+    continuing it, so "this session" means what it says.
 
     Only failures are counted. The panel already names the last call and
     whether it failed; what a glance cannot get from that is whether the
@@ -1275,7 +1275,7 @@ def _note_status(_amend=None, **fields):
     there — the session's failure count. It rides inside the read the write
     already does, so a counter that has to look at its own previous value
     still costs the frame exactly one table read and one table write, the same
-    as before (decision 30: 42.8 us for the whole cycle).
+    as before — the 42.8 us measured for the whole repaint cycle.
     """
     try:
         table = _status_table(create=True)

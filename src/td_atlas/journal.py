@@ -6,7 +6,7 @@ something, what was it". This file is the answer to the second question.
 
 Why the host and not TouchDesigner
 ---------------------------------
-The two carriers already measured in this project (decision 22) both lose:
+The two carriers measured when the claims table needed one both lose:
 
 - A Table DAT inside the bridge COMP costs 2.2-3.0 us to read, but it dies
   with the process. Making it outlive a session would mean saving the
@@ -390,8 +390,8 @@ class Call:
 
     @property
     def when(self) -> str:
-        """Absolute local time, for the reason decision 30 gives: a stale
-        absolute time reads as stale, a stale relative one lies."""
+        """Absolute local time, never "3 s ago": a stale absolute time reads
+        as stale, a stale relative one lies."""
         if self.at <= 0:
             return "??:??:??"
         return time.strftime("%m-%d %H:%M:%S", time.localtime(self.at))
