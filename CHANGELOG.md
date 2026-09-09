@@ -35,10 +35,14 @@ release rather than a change from a previous one.
   fast-forwards the checkout, makes a virtualenv beside it, installs the
   package, builds the offline index and runs `td-atlas install`, then reprints
   the two lines to paste. Every command is printed before it runs. It writes in
-  td-atlas's own two places — the directory you choose and `~/.td-atlas` — and
-  nowhere else: no sudo, no system directory, no shell startup file. `uv` is
-  used when it is already on `PATH` and never installed, because uv's own
-  installer edits the shell rc this script promises to leave alone. Run a
+  td-atlas's own two places — the directory you choose and `~/.td-atlas`. No
+  system directory is touched, nothing is installed with sudo, and no shell
+  startup file is edited; besides those two, whichever of `uv` and `pip` does
+  the install fills its own package cache — `~/.cache/uv` or
+  `~/Library/Caches/pip` — as it would for any package, which is theirs and is
+  named here rather than left out of the promise. `uv` is used when it is
+  already on `PATH` and never installed, because uv's own installer edits the
+  shell rc this script promises to leave alone. Run a
   second time it fast-forwards instead of re-cloning, reuses the virtualenv and
   leaves an existing index alone, since rebuilding it would drop the runtime
   pass only `td-atlas probe` against a live instance can put back.
