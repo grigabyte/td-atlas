@@ -267,8 +267,9 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 # Where the protocol number is stated in prose a reader acts on, and how much
 # of each file is a claim about the *current* number.
 #
-# `README.md` whole: its Troubleshooting table tells a reader which bridges
-# this build accepts, and every number in it is that claim.
+# `docs/troubleshooting.md` whole: its table tells a reader which bridges
+# this build accepts, and every number in it is that claim. The table stood in
+# `README.md` until the README was cut down; the page moved, the claim did not.
 #
 # `CHANGELOG.md` only down to the second `## [` heading — the `[Unreleased]`
 # section. Below that is release history, where "the bridge speaks protocol 7"
@@ -277,10 +278,10 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 # it is written as a cut rather than as a whole-file scan because the first
 # release is what moves the line, and a test that only worked before the first
 # release would fail on the release itself.
-PROSE_SOURCES = (("README.md", None), ("CHANGELOG.md", "## ["))
+PROSE_SOURCES = (("docs/troubleshooting.md", None), ("CHANGELOG.md", "## ["))
 
 # `protocol N` names a version; `minimum N` names one only on a line that is
-# about the protocol at all, which keeps README's "clamped minimum 0.0" out.
+# about the protocol at all, which keeps the page's "clamped minimum 0.0" out.
 _STATES_A_VERSION = re.compile(r"protocol (\d+)")
 _STATES_A_MINIMUM = re.compile(r"minimum (\d+)")
 
@@ -309,8 +310,8 @@ def _current_prose(name: str, stop_after_first: str | None) -> str:
 def test_the_protocol_number_written_in_prose_is_the_constant():
     """The number in the documents moves with the code, or this reds.
 
-    `README.md` states the number twice — "below the minimum 7", "the oldest
-    bridge accepted is protocol 7" — and no test read either. The next bump
+    `docs/troubleshooting.md` states the number twice — "below the minimum 7",
+    "the oldest bridge accepted is protocol 7" — and no test read either. The next bump
     would have left both stale in silence, which is the exact failure the
     version exists to prevent, one level up: a reader following the document
     is told a bridge is accepted that is refused at connect.
@@ -344,4 +345,4 @@ def test_the_prose_scan_actually_finds_the_numbers_it_is_meant_to_hold():
         name: len(_prose_versions(_current_prose(name, cut)))
         for name, cut in PROSE_SOURCES
     }
-    assert counted == {"README.md": 2, "CHANGELOG.md": 2}, counted
+    assert counted == {"docs/troubleshooting.md": 2, "CHANGELOG.md": 2}, counted

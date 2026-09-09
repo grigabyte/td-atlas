@@ -6,7 +6,7 @@ what each one needs before it can work. It was read off `--help` and
 `build_parser()` on 2026-09-07.
 
 Getting installed is in [the README](../README.md#install); what to run when
-something is broken is in [Troubleshooting](../README.md#troubleshooting). This
+something is broken is in [Troubleshooting](troubleshooting.md). This
 page assumes both and does not repeat them.
 
 Unless the virtualenv is activated, call the command by path —
