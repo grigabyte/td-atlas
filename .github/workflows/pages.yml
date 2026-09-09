@@ -1,0 +1,58 @@
+# The short install address, and why nothing here can go stale.
+#
+# The README hands out `curl -fsSL https://grigabyte.github.io/td-atlas/i | sh`.
+# That line has to fetch exactly the `install.sh` that is in `main`: a copy
+# that quietly falls behind is a worse failure than a long URL, because the
+# person running it has no way to see that it did.
+#
+# So no copy is kept. This workflow renames the tracked `install.sh` to `i`
+# at deploy time and publishes that, on every push that touches the script.
+# There is nothing to keep in step — the only `install.sh` in the repository
+# is the one being served, and the shorter name is made on the way out.
+#
+# The name has no extension on purpose: that is the whole of the saving.
+# Pages serves it as a static file, and `sh` reads the pipe without ever
+# asking what the content type was.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - install.sh
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A deploy already in flight is not cancelled. Cancelling one leaves the site
+# serving whatever the run before it published — which is exactly the drift
+# this file exists to rule out.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lay out the site
+        run: |
+          mkdir _site
+          cp install.sh _site/i
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

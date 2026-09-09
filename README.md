@@ -275,6 +275,15 @@ can change in your project.
 One line, from a terminal:
 
 ```bash
+curl -fsSL https://grigabyte.github.io/td-atlas/i | sh
+```
+
+`/i` is this repository's `install.sh` under a shorter name: GitHub Pages
+republishes the file from `main` on every push, so there is no second copy to
+fall behind. The same bytes come straight out of the repository when Pages is
+not answering:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/grigabyte/td-atlas/main/install.sh | sh
 ```
 
@@ -615,7 +624,9 @@ td-atlas/
 ├── pyproject.toml
 ├── .gitignore
 ├── .github/
-│   ├── workflows/ci.yml    pytest and ruff, macOS and Windows, Python 3.11-3.14
+│   ├── workflows/
+│   │   ├── ci.yml          pytest and ruff, macOS and Windows, Python 3.11-3.14
+│   │   └── pages.yml       serves install.sh as the short /i address
 │   └── ISSUE_TEMPLATE/     build, OS and `td-atlas doctor` output
 ├── docs/
 │   ├── architecture.md     the three layers and the reasoning

@@ -2,7 +2,10 @@
 #
 # Install td-atlas from a terminal, in one line:
 #
-#   curl -fsSL https://raw.githubusercontent.com/grigabyte/td-atlas/main/install.sh | sh
+#   curl -fsSL https://grigabyte.github.io/td-atlas/i | sh
+#
+# That address is this file: GitHub Pages republishes it from `main` under a
+# shorter name on every push, so there is no second copy to fall behind.
 #
 # What it does, in order: finds a Python 3.11 or newer, clones (or updates)
 # the repository, makes a virtualenv beside it, installs the package into
