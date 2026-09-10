@@ -24,54 +24,45 @@ English | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
   </p>
 </div>
 
-
-An agent building in TouchDesigner needs three things at once: exact knowledge
-of the operators and parameters on *this* machine, control of a running
-instance that can be undone in one step, and a way to read a saved project
-without opening it. Miss the first and it guesses parameter names. Miss the
-second and a failed step leaves half a network behind. Miss the third and every
-question about an existing project needs the application running.
-
-td-atlas is built on two observations:
-
-1. **Almost everything an agent needs to know about TouchDesigner already ships
-   inside the application.**
-2. **TouchDesigner reports almost nothing when work silently does nothing.**
+td-atlas gives an agent three things. The exact operator and parameter names
+from *this* machine. Hands inside a running instance, with one step of undo.
+And a way to read a saved project without opening it.
 
 ## What it does
 
-- **[The atom index](docs/atom-index.md)** — two passes produce one SQLite
-  index, exact for the build it was made from rather than scraped from a wiki
-  describing some other release.
-- **[The bridge](docs/bridge.md)** — a Web Server DAT and a callbacks DAT,
-  built from a script rather than shipped as a `.tox`, so it is readable,
-  diffable and upgraded in place.
-- **[What TouchDesigner does not report](docs/health.md)** — `errors` covers
-  what TouchDesigner calls an error; `td_health` covers what it does not.
-- **[The call journal](docs/journal.md)** — one line per bridge call, written
-  by the host, outliving the session.
-- **[Reading projects offline](docs/offline-projects.md)** — a project can be
-  inspected, searched and compared without TouchDesigner running, and without
-  touching the original.
-- **[The network text, written on save](docs/network-text.md)** — the bridge
-  can write the network out as text beside the `.toe` on every save, so a
-  project gets a diffable history in git.
+- **[The atom index](docs/atom-index.md)** builds one SQLite index in two
+  passes, from your own copy of the application. The values in it are the
+  values that copy reports.
+- **[The bridge](docs/bridge.md)** is a Web Server DAT and a callbacks DAT
+  that a script builds in your project. You can read it, see its changes in
+  git, and upgrade it in place.
+- **[What TouchDesigner does not report](docs/health.md)**. `errors` covers
+  what TouchDesigner itself calls an error, and `td_health` covers the
+  breakage it stays quiet about.
+- **[The call journal](docs/journal.md)** writes one line per bridge call, on
+  the host, and it outlives the session.
+- **[Reading projects offline](docs/offline-projects.md)** inspects, searches
+  and compares a project with TouchDesigner closed, and the original file is
+  left alone.
+- **[The network text, written on save](docs/network-text.md)** is what the
+  bridge can put beside the `.toe` on every save, so a project gets a diffable
+  history in git.
 
 ## Install
 
 Three things have to be there first.
 
-- **TouchDesigner.** The index is built from *your* copy of the application and
-  holds the values that copy reports, so there is nothing to download.
+- **TouchDesigner**, already installed. The [index](docs/atom-index.md) is
+  built from *your* copy of the application and holds the values that copy
+  reports. There is nothing to download.
 - **Python 3.11 or newer**, on the host.
-- **An AI agent that speaks MCP**, because that is who calls these tools. This
-  was built and measured against
-  [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) — the
-  `claude mcp add` line below is its command — and any client that speaks
-  [the Model Context Protocol](https://modelcontextprotocol.io) reaches the
-  same tools. You talk to the agent; the agent talks to TouchDesigner.
+- **An AI agent that speaks [MCP](https://modelcontextprotocol.io)**. The
+  agent is what calls these tools. td-atlas was built and measured against
+  [Claude Code](https://docs.claude.com/en/docs/claude-code/overview), whose
+  command is the `claude mcp add` line further down. Any MCP client reaches
+  the same tools.
 
-See [Compatibility](docs/compatibility.md) for platforms and for what the
+[Compatibility](docs/compatibility.md) lists the platforms and what the
 connector can change in your project.
 
 One line, from a terminal:
@@ -80,10 +71,7 @@ One line, from a terminal:
 curl -fsSL https://grigabyte.github.io/td-atlas/i | sh
 ```
 
-`/i` is this repository's `install.sh` under a shorter name: GitHub Pages
-republishes the file from `main` on every push that changes it, so there is no
-second copy to fall behind. The same bytes come straight out of the repository when Pages is
-not answering:
+If that address does not answer, the same script comes out of the repository:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/grigabyte/td-atlas/main/install.sh | sh
@@ -91,14 +79,17 @@ curl -fsSL https://raw.githubusercontent.com/grigabyte/td-atlas/main/install.sh 
 
 [`install.sh`](install.sh) finds a Python, clones the repository, makes a
 virtualenv beside it, installs the package, builds the index and stages the
-bridge — printing every command before it runs it. It asks two questions,
-where to clone and whether to build the index now, and takes the default for
-both when there is no terminal to ask. td-atlas itself lands in two places,
-the checkout you name and `~/.td-atlas`; besides those, `uv` or `pip` fills
-its own package cache as it would for any package. No sudo, no system
-directory, and your shell startup files are left alone. Run it again on an existing checkout
-and it updates that checkout rather than starting over. It is a POSIX shell
-script, so Windows takes the sequence below instead.
+[bridge](docs/bridge.md). Every command is printed before it runs.
+
+It asks two questions: where to clone, and whether to build the index now.
+With no terminal to ask, it takes the default for both.
+
+Two directories end up on disk: the checkout you name and `~/.td-atlas`.
+Besides those, `uv` or `pip` fills its own package cache, as it does for any
+package. No sudo. System directories and your shell startup files are left
+alone. Run it again on an existing checkout and it updates that checkout.
+
+It is a POSIX shell script. Windows takes the sequence below.
 
 <details>
 <summary>By hand, or on Windows, the same sequence step by step</summary>
@@ -110,8 +101,8 @@ uv venv                     # or: python3 -m venv .venv
 uv pip install -e .         # or: .venv/bin/pip install -e .
 ```
 
-There is no package on PyPI, so `pip install td-atlas` and `uvx td-atlas` will
-not find anything — the checkout *is* the install. Then, from the checkout:
+There is no package on PyPI. `pip install td-atlas` and `uvx td-atlas` will
+find nothing. Then, from the checkout:
 
 ```bash
 .venv/bin/td-atlas build      # offline index, 23–30 s, no TouchDesigner process
@@ -120,10 +111,9 @@ not find anything — the checkout *is* the install. Then, from the checkout:
 
 </details>
 
-Everything below writes `td-atlas` for short. Unless the virtualenv is
-activated, call it by path — `.venv/bin/td-atlas`, or
-`.venv\Scripts\td-atlas` on Windows — because a system Python will not see
-the package.
+Commands from here on are written `td-atlas` for short. Unless the virtualenv is
+activated, call it by path. That is `.venv/bin/td-atlas`, or
+`.venv\Scripts\td-atlas` on Windows. A system Python does not see the package.
 
 `td-atlas install` prints two things to paste. First, into TouchDesigner's
 textport (Dialogs → Textport and DATs), once per project:
@@ -132,38 +122,42 @@ textport (Dialogs → Textport and DATs), once per project:
 exec(open('/Users/you/.td-atlas/bootstrap.py').read())
 ```
 
-Second, a `claude mcp add` line for your MCP client — see below. Pass
-`--write-mcp-json DIR` to additionally write (or merge into) `DIR/.mcp.json`
-with that same entry.
+Second, a `claude mcp add` line for your MCP client. See
+[As an MCP server](#as-an-mcp-server). To also write that same entry into
+`DIR/.mcp.json`, or merge it into one that is already there, pass
+`--write-mcp-json DIR`.
 
-Then, with TouchDesigner open and the bridge staged, complete the index with
-the runtime facts only a live instance knows:
+With TouchDesigner open and the bridge staged, finish the index:
 
 ```bash
 td-atlas probe
 ```
 
-Then `td-atlas doctor`, which is the only thing here that says whether the
-install actually took. It names the repair on every link that is not `ok` and
-exits non-zero when one is broken, so it also tells you where you are if you
-came in halfway: on a host with nothing built it reports
-`index : FAIL … fix: td-atlas build` and
-`bridge : warn … fix: td-atlas install`.
+This pass adds the facts only a running instance knows.
+
+Last, check the install. If you came in halfway, start here.
+
+```bash
+td-atlas doctor
+```
+
+Every link that is not `ok` comes with its repair, and a broken one makes the
+command exit non-zero. On a host with nothing built it reports
+`index : FAIL … fix: td-atlas build` and `bridge : warn … fix: td-atlas install`.
 
 ## As an MCP server
 
-Run `td-atlas install` and paste the `claude mcp add …` line it prints — it
-points at the current interpreter by absolute path, so it keeps working
-regardless of the MCP client's own working directory or whether any
-virtualenv is activated. Wiring it in by hand looks like:
+Run `td-atlas install` and paste the `claude mcp add …` line it prints. That
+line names the interpreter by absolute path, so it keeps working from any
+working directory, with or without an activated virtualenv. Wiring it in by
+hand looks like this:
 
 ```bash
 claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 ```
 
-From there the tools are the agent's and the plain language is yours. Nothing
-below is a command to type at a terminal — it is what a person says to the
-agent, with the calls it turns into:
+From here you say what you want in plain language. Here is what the agent calls
+on it:
 
 | What you say to the agent | What it calls |
 | --- | --- |
@@ -175,16 +169,14 @@ agent, with the calls it turns into:
 | *"What did you change since we started?"* | `td_snapshot` before and after, then `td_project_diff` on the two — components in `~/.td-atlas`, never your own file |
 | *"Undo that."* | `td_undo` — a whole `td_build` batch is one step |
 
-41 tools in three groups: **9 index** tools that work offline, **23 live**
-tools that act on a running instance, **9 project-file** tools that read and
-write `.toe`/`.tox` from disk. Every one of them, with its arguments and what
-it is for, is listed in
-[`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md)
-— one list, held to the code by a test, rather than a second copy here that
-would drift.
+41 tools in three groups. **9 index** tools work offline, **23 live** tools act
+on a running instance, and **9 project-file** tools read and write
+`.toe`/`.tox` from disk. Each one, with its arguments and what it is for, is in
+[`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md),
+and a test holds that list to the code.
 
-`td_build` and `td_set_params` validate parameter names against the index
-before sending, so the usual mistakes come back as corrections:
+`td_build` and `td_set_params` check parameter names against the index before
+sending, so the usual mistakes come back as corrections:
 
 ```
 - t: is a parameter group, not a settable parameter (try: tx, ty, tz)
@@ -222,6 +214,6 @@ before sending, so the usual mistakes come back as corrections:
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). TouchDesigner is a product of Derivative Inc.;
-this project is not affiliated with them and redistributes nothing from the
-installation, it only reads what is already on your machine.
+MIT, and the full text is in [LICENSE](LICENSE). TouchDesigner is a product of Derivative Inc.
+This project is not affiliated with them and redistributes nothing from the
+installation. It only reads what is already on your machine.
