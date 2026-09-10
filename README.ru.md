@@ -2,7 +2,7 @@
 
 <div align="center">
   <p align="center"><img src=".github/cover.png" width="720"
-   alt="The td-atlas mark over a field of waveform lines."></p>
+   alt="Знак td-atlas на поле волновых линий."></p>
   <h1>td-atlas</h1>
   <p>
     Разобранный на атомы индекс TouchDesigner, живой мост в запущенную
@@ -18,10 +18,10 @@
     <a href="CHANGELOG.md">Изменения</a>
   </p>
   <p>
-    <a href="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml"><img src="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml/badge.svg" alt="CI: pytest and ruff on macOS and Windows"></a>
-    <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11 or newer on the host">
-    <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS; the Windows code paths run in CI, TouchDesigner on Windows is unverified">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="Licence: MIT"></a>
+    <a href="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml"><img src="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml/badge.svg" alt="CI: pytest и ruff на macOS и Windows"></a>
+    <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11 или новее на хосте">
+    <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Платформа: macOS; код под Windows гоняется в CI, но TouchDesigner под Windows не проверялся">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="Лицензия: MIT"></a>
   </p>
 </div>
 

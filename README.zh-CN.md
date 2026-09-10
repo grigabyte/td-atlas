@@ -2,7 +2,7 @@
 
 <div align="center">
   <p align="center"><img src=".github/cover.png" width="720"
-   alt="The td-atlas mark over a field of waveform lines."></p>
+   alt="td-atlas 标志置于波形线场之上。"></p>
   <h1>td-atlas</h1>
   <p>
     把 TouchDesigner 拆成原子的索引、通往运行中实例的实时桥，
@@ -17,10 +17,10 @@
     <a href="CHANGELOG.md">更新记录</a>
   </p>
   <p>
-    <a href="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml"><img src="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml/badge.svg" alt="CI: pytest and ruff on macOS and Windows"></a>
-    <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11 or newer on the host">
-    <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS; the Windows code paths run in CI, TouchDesigner on Windows is unverified">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="Licence: MIT"></a>
+    <a href="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml"><img src="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml/badge.svg" alt="CI：在 macOS 与 Windows 上运行 pytest 和 ruff"></a>
+    <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="宿主机需要 Python 3.11 或更新版本">
+    <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="平台：macOS；Windows 代码路径在 CI 中运行，但 Windows 上的 TouchDesigner 未经验证">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="许可证：MIT"></a>
   </p>
 </div>
 
