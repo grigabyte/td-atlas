@@ -1,19 +1,19 @@
 # The bridge
 
-A Web Server DAT and a callbacks DAT, built **from a script rather than shipped
-as a `.tox`** — so the bridge is readable, diffable, version-controlled, and
-re-running the bootstrap upgrades it in place (or `td-atlas reload`, through
-the bridge itself).
+A Web Server DAT and a callbacks DAT, built in place by a script. The bridge is
+readable, it lives in version control as source, and its edits show up in a
+diff. Re-running the bootstrap upgrades it where it stands, and so does
+`td-atlas reload` through the bridge itself.
 
 Beyond `exec`:
 
-- **`td_health`** — the silent-failure detector. See
+- **`td_health`**, the silent-failure detector. See
   [what TouchDesigner does not report](health.md).
-- **`render`** — any TOP's pixels back as PNG, plus contact sheets for anything
-  time-based, because a strobe judged from one frame is a coin toss.
-- **`batch`** — several operations inside one `ui.undo` block. A failed batch
+- **`render`** returns any TOP's pixels as PNG, plus contact sheets for anything
+  time-based. One frame of a strobe is a coin toss.
+- **`batch`** runs several operations inside one `ui.undo` block. A failed batch
   rolls back and leaves no partial network. A successful one is a single
   **Ctrl+Z** for the artist.
-- **`errors`** — every node reporting an error or warning.
+- **`errors`** lists every node reporting an error or warning.
 
 Requests are authenticated with a token by default.

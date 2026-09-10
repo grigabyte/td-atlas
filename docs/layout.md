@@ -89,13 +89,15 @@ td-atlas/
     └── test_*.py           a plain run needs no TouchDesigner running
 ```
 
-Generated and not in git: `.venv/`, the index and staged bridge under
-`~/.td-atlas/`, and `dist/` — the built bundle, `dist/server.json` and
-`dist/build.json`, which records the commit the bundle came from so
-`publish.sh` can refuse a stale one. `.mcp.json` is written by
-`td-atlas install --write-mcp-json` and holds a path specific to your machine,
-so it is ignored too.
+Two kinds of path stay out of the tree above.
 
-Ignored and not generated: `memory-bank/`, the owner's working notes. They are
-about how this project is worked on rather than what it is, so nothing in the
-tree above depends on them; what a reader needs out of them lives in `docs/`.
+**Generated, and not in git.** `.venv/`, the index and staged bridge under
+`~/.td-atlas/`, and `dist/` with the built bundle, `dist/server.json` and
+`dist/build.json`. That last one records the commit the bundle came from, so
+`publish.sh` can refuse a stale one. `.mcp.json` is ignored too.
+`td-atlas install --write-mcp-json` writes it, and it holds a path specific to
+your machine.
+
+**Ignored, and not generated.** `memory-bank/` holds the owner's working notes.
+Nothing in the tree above depends on them, and what a reader needs out of them
+lives in `docs/`.

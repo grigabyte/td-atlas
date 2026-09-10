@@ -1,9 +1,7 @@
 # The call journal
 
-The status panel inside TouchDesigner holds the *last* call and the next one
-overwrites it. That answers "is the bridge alive"; it does not answer "the
-agent broke something yesterday, what was it". `~/.td-atlas/calls.jsonl` does:
-one line per bridge call, written by the host, outliving the session.
+Every bridge call lands in `~/.td-atlas/calls.jsonl`, one line each. The file
+outlives the session, so yesterday's failures are still there today.
 
 ```
 $ td-atlas log --failures
@@ -22,21 +20,22 @@ where it fails
 ```
 
 Both samples are cut short. `--failures` ends with the mapped repair for the
-most recent refusal — a `cause:` and a `fix:` line; `--summary` also names the
-refusal types on a `reasons:` line and lists the five slowest calls.
+most recent refusal, a `cause:` line and a `fix:` line. `--summary` also names
+the refusal types on a `reasons:` line and lists the five slowest calls.
 
-`td_log` is the same thing for an agent, so it can read its own trail rather
-than repeat a call that already refused.
+`td_log` gives an agent the same trail, so it can read what already refused
+before it calls again.
 
-Written by the host and not by the bridge, deliberately. A Table DAT inside
-TouchDesigner dies with the process, and keeping it would mean saving the
-project — which is a Save As that moves the artist's file. A file written from
-inside a frame was measured at 124–200 us, three to five times the whole panel
-repaint. On the host the append costs 41.6 us of nobody's frame, next to a
-round trip that already cost 16 ms.
+The status panel inside TouchDesigner holds the *last* call and the next one
+overwrites it. It answers "is the bridge alive". The journal answers "the agent
+broke something yesterday, what was it".
 
-Bounded at 1 MiB — about 5,300 calls, measured — with the oldest lines dropped
-first. Parameters are not logged: only the method, the outcome, the duration,
-the path, the caller and a batch's step count. A DAT's text and a whole
-network stay out of it, and the bridge token is scrubbed from every line
-before it is written.
+The host writes the journal. A Table DAT inside TouchDesigner dies with the
+process, and keeping one would mean saving the project, which is a Save As that
+moves the artist's file.
+
+The file is bounded at 1 MiB, about 5,300 calls measured, and the oldest lines
+are dropped first. Parameters are not logged. A line carries the method, the
+outcome, the duration, the path, the caller and a batch's step count. A DAT's
+text and a whole network stay out of it, and the bridge token is scrubbed from
+every line before it is written.

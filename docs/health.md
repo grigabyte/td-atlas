@@ -21,12 +21,13 @@ TouchDesigner (TouchDesigner Non-Commercial) — 61/60 fps, 16/51 operators cook
         not be used in paid work
 ```
 
-Findings from a real session, re-rendered by the printer the code has now and
-wrapped for this page. The path lists are cut to what was recorded: the real
-output prints up to six paths under a finding and then `+N more`, and the
-clamped-resolution finding names its operators too.
+The example is shortened. The real output prints up to six paths under a
+finding and then `+N more`, and the clamped-resolution finding names its
+operators too.
 
-Every one of those was hit while building a real composition; none of them
-raised an error. It also distinguishes a genuinely dead network from a paused
-timeline or a backgrounded window, where the frame clock is frozen and there is
-no evidence either way.
+Every one of those findings was hit while building a real composition, and none
+of them raised an error.
+
+`td_health` also tells a genuinely dead network from a paused timeline or a
+backgrounded window. In those the frame clock is frozen and there is no evidence
+either way.
