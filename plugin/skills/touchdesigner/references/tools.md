@@ -1,13 +1,10 @@
 # Tool reference
 
-Written for the agent that makes these calls, not for a person at a
-terminal. Every `td_` name here is an MCP tool the agent reaches for on the
-artist's behalf; what a person types is `td-atlas` at a shell, which is a
-different surface with its own page.
+Every `td_` name here is an MCP tool the agent calls on the artist's behalf.
+A person at a terminal has a separate surface, `td-atlas`, with its own page.
 
-41 MCP tools in three groups. This list is held to the code by
-`tests/test_skill_reference.py`: every name and parameter list here is compared
-against the server, and so is that count.
+41 MCP tools in three groups. `tests/test_skill_reference.py` compares every
+name, every parameter list and that count against the server.
 
 ## Index — offline, no running TouchDesigner
 
@@ -68,48 +65,44 @@ against the server, and so is that count.
 
 ## When a reply is cut short
 
-Everything below runs on TouchDesigner's main thread during a cook, so the work
-one call may do is bounded. When a bound is reached the reply says so instead of
-looking complete — a partial answer read as a whole one is the expensive
-mistake here.
+Every call below is bounded in the work it may do. It runs on TouchDesigner's
+main thread during a cook, and a reply that reached a bound names the bound it
+reached.
 
 `td_network` marks four separate cuts. `childrenHidden` is printed under the
-component whose listing was shortened, and gives the number left out — printed
-even where nothing was listed at all, since the invisible cut is the dangerous
-one. Over the whole reply, `truncated` with `hidden` says how many operators
-were dropped against the overall budget, `limit` and `maxChildren` say which
-two bounds applied, and `depthLimited` carries the depth you asked for when it
-was reduced to the deepest this tool walks. A component sitting at the depth
-you asked for is listed with the number of *direct* children it has that were
-not walked — a leaf and a component holding a thousand operators are otherwise
-the same line. That count is a floor as well: what hangs below those children
-was never looked at. The repair is always the same: ask again with a narrower `path`,
-or a larger `depth`.
+component whose listing was shortened, gives the number left out, and is printed
+even where nothing was listed at all. Over the whole reply, `truncated` with
+`hidden` says how many operators were dropped against the overall budget.
+`limit` and `maxChildren` say which two bounds applied. `depthLimited` carries
+the depth you asked for, when it was reduced to the deepest this tool walks.
+A component sitting at the depth you asked for is listed with the number of
+*direct* children it has that were not walked. That count is a floor, since what
+hangs below those children was never looked at. The repair is the same for all
+four cuts, and it is to ask again with a narrower `path` or a larger `depth`.
 
 `td_errors` and `td_health` bound their walk by node count, and both take the
-subtree to walk as `path`. `scanned` is how many operators were actually
-looked at, the named subtree's own root included, so it never exceeds `limit`;
-`notScanned` is how many were not, and `truncated` marks that it happened;
-`limit` is the bound. `notScanned` is a floor, not a total: it counts operators
-the walk had already found and not visited, and never what hangs below them.
-Read "nothing is wrong" as covering `scanned` operators at and under the
-subtree the reply names, and no others.
+subtree to walk as `path`. `scanned` is how many operators were actually looked
+at, the named subtree's own root included, so it never exceeds `limit`.
+`notScanned` is how many were not, `truncated` marks that it happened, and
+`limit` is the bound. `notScanned` is a floor, counting operators the walk had
+already found and not visited, and never what hangs below them. Read "nothing is
+wrong" as covering `scanned` operators at and under the subtree the reply names,
+and no others.
 
-`td_health` also reports `scriptErrorsUnread` — the places where reading
-TouchDesigner's own script errors raised, with the reason. That is *unknown*,
-not clean, and it is a finding in the report rather than a silence.
+`td_health` also reports `scriptErrorsUnread`. It names the places where reading
+TouchDesigner's own script errors raised, and gives the reason. Read those places
+as *unknown*, and note that they arrive as a finding in the report.
 
 Frame capture, used by the contact sheet below, has a byte budget as well as a
-frame count. A capture call answers `captured: true` while it is collecting and
-`full: true` once the buffer is at its limit, with `limit` and `maxFrames`
-naming the bounds; the sheet stops sampling on that flag rather than growing
-storage inside the component without end.
+frame count. A capture call answers `captured: true` while it is collecting. It
+answers `full: true` once the buffer is at its limit, and `limit` and
+`maxFrames` name the bounds. The sheet stops sampling on that flag.
 
 ## When a tool refuses
 
-Any refusal — a dead bridge, a path that does not exist, a parameter name the
-index rejects, an index that was never built — comes back with the state it
-observed and then three lines:
+Every refusal comes back with the state it observed and then three lines. A dead
+bridge, a path that does not exist, a parameter name the index rejects and an
+index that was never built all arrive in this shape:
 
 ```
 cause: no operator exists at that path in the running project
@@ -117,16 +110,15 @@ fix: list what is actually there before retrying — paths are case-sensitive ..
 continue with: td_network, td_op_info
 ```
 
-`continue with:` names tools and `td-atlas` subcommands that exist; act on it
-rather than repeating the call. Where the connector has no mapped recovery —
-an exception type nobody has classified — it says `fix: none known` and names
-nothing, which means the message above it is the whole answer: change
-something before retrying.
+`continue with:` names tools and `td-atlas` subcommands that exist, and acting on
+that line beats repeating the call. Where the connector has no mapped recovery
+for the exception, it says `fix: none known` and names nothing. The message above
+it is then the whole answer, and something has to change before the retry.
 
 ## Not exposed over MCP
 
-A contact sheet needs repeated sampling over wall-clock time, which a single
-tool call cannot do. Use the Python helper:
+A contact sheet needs repeated sampling over wall-clock time, which one tool call
+cannot do. Use the Python helper:
 
 ```python
 from td_atlas.bridge.client import BridgeClient

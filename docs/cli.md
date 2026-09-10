@@ -1,19 +1,18 @@
 # The command line
 
-`td-atlas` is the same functionality the MCP tools expose, for a person at a
-terminal. This page is the complete surface: every subcommand, every flag, and
-what each one needs before it can work. It was read off `--help` and
-`build_parser()` on 2026-09-07.
+`td-atlas` is what a person at a terminal types. It reaches the same
+functionality the MCP tools expose. Every subcommand, every flag, and what each
+one needs before it can work is below, read off `--help` and `build_parser()`
+on 2026-09-07.
 
-Getting installed is in [the README](../README.md#install); what to run when
-something is broken is in [Troubleshooting](troubleshooting.md). This
-page assumes both and does not repeat them.
+Getting installed is in [the README](../README.md#install). What to run when
+something is broken is in [Troubleshooting](troubleshooting.md). Both are
+assumed from here on.
 
-Unless the virtualenv is activated, call the command by path —
+Unless the virtualenv is activated, call the command by path. That is
 `.venv/bin/td-atlas`, or `.venv\Scripts\td-atlas` on Windows. A system Python
-will not see the package, and `td-atlas doctor` will say so at its `mcp server`
-link rather than leaving you guessing. Everything below writes `td-atlas` for
-short.
+does not see the package, and `td-atlas doctor` says so at its `mcp server`
+link. Commands from here on are written `td-atlas` for short.
 
 ## Global flags go before the subcommand
 
@@ -28,12 +27,11 @@ td-atlas op noiseTOP --db /tmp/other.db        # not a flag of `op`
 | `--port N` | talk to the bridge listening on this port |
 | `--project SUBSTR` | talk to the running project whose name or path contains this |
 
-`--port` and `--project` are **selectors** among several running instances —
-see `td-atlas instances`, which lists them and marks the one these flags would
-reach. Six commands reach a bridge and accept a selector: `probe`, `reload`,
-`status`, `exec`, `render`, `doctor`. Given to any other, a selector is an
-error rather than silence, because a flag that is quietly ignored is
-indistinguishable from one that worked:
+`--port` and `--project` are **selectors** among several running instances.
+`td-atlas instances` lists those instances and marks the one these flags would
+reach. Six commands reach a bridge and accept a selector, and they are `probe`,
+`reload`, `status`, `exec`, `render` and `doctor`. Given to any other, a
+selector is an error:
 
 ```
 $ td-atlas --port 9977 search noise
@@ -41,12 +39,11 @@ error: --port before the subcommand selects which running TouchDesigner to
 talk to, and 'search' does not talk to one — so the flag would be ignored.
 ```
 
-`install --port` is a different flag with the same name, and it is not a
-selector: it is the port the bridge being staged will bind (default 9977).
+`install --port` is a different flag with the same name, and it selects
+nothing. It sets the port the bridge being staged will bind, default 9977.
 
 ## What each command needs
 
-The three layers are separable on purpose, and this is the table that says so.
 "Bridge" means TouchDesigner running with the bridge component in it.
 
 | Command | Needs |
@@ -57,27 +54,26 @@ The three layers are separable on purpose, and this is the table that says so.
 | `probe` | an index **and** a live bridge |
 | `exec`, `render`, `reload` | a live bridge |
 
-`instances` is the one command that answers a question about bridges without
-making a bridge call: it reads the registry in `~/.td-atlas` and checks each
-entry the way both sides can check it — does the port accept a connection,
-does the process still exist. It opens that connection and closes it again
-without sending a request, so no token and no protocol version are involved,
-and it still answers when every bridge is dead or too old to talk. Which is
-when you need it.
+`instances` answers a question about bridges without making a bridge call. It
+reads the registry in `~/.td-atlas` and checks each entry the way both sides
+can. Does the port accept a connection, and does the process still exist. It
+opens that connection and closes it again without sending a request, so no
+token and no protocol version are involved. It still answers when every bridge
+is dead or too old to talk.
 
-The `project` actions read an index when one exists and work without it; the
-index only sharpens type resolution, because a saved file stores contracted
-type names (`tox` for `textTOP`) that the index expands.
+The `project` actions read an index when one exists and work without it. The
+index sharpens type resolution, since a saved file stores contracted type
+names, `tox` for `textTOP`, that the index expands.
 
 ## Setting up and checking
 
 ### `td-atlas install`
 
 Stages `bootstrap.py` and `handler.py` into `~/.td-atlas`, mints a token, and
-prints two lines to paste: the `exec(open(...).read())` line for
-TouchDesigner's textport, and the `claude mcp add` line for an MCP client.
-Re-running it upgrades the staged sources in place; re-pasting the bootstrap
-line upgrades the bridge inside a project in place.
+prints two lines to paste. One is the `exec(open(...).read())` line for
+TouchDesigner's textport, the other the `claude mcp add` line for an MCP
+client. Re-running it upgrades the staged sources in place, and re-pasting the
+bootstrap line upgrades the bridge inside a project in place.
 
 | Flag | |
 | --- | --- |
@@ -87,10 +83,10 @@ line upgrades the bridge inside a project in place.
 
 ### `td-atlas release-tox`
 
-Builds the bridge as a drag-and-drop `.tox` — the second install path, for
-someone who would rather not touch a textport. No token is baked in; the
-handler reads it from `~/.td-atlas/config.json` when its server starts, which
-is why one file works on every machine.
+Builds the bridge as a drag-and-drop `.tox`, the second install path, for
+someone who would rather not touch a textport. No token is baked in, and the
+handler reads it from `~/.td-atlas/config.json` when its server starts, so one
+file works on every machine.
 
 | Flag | |
 | --- | --- |
@@ -98,10 +94,10 @@ is why one file works on every machine.
 
 ### `td-atlas doctor`
 
-Walks the chain link by link — environment, TouchDesigner, index, index build,
-probe, bridge, MCP server — prints the command that repairs each broken link,
-and exits non-zero when one is broken. It also reports how many `.toe`/`.tox`
-expansions the read cache holds.
+Walks the chain link by link, prints the command that repairs each broken link,
+and exits non-zero when one is broken. The links are environment,
+TouchDesigner, index, index build, probe, bridge and MCP server. It also
+reports how many `.toe`/`.tox` expansions the read cache holds.
 
 | Flag | |
 | --- | --- |
@@ -110,10 +106,9 @@ expansions the read cache holds.
 
 ### `td-atlas status`
 
-Installation, index and bridge state in a few lines, with no exit-code
-opinion. The line of index counts it prints is the canonical size of the
-corpus on this machine: those numbers belong to your TouchDesigner build, not
-to any document here.
+Installation, index and bridge state in a few lines, with no exit-code opinion.
+The line of index counts it prints is the canonical size of the corpus on this
+machine. Those numbers belong to your TouchDesigner build.
 
 ### `td-atlas instances`
 
@@ -122,15 +117,14 @@ project of each, and how to aim `--port`/`--project` at one.
 
 ### `td-atlas mcp`
 
-Runs the MCP server on stdio. It is how the tools exist, so it is not one of
-them; MCP clients start it themselves from the line `install` prints.
+Runs the MCP server on stdio. MCP clients start it themselves from the line
+`install` prints.
 
 ## Building the index
 
 ### `td-atlas build`
 
-The offline pass: reads the installed application bundle and writes the index.
-23–30 seconds, no TouchDesigner process, no network.
+The offline pass reads the installed application bundle and writes the index. 23–30 seconds, no TouchDesigner process, no network.
 
 | Flag | |
 | --- | --- |
@@ -139,9 +133,9 @@ The offline pass: reads the installed application bundle and writes the index.
 
 ### `td-atlas probe`
 
-The runtime pass: instantiates every operator type inside a sandbox with
-cooking disabled and records what documentation does not — defaults, ranges
-and clamps, menu options, parameter pages, connector counts, and the
+The runtime pass instantiates every operator type inside a sandbox with cooking
+disabled and records what documentation does not. That is defaults,
+ranges and clamps, menu options, parameter pages, connector counts, and the
 contracted type names. Needs TouchDesigner open with the bridge, and occupies
 its cook for about a minute.
 
@@ -152,10 +146,9 @@ its cook for about a minute.
 ### `td-atlas reload`
 
 Re-stages the component sources and has the running bridge replace its own
-handler — the fast loop when you are editing
+handler. That is the fast loop when you are editing
 `src/td_atlas/component/handler.py`. It is the one command that talks to a
-bridge the version check would otherwise reject, since replacing an outdated
-handler is exactly its job; a mismatch is printed as a warning.
+bridge the version check would reject, and it prints the mismatch as a warning.
 
 ## Reading the index
 
@@ -171,8 +164,8 @@ body text only when the result set is thin.
 
 ### `td-atlas op TYPE`
 
-An operator's full schema: every parameter with its type, default, range,
-menu entries and page.
+An operator's full schema. Every parameter with its type, default, range, menu
+entries and page.
 
 | Flag | |
 | --- | --- |
@@ -184,9 +177,9 @@ menu entries and page.
 
 ### `td-atlas exec CODE`
 
-Runs Python inside TouchDesigner and prints stdout, stderr and the result.
-`-` reads the source from stdin. It is arbitrary Python: unlike a batch of
-edits, it carries no rollback.
+Runs Python inside TouchDesigner and prints stdout, stderr and the result. `-`
+reads the source from stdin. It is arbitrary Python, and it carries no
+rollback.
 
 ### `td-atlas render PATH`
 
@@ -214,12 +207,12 @@ scrubbed from every line.
 
 `td-atlas project` reads, searches, compares and rewrites `.toe`/`.tox` files
 from disk. Every action works on a **copy** in a cache keyed by the file's
-path, size and mtime: both helpers work in place — `toeexpand` writes
-`<name>.tox.dir` and `<name>.tox.toc` beside its input, and `toecollapse`
-moves an existing target aside to `<name>.tox.bkp1`, or `<name>.tox.bkp2` on a
-second run — so nothing here ever touches your file. A changed
-project is re-expanded without being asked; `--refresh` is for a cache damaged
-from outside this program.
+path, size and mtime, so nothing here ever touches your file. Both helpers work
+in place, and `toeexpand` writes `<name>.tox.dir` and `<name>.tox.toc` beside its
+input, and `toecollapse` moves an existing target aside to `<name>.tox.bkp1`,
+or to `<name>.tox.bkp2` on a second run. A changed project is re-expanded
+without being asked, and `--refresh` is for a cache damaged from outside this
+program.
 
 | Action | |
 | --- | --- |
@@ -237,9 +230,9 @@ is in [formats.md](formats.md).
 
 ### `td-atlas project variant` — saved states of one project
 
-A variant keeps the network as text **and** a byte copy of the `.toe`/`.tox`
-it came from, under `~/.td-atlas/variants/`. Both, because the rebuild is a
-patcher: without the source there is nothing to restore into.
+A variant keeps the network as text **and** a byte copy of the `.toe`/`.tox` it
+came from, under `~/.td-atlas/variants/`. The rebuild is a patcher, and without
+the source there is nothing to restore into.
 
 | Action | |
 | --- | --- |
@@ -248,20 +241,18 @@ patcher: without the source there is nothing to restore into.
 | `project variant restore FILE --label L -o OUT` | write a saved state out. `-o` may be a directory, which keeps the original file name |
 | `project variant diff FILE --label L --other M` | compare two saved states of the same project. `--moves`, `--no-text` as in `project diff` |
 
-A source file that has changed since a variant was saved is not a reason to
-refuse the restore; the drift is reported instead.
+A source file that has changed since a variant was saved still restores, and
+the drift is reported.
 
 ## The MCP side
 
-Seventeen capabilities on this page have an MCP tool that does the same thing,
-counting each `project` action separately; the two surfaces then differ in
-twenty-four tools and nine subcommands. Which, and why
-each gap exists, is declared in
+Not every command here has an MCP tool, and not every tool has a subcommand.
+Which, and why each gap exists, is declared in
 [AGENTS.md](../AGENTS.md#cli--mcp-parity) and held to the code by a test. The
 tools themselves are listed in
 [`plugin/skills/touchdesigner/references/tools.md`](../plugin/skills/touchdesigner/references/tools.md).
 
-One difference is about the global flags rather than any one capability: the
-MCP surface cannot aim at a chosen instance. `--port`/`--project` have no tool
-equivalent; every live tool reaches whatever bridge discovery picks, and warns
-in every reply when more than one is running.
+One difference is about the global flags, and it is that the MCP surface cannot
+aim at a chosen instance. `--port`/`--project` have no tool equivalent, and every live
+tool reaches whatever bridge discovery picks. When more than one bridge is
+running, every reply carries a warning.

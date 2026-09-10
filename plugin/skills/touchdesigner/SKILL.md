@@ -12,49 +12,50 @@ palette) plus a live bridge into a running instance.
 ## The one thing that will waste your time
 
 **TouchDesigner reports almost nothing when work silently does nothing.** A
-network that never cooks, a flag left off, an output device switched off, a
-CPU-bound operator holding the frame rate down, a resolution silently halved by
-the licence — none of these raise an error. Three separate hours have been lost
+network that never cooks raises no error. Nor does a flag left off, an output
+device switched off, a CPU-bound operator holding the frame rate down, or a
+resolution silently halved by the licence. Three separate hours have been lost
 to exactly this.
 
 Run **`td_health`** after building anything, and whenever something "looks fine
 but does nothing". It is the tool that catches these. When it says nothing is
 cooking, **`td_flags`** says which of display, render, bypass and cooking is the
-reason; `td_set_flags` reads every write back, so a flag a family will not take
-comes back as a refusal rather than a silence.
+reason, and `td_set_flags` reads every write back, so a flag a family will not
+take comes back as a refusal.
 
 ## Order of work
 
-1. **Search the index first.** It is offline and free — no round trip to
+1. **Search the index first.** It is offline and free, with no round trip to
    TouchDesigner. Never guess a parameter name.
 2. **Read the schema** of any operator before creating it.
 3. **Build with `td_build`**, not a series of single calls.
 4. **Look at the result** with `td_render`, and at motion with a contact sheet.
 5. **Run `td_health`.**
 
-When a call refuses and you do not know why, or the artist says something
-broke while you were working: **`td_log(failures=True)`** is your own trail —
-every bridge call this host made, with the text each refusal came back with.
-`td_log(summary=True)` says which method has been failing repeatedly, which is
-the signal that the approach is wrong rather than the call. It outlives the
-TouchDesigner session, so it also answers "what happened yesterday".
+**`td_log(failures=True)`** is your own trail, every bridge call this host made,
+with the text each refusal came back with. Reach for it when a call refuses and
+you do not know why, or when the artist says something broke while you were
+working. `td_log(summary=True)` says which method has been failing repeatedly,
+which is the signal that the approach is wrong. It outlives the TouchDesigner
+session, so it also answers "what happened yesterday".
 
 ## Finding the right operator
 
-`td_search_operators("displace an image with noise")` — plain language works.
+Ask for what the operator does, in plain language, with
+`td_search_operators("displace an image with noise")`.
 
-Two things it cannot do, and what to do instead:
+Two things it cannot do, and the way round each:
 
 - **Artist slang is not TouchDesigner vocabulary.** There is no "strobe" or
   "melt" operator; those are techniques built from several nodes. Search for the
-  mechanism instead ("brightness over time", "displace by a texture"), or use
-  `td_docs`, which reaches 2,060 wiki pages — concepts and techniques, not just
-  operator help.
+  mechanism ("brightness over time", "displace by a texture"), or use `td_docs`,
+  which reaches 2,060 wiki pages of concepts and techniques, not just operator
+  help.
 - **Check the palette before building.** `td_palette("projection mapping")`
-  searches 277 finished components that ship with TouchDesigner — mappers,
-  corner-pinners, colour pickers, audio analysers. Install one with
-  `td_palette_load(name, parent)` rather than rebuilding it; it checks the .tox
-  is on disk first and reports the name TouchDesigner actually gave the node.
+  searches 277 finished components that ship with TouchDesigner, among them
+  mappers, corner-pinners, colour pickers and audio analysers. Install one with
+  `td_palette_load(name, parent)`, which checks the .tox is on disk first and
+  reports the name TouchDesigner actually gave the node.
 
 `td_glossary("cook")` defines the vocabulary the documentation assumes.
 
@@ -65,7 +66,7 @@ ranges. Two traps:
 
 - **The documentation describes parameter *groups*; you must set the members.**
   The docs say `t` (Translate); the settable parameters are `tx`, `ty`, `tz`.
-  The schema returns the members. Setting `t` fails.
+  The schema returns the members, and setting `t` fails.
 - **Menu labels carry information the value does not.** The schema prints them
   as `value — Label`: the Noise TOP's `type` menu reads
   `simplex3d — Simplex 3D (GPU)` against a plain `sparse — Sparse`, and the
@@ -74,9 +75,9 @@ ranges. Two traps:
 
 `td_build` validates parameter names against the index before sending anything,
 resolving each target's type itself, so a mistake comes back as
-`t: is a parameter group, not a settable parameter (try: tx, ty, tz)` rather
-than as a traceback. `td_set_params` does the same **only when you pass
-`op_type`**; without it the name goes straight to TouchDesigner.
+`t: is a parameter group, not a settable parameter (try: tx, ty, tz)`.
+`td_set_params` does the same **only when you pass `op_type`**; without it the
+name goes straight to TouchDesigner.
 
 ## Building
 
@@ -96,15 +97,15 @@ Use `td_build` for anything multi-step:
 ]
 ```
 
-The whole batch lands in one `ui.undo` block: if any step fails everything rolls
+The whole batch lands in one `ui.undo` block. If any step fails everything rolls
 back, and a successful batch is a single Ctrl+Z for the person using
 TouchDesigner. Parameter values may be a constant, `{"expr": "..."}` for an
 expression, `{"bind": "..."}`, or `{"pulse": true}`.
 
 A DAT's contents are not a parameter, so they go in their own `text` key on
-`op_create` — shader source, script bodies, callbacks. Do it there rather than
-in a follow-up `td_exec`, so the text is part of the same rollback and the same
-Ctrl+Z:
+`op_create`. That covers shader source, script bodies and callbacks. Doing it
+there puts the text in the same rollback and the same Ctrl+Z, and saves a
+follow-up `td_exec`:
 
 ```json
 {"method": "op_create", "params": {
@@ -113,36 +114,36 @@ Ctrl+Z:
 ```
 
 A DAT whose text is an output (Select, Null, Info, the script generators) is
-refused: it would overwrite the assignment on its next cook.
+refused, since it would overwrite the assignment on its next cook.
 
-Measured live (2026-08-30, build 2025.32460): a fragment shader delivered this
-way to a `textDAT`, with a `glslTOP` created in the next step pointing its
-`pixeldat` at it, compiled — `compileResult` read `Compiled Successfully` and
-the TOP's first pixel came back as the colour the shader writes. A shader that
-does not compile is a **warning**, not an error, and `compileResult` is where
-the line number lives; `td_health` reads it for you.
+This was measured live on 2026-08-30, against build 2025.32460. A fragment
+shader delivered this way to a `textDAT`, with a `glslTOP` created in the next
+step pointing its `pixeldat` at it, compiled. `compileResult` read
+`Compiled Successfully`, and the TOP's first pixel came back as the colour the
+shader writes. A shader that does not compile is a **warning**, not an error, and
+`compileResult` is where the line number lives, which `td_health` reads for you.
 
-Methods: `op_create`, `op_delete`, `op_connect`, `op_disconnect`, `par_set`.
-`undo` is not one of them — it walks the history the batch is being recorded
-into. Call `td_undo` on its own, after.
+The methods are `op_create`, `op_delete`, `op_connect`, `op_disconnect` and
+`par_set`. `undo` is not one of them, since it walks the history the batch is
+being recorded into. Call `td_undo` on its own, after.
 
 If another agent or session may be in the same project, claim your subtree with
-`td_claim_scope(path, owner)` first — and then **pass that same `owner` into
-every `td_build`, `td_set_params`, `td_set_flags` and `td_annotate`**, or your
-own claim refuses your own writes. `td_release_scope` hands it back;
-`td_scopes` says what is already held.
+`td_claim_scope(path, owner)` first. Then **pass that same `owner` into every
+`td_build`, `td_set_params`, `td_set_flags` and `td_annotate`**, or your own
+claim refuses your own writes. `td_release_scope` hands it back, and `td_scopes`
+says what is already held.
 
 `td_annotate` leaves the reason for what you built beside the nodes, as a box
-the artist can read; `td_annotations` reads notes back — including a brief a
+the artist can read. `td_annotations` reads notes back, including a brief a
 person left for you, which no other tool here shows.
 
 ## Seeing what you made
 
-`td_render("/project1/b1")` returns the image. **Use it** — inferring appearance
-from parameter values does not work.
+`td_render("/project1/b1")` returns the image. **Use it**, since inferring
+appearance from parameter values does not work.
 
-For anything time-based — a strobe, a feedback trail, an animation — a single
-frame is a coin toss. Use a contact sheet:
+For a strobe, a feedback trail or any other animation, a single frame is a coin
+toss. Use a contact sheet:
 
 ```python
 from td_atlas.bridge.client import BridgeClient
@@ -153,21 +154,21 @@ contact_sheet(BridgeClient.discover(), "/project1/b1", "sheet.png",
 
 ## Reading projects from disk
 
-No TouchDesigner needed: `td_project_read` for the tree, `td_project_text` for
-the whole network as JSON — every parameter, wire, flag and DAT line — and
-`td_project_grep`, which reaches the Python and GLSL inside DATs that no file
-search can, because that code lives inside the .toe container. A network too
-big for one result is refused, not truncated; narrow it with `path` or write it
-out with `td-atlas project text FILE -o network.json`.
+None of this needs TouchDesigner running, and `td_project_read` gives the tree.
+`td_project_text` gives the whole network as JSON, every parameter, wire, flag
+and DAT line. `td_project_grep` reaches the Python and GLSL inside DATs, which
+no file search can, since that code lives inside the .toe container. A network
+too big for one result is refused, and never truncated. Narrow it with `path`,
+or write it out with `td-atlas project text FILE -o network.json`.
 
-`td_project_write` is the return leg: an edited dump into a **new** file. It is
+`td_project_write` is the return leg, an edited dump into a **new** file. It is
 a patcher, so it needs the original `file` too, and it lists what it could not
-write — read those gaps rather than assuming.
+write, so read those gaps before assuming.
 
 Before trying a direction, `td_variant_save(file, label)` keeps the current
-state; `td_variant_list`/`_restore`/`_diff` branch, restore and compare. On a
-live instance instead: `td_snapshot("before")` → work → `td_snapshot("after")`
-→ `td_project_diff`.
+state, and `td_variant_list`/`_restore`/`_diff` branch, restore and compare. On
+a live instance the same shape is `td_snapshot("before")` → work →
+`td_snapshot("after")` → `td_project_diff`.
 
 **Never save the artist's project.** `project.save()` is Save As in disguise and
 moves the file they have open. Nothing here needs it; TouchDesigner writes the
@@ -175,7 +176,7 @@ network text beside the `.toe` when *they* save.
 
 ## Things that will bite you
 
-Detail in `references/gotchas.md`. The short list:
+Detail in `references/gotchas.md`, and the short list follows:
 
 - **A branch nothing displays or records never cooks.** Terminal nodes (Movie
   File Out, and any chain not feeding a viewer) are not pulled. Add a `cacheTOP`
@@ -187,8 +188,8 @@ Detail in `references/gotchas.md`. The short list:
   loop drives everything to grey; an additive composite drives it to white.
   Feed back from *before* the grade, and prefer `maximum` over `add`.
 - **Non-Commercial caps resolution at 1280×1280**, silently, with only a
-  warning: asking for 1920×1080 gives 1280×720.
-- `exec` blocks TouchDesigner's main thread. Do not poll during a recording.
+  warning, so asking for 1920×1080 gives 1280×720.
+- `exec` blocks TouchDesigner's main thread, so do not poll during a recording.
 
 ## Command line
 
@@ -207,9 +208,9 @@ td-atlas reload                     # upgrade the bridge in place
 ## If the bridge is unreachable
 
 `td-atlas install` prints a one-line bootstrap to paste into TouchDesigner's
-textport, which is opened from the menu: **Dialogs → Textport and DATs**. Do
-not reach for the keyboard shortcut — a blind key combination lands in the
+textport. The textport opens from the menu, **Dialogs → Textport and DATs**. Do
+not reach for the keyboard shortcut. A blind key combination lands in the
 network editor when the window is not focused, and creates operators in the
-artist's project. Re-running the bootstrap upgrades in place. `td_instances` says which
-running TouchDesigner these tools actually reach — check it before believing an
-edit landed in the project you meant.
+artist's project. Re-running the bootstrap upgrades in place. `td_instances`
+says which running TouchDesigner these tools actually reach. Check it before
+believing an edit landed in the project you meant.

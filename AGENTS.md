@@ -1,11 +1,12 @@
 # Working on td-atlas
 
-Guidance for agents contributing to this repository. For *using* the connector
-to drive TouchDesigner, read `plugin/skills/touchdesigner/SKILL.md` instead.
+Guidance for agents contributing to this repository.
+`plugin/skills/touchdesigner/SKILL.md` covers *using* the connector to drive
+TouchDesigner.
 
 ## What this project is
 
-Three layers, deliberately separable:
+Three layers, separable:
 
 | Layer | Needs TouchDesigner? | Where |
 | --- | --- | --- |
@@ -13,45 +14,39 @@ Three layers, deliberately separable:
 | **Bridge** — live control of a running instance | Yes | `src/td_atlas/bridge/` + `component/` |
 | **Project reader** — .toe/.tox from disk | No | `src/td_atlas/project/` |
 
-`mcp/server.py` exposes all three; `cli.py` is the same functionality for
-humans. Keep that parity — a capability added to one should appear in the
-other, or the gap should be declared in the parity section below, which
+`mcp/server.py` exposes all three, and `cli.py` is the same functionality for
+humans. Keep that parity. A capability added to one appears in the other, or
+the gap is declared in the parity section below, which
 `tests/test_cli_mcp_parity.py` holds to the code.
 
-One gap is declared in prose rather than in that table, because it is about
-the global flags and not about any one capability: **the MCP surface cannot
-aim at a chosen instance.** The CLI's global `--port`/`--project` have no MCP equivalent;
-every bridge tool dials whatever `BridgeClient.discover()` picks. The reason
-is the failure mode, not the plumbing: `discover()` raises
-`InstanceSelectionError` when a flag names no bridge or several, and an MCP
-tool must return that as text rather than an exception, which would mean a
-guard at every `bridge()` call site, and there are more of those every time a
-bridge tool is added — which is the argument. What the registry
-was built to prevent is covered without it — `td_instances` lists every
+**The MCP surface cannot aim at a chosen instance.** That one gap is declared
+in prose, since it is about the global flags and not about any one capability.
+The CLI's global `--port`/`--project` have no MCP equivalent, and every bridge
+tool dials whatever `BridgeClient.discover()` picks. `td_instances` lists every
 running bridge and marks the one these tools reach, and `_warn` prefixes the
 ambiguity warning onto every bridge result whenever more than one is running,
-so an agent cannot edit the wrong project in silence.
+so an agent cannot edit the wrong project in silence. A tool-side selector
+would cost a guard at every `bridge()` call site, since `discover()` raises
+`InstanceSelectionError` when a flag names no bridge or several, and an MCP
+tool has to answer in text.
 
 ## CLI ↔ MCP parity
 
-The two surfaces are compared capability by capability, and the comparison is
-a test rather than an intention: `tests/test_cli_mcp_parity.py` reads the
-four tables below, walks `build_parser()` and the `@mcp.tool()` definitions,
-and fails when the code and this section disagree. That test exists because
-the previous version of this rule was prose — "keep that parity" — and by the
-time anyone counted, five gaps were declared and eleven were not.
+`tests/test_cli_mcp_parity.py` compares the two surfaces capability by
+capability. It reads the four tables below, walks `build_parser()` and the
+`@mcp.tool()` definitions, and fails when the code and the tables disagree.
 
 A *capability* is one MCP tool, or one CLI subcommand. `project` and
 `project variant` are counted by their actions (`project read`, `project
-variant save`, …), not as one command each, because that is the level at
-which an MCP tool corresponds to anything.
+variant save`, …), which is the level at which an MCP tool corresponds to
+anything.
 
 ### Paired
 
 Seventeen capabilities exist on both sides. Where the two spell an argument
-differently the rename is declared here, and the test applies it before
-comparing the argument sets; the CLI's global `--db`/`--port`/`--project` are
-excluded, since they are the declared gap above.
+differently, the rename is declared here, and the test applies it before
+comparing the argument sets. The CLI's global `--db`/`--port`/`--project` are
+excluded as the declared gap above.
 
 | CLI | MCP | Renames |
 | --- | --- | --- |
@@ -75,8 +70,8 @@ excluded, since they are the declared gap above.
 
 ### CLI only
 
-Nine, and the shape of the reason is the same in every row: something a person
-does to this machine once, or something that writes a directory to disk.
+Nine capabilities. In every row the reason has the same shape: something a
+person does to this machine once, or something that writes a directory to disk.
 
 | CLI | Why not an MCP tool |
 | --- | --- |
@@ -92,10 +87,10 @@ does to this machine once, or something that writes a directory to disk.
 
 ### MCP only
 
-Twenty-four, in three groups. The CLI's live surface is deliberately the few
-commands a person types at a terminal — `exec`, `render`, `status`,
-`instances`, `log` — and a bridge capability gets a subcommand when someone
-wants to type it, not for symmetry.
+Twenty-four, in three groups. The CLI's live surface is the few commands a
+person types at a terminal, which are `exec`, `render`, `status`, `instances`
+and `log`. A bridge capability gets a subcommand when someone wants to type it,
+not for symmetry.
 
 | MCP | Group | Why not a CLI subcommand |
 | --- | --- | --- |
@@ -120,18 +115,18 @@ listed here fails the test.
 ## The rule that matters most here
 
 **Measure, do not guess.** Almost none of what this project depends on is
-documented by Derivative: the `.toe` container format, the parameter flag bits,
-the contracted type names, which noise types run on the CPU. Every one of those
-was settled by running an experiment against the shipped example libraries or
-a live instance, and each of those findings carries a comment saying what was
-measured and how many cases it covers.
+documented by Derivative. That covers the `.toe` container format, the
+parameter flag bits, the contracted type names, and which noise types run on
+the CPU. Every one of those was settled by running an experiment against the
+shipped example libraries or a live instance, and each finding carries a
+comment saying what was measured and how many cases it covers.
 
 Two of these were nearly shipped as plausible guesses, and both would have been
 wrong:
 
 - Scanning for the first newline to find a DAT payload looked correct on the
   first file tried. It silently truncates any payload whose length byte is not
-  `0x0A` — about a third of the shaders.
+  `0x0A`, which is about a third of the shaders.
 - Expanding contracted type names by subsequence match reports 100% success and
   gets `parexecDAT` wrong, because it matches both `parameterexecuteDAT` and
   `pargroupexecuteDAT`.
@@ -141,35 +136,29 @@ or derive the real mapping from TouchDesigner.
 
 ## Invariants a change has to keep
 
-Two gates are not obvious from the code that has to satisfy them, and each is
-held by a named test rather than by a reviewer remembering it. They are stated
-here because `project/rebuild.py` and `tests/test_health.py` point at this
-section for the rule they exist to serve.
+Two gates are not obvious from the code that has to satisfy them, and a named
+test holds each. `project/rebuild.py` and `tests/test_health.py` point here for
+the rule they serve.
 
 - **The round trip is empty.** Dump a project to network text, build it back,
-  dump it again — the two texts are identical.
+  dump it again, and the two texts are identical.
   `tests/test_rebuild.py::test_the_round_trip_invariant_holds_on_a_shipped_component`
   runs it on a shipped palette component, and the edited variant beside it
-  keeps an identity copy from passing for free. Note what this gate can and
-  cannot see: it holds everything the text *describes*. What the text does not
-  describe — panel layouts, custom parameter definitions, CHOP caches — is
-  held by the rebuild being a patcher instead of a generator, and no dump can
-  test that, because a generator that dropped those would round-trip
-  identically. The argument for the patcher is in `project/rebuild.py`.
-- **Every new `td_health` section states its own cost in a test.** A silent
-  failure detector that itself costs a frame is not an improvement, and the
-  cost of parsing a section is measurable on the host with no TouchDesigner
-  running — so a new section arrives with the measurement rather than with an
-  intention to take one later.
+  keeps an identity copy from passing for free. The gate holds everything the
+  text *describes*. Panel layouts, custom parameter definitions and CHOP caches
+  are not described, and what holds those is the rebuild being a patcher, which
+  no dump can test. The argument for the patcher is in `project/rebuild.py`.
+- **Every new `td_health` section states its own cost in a test.** The cost of
+  parsing a section is measurable on the host with no TouchDesigner running, so
+  a new section arrives with the measurement.
   `tests/test_health.py::test_prints_what_each_new_section_costs` takes the
-  measurement and prints it, and
-  `tests/test_health.py::test_every_health_section_states_its_cost` is what
-  makes the arrival compulsory: it derives every finding kind `health.py`
-  builds and fails on one absent from the listing that says what each
-  section's cost measurement is. What it cannot see is a section that adds no
-  new kind — an existing finding taught to read a new and expensive field
-  keeps its name — and that half is the review's, the way the reply shape is
-  in `test_protocol_fingerprint.py`.
+  measurement and prints it.
+  `tests/test_health.py::test_every_health_section_states_its_cost` makes the
+  arrival compulsory, deriving every finding kind `health.py` builds and
+  failing on one absent from the listing of costs. A section that adds no new
+  kind escapes it, since an existing finding taught to read a new and expensive
+  field keeps its name, and that half is the review's, the way the reply shape
+  is in `test_protocol_fingerprint.py`.
 
 ## Running things
 
@@ -179,22 +168,17 @@ pytest                       # the default run: no TouchDesigner needed
 pytest -m live               # the rest: needs one running, with the bridge
 ```
 
-**A plain `pytest` does not need TouchDesigner running** — keep it that way.
-That is now enforced rather than hoped for: `[tool.pytest.ini_options]` in
-`pyproject.toml` deselects the `live` marker by default, so a test that dials
-a live instance is not collected at all unless it is asked for by name. A new
-test that reaches a running instance gets `@pytest.mark.live` (or a module
-`pytestmark`); `--strict-markers` rejects a misspelling rather than silently
-running it in the default set.
+**A plain `pytest` does not need TouchDesigner running.** Keep it that way.
+`[tool.pytest.ini_options]` in `pyproject.toml` deselects the `live` marker by
+default, so a test that dials a live instance is not collected at all unless it
+is asked for by name. A new test that reaches a running instance gets
+`@pytest.mark.live`, or a module `pytestmark`. `--strict-markers` rejects a
+misspelling.
 
-The reason for the split is what the old arrangement read like: the live tests
-skipped, and every summary said two dozen checks had run when none of them
-had. Deselecting says which set you are looking at.
-
-Some tests need TouchDesigner *installed* — they shell out to `toeexpand` and
-`toecollapse`, or read a shipped example — and skip without one. Those stay in
-the default set: skipping is honest there, because the same checks pass on any
-machine with the application present.
+Some tests need TouchDesigner *installed*, since they shell out to `toeexpand`
+and `toecollapse`, or read a shipped example, and they skip without one. Those
+stay in the default set, and the same checks pass on any machine with the
+application present.
 
 Rebuilding the index after changing an extractor:
 
@@ -204,7 +188,7 @@ td-atlas probe               # needs TouchDesigner open with the bridge
 td-atlas reload              # push handler changes into a running instance
 ```
 
-`td-atlas reload` is the fast loop for `component/handler.py`: it re-stages the
+`td-atlas reload` is the fast loop for `component/handler.py`. It re-stages the
 sources and has the running bridge replace its own handler, so there is no need
 to return to the textport.
 
@@ -218,38 +202,35 @@ Two rules it enforces, both of which a hand-maintained manifest breaks inside
 one release:
 
 - **`packaging/manifest.json` is generated, not edited.** Everything it shares
-  with the package is read from `pyproject.toml`, including the platform list —
-  which is why the classifiers are the one place to state that Windows is
-  unverified. Unverified means TouchDesigner on Windows: the OS itself has run
-  in CI since 2026-09-07, and `docs/compatibility.md` keeps the two apart.
-  `tests/test_packaging.py` fails when the committed copy drifts — including on
-  its encoding, which is why every file the builder writes names UTF-8.
+  with the package is read from `pyproject.toml`, including the platform list,
+  so the classifiers are the one place to state that Windows is unverified.
+  Unverified means TouchDesigner on Windows. The OS itself has run in CI since
+  2026-09-07, and `docs/compatibility.md` keeps the two apart.
+  `tests/test_packaging.py` fails when the committed copy drifts, encoding
+  included, so every file the builder writes names UTF-8.
 - **Only tracked files are packed.** The staging tree comes from `git archive`,
-  so the index and the bridge token — both untracked, both machine-specific —
-  are absent by construction rather than by an exclusion list that would have
-  to be kept current. The build checks the packed listing against an allowlist
-  regardless.
+  so the index and the bridge token, both untracked and both machine-specific,
+  are absent by construction. The build checks the packed listing against an
+  allowlist regardless.
 
 The bundle uses the `uv` server type, so it ships source and `pyproject.toml`
 and lets the host resolve dependencies. A `python`-type bundle would have to
 carry `mcp`'s compiled `pydantic-core` wheel, which is built for one CPU and
-one Python minor and cannot be produced reproducibly from a clean checkout.
-The launch string stays the one `cli.mcp_command()` settled on — `-m
-td_atlas.cli mcp`; only the interpreter differs, because a bundle has no
+one Python minor and cannot be produced reproducibly from a clean checkout. The
+launch string stays the one `cli.mcp_command()` settled on, which is
+`-m td_atlas.cli mcp`. Only the interpreter differs, since a bundle has no
 `sys.executable` of the user's to point at.
 
 `scripts/publish.sh` is the only thing here that sends anything outward, and
 nothing calls it. Before the first `gh` it gates on five things, cheapest
-first: a clean working tree (untracked files included — `git archive HEAD`
-packs neither), a bundle whose `dist/build.json` names the current HEAD, a
-`v<version>` tag that does not exist yet, a green `pytest`, and — last,
-because it is the only gate that needs the network — a `git ls-remote` saying
-the tag is not on `origin` either. That last one exists because the local
-check passes for a tag deleted here but still published there, which is what
-a half-finished release leaves behind; a `ls-remote` that fails to answer
-fails the gate rather than reading as "absent". The SHA-256 in
-`dist/server.json` must match the bundle too, since clients verify that hash
-before installing.
+first. A clean working tree, untracked files included, since `git archive HEAD`
+packs neither. A bundle whose `dist/build.json` names the current HEAD. A
+`v<version>` tag that does not exist yet. A green `pytest`. Last, and the only
+gate that needs the network, a `git ls-remote` saying the tag is not on
+`origin` either. That last one catches a tag deleted here but still published
+there, which is what a half-finished release leaves behind. A `ls-remote` that
+fails to answer fails the gate. The SHA-256 in `dist/server.json` must match
+the bundle too, since clients verify that hash before installing.
 
 ## Code that runs inside TouchDesigner
 
@@ -260,46 +241,40 @@ TouchDesigner's embedded **Python 3.11**, not the host interpreter. Constraints:
 - No 3.12+ syntax.
 - Every request runs on TouchDesigner's main thread during a cook. A handler
   that blocks freezes the application; keep work bounded.
-- `component/__init__.py` still deliberately imports nothing, and
-  `bootstrap.py` is useless outside TouchDesigner. `handler.py` is the one
-  exception: the host imports it on purpose, to read `PROTOCOL_VERSION`
-  without keeping a second copy of it in sync. That only works because its
-  module-level code stays plain stdlib, with every touch of TouchDesigner's
-  injected globals (`op`, `app`, `me`, ...) pushed inside function bodies —
-  keep it that way, since the host import depends on it, not just habit.
+- `component/__init__.py` imports nothing, and `bootstrap.py` is useless
+  outside TouchDesigner. `handler.py` is the one exception. The host imports it
+  to read `PROTOCOL_VERSION` without keeping a second copy of it in sync. That
+  works only while its module-level code stays plain stdlib, with every touch
+  of TouchDesigner's injected globals (`op`, `app`, `me`, ...) pushed inside
+  function bodies. Keep it that way, since the host import depends on it.
 
 **Any change to the `METHODS` table raises `PROTOCOL_VERSION`, and
-`MIN_PROTOCOL_VERSION` follows it.** Not only adding or removing a method: a
-change to a method's name, to the set of parameters it reads, or to the shape
-of the reply the host reads back is equally a protocol change. The reason is
-the delivery, not the wire format — host and bridge ride in one `.mcpb`
-bundle, so they cannot legitimately disagree, and the only way they ever do is
-a bridge component left inside a project across an upgrade. Such a bridge
-answers with the number it was laid down with; if that number did not move,
-the host has no way to tell it from a current one, and the failure it produces
-is a plausible-looking answer to a different question rather than an error.
-This has been got wrong twice — a removed method and an added parameter — so
-`tests/test_protocol_fingerprint.py` now derives the method names and their
+`MIN_PROTOCOL_VERSION` follows it.** Adding or removing a method counts. So
+does a change to a method's name, to the set of parameters it reads, or to the
+shape of the reply the host reads back. The case this guards is a bridge
+component left inside a project across an upgrade, since host and bridge ship
+together in one `.mcpb` bundle. Such a bridge answers with
+the number it was laid down with, and if that number did not move, the host
+cannot tell it from a current one, and the failure it produces is a
+plausible-looking answer to a different question.
+`tests/test_protocol_fingerprint.py` derives the method names and their
 parameter keys from the source and compares them with a listing recorded
-against the current number. Reply shape it cannot see; that half is held by
-this rule, the review, and the `CHANGELOG.md` obligation in
-`CONTRIBUTING.md`.
+against the current number. Reply shape it cannot see, and that half is held by
+this rule, the review, and the `CHANGELOG.md` obligation in `CONTRIBUTING.md`.
 
 Probe snippets in `atoms/probe.py` are `%`-formatted templates. A literal `%`
 inside one must be written `%%`.
 
 ## Adding an MCP tool
 
-1. Write the function in `mcp/server.py` with a docstring aimed at an agent —
-   the docstring *is* the interface, so say when to reach for it and what trap
+1. Write the function in `mcp/server.py` with a docstring aimed at an agent.
+   The docstring *is* the interface, so say when to reach for it and what trap
    it avoids, not just what it returns.
 2. Put `@guarded` under `@mcp.tool()`. It catches `BridgeUnavailable` and
    `BridgeError` and returns the message with a repair hint attached; an
-   exception that escapes surfaces to the agent as an opaque `ToolError`. This
-   used to read "catch them in the body of every tool", which described a
-   convention the code had already replaced — `tests/test_recovery_hints.py`
-   asserts that every bridge tool carries the decorator, so a new tool without
-   it fails rather than being noticed by a reader.
+   exception that escapes surfaces to the agent as an opaque `ToolError`.
+   `tests/test_recovery_hints.py` asserts that every bridge tool carries the
+   decorator, so a new tool without it fails.
 3. Return types feed a generated output schema. A union of `Image | str` fails
    to generate; leave the annotation off when a tool can return either.
 4. Add it to `plugin/skills/touchdesigner/references/tools.md`.
@@ -309,13 +284,13 @@ inside one must be written `%%`.
 Full-text search has been wrong twice in the same way, so check any new search
 surface against real queries before believing it.
 
-FTS5 ANDs bare terms, which makes plain-language questions match nothing;
-`AtomStore.fts_query` ORs them instead. But ORing lets an operator matching one
-common word outrank the one that fits — `td_search_operators` and `td_palette`
-both had to search names and labels first and only widen to body text when the
-result set is thin. `AtomStore.match` additionally re-parses any query that
-looks like FTS5 syntax, because prose can accidentally contain `NEAR(` or an
-unbalanced quote and SQLite raises rather than returning nothing.
+FTS5 ANDs bare terms, which makes plain-language questions match nothing, and
+`AtomStore.fts_query` ORs them. But ORing lets an operator matching one common
+word outrank the one that fits, so `td_search_operators` and `td_palette` both
+search names and labels first and widen to body text only when the result set
+is thin. `AtomStore.match` additionally re-parses any query that looks like
+FTS5 syntax, since prose can accidentally contain `NEAR(` or an unbalanced
+quote and SQLite raises.
 
 ## Conventions
 
@@ -327,22 +302,21 @@ unbalanced quote and SQLite raises rather than returning nothing.
 
 ## Things to be careful with
 
-- **Never write beside a user's file.** Both helpers work in place, but not
-  in the same way: `toeexpand` writes `<file>.dir` and `<file>.toc` beside its
-  input and leaves the input itself alone, while `toecollapse` moves whatever
-  already sits at its destination aside to `<file>.bkp1` — `<file>.bkp2` on a
+- **Never write beside a user's file.** Both helpers work in place, and not in
+  the same way. `toeexpand` writes `<file>.dir` and `<file>.toc` beside its
+  input and leaves the input itself alone. `toecollapse` moves whatever already
+  sits at its destination aside to `<file>.bkp1`, or to `<file>.bkp2` on a
   second run (measured 2026-09-07, `docs/formats.md`). `project/expand.py`
   always copies into a cache first. Preserve that.
 - **`td_snapshot` must not repoint the session.** `project.save(path)` is a
-  Save As and moves the artist's working file; the tool saves a component
-  instead.
-- The index contains machine-specific values — device menus include real audio
-  hardware names. It is a local cache, not something to publish.
+  Save As and moves the artist's working file; the tool saves a component.
+- The index contains machine-specific values, and device menus include real
+  audio hardware names. It is a local cache, not something to publish.
 
 ## Verified facts worth not re-deriving
 
-Recorded in `docs/formats.md` with the evidence. Briefly: the payload prologue
-is 27 bytes ending in a length field (686/686 files); parameter flag bit `0x10`
-marks expression mode (14,835/14,835 lines across 2,861 files); there are 71
-contracted type names; the wiki mirror puts pages whose title contains a slash
+Recorded in `docs/formats.md` with the evidence. The payload prologue is 27
+bytes ending in a length field (686/686 files). Parameter flag bit `0x10` marks
+expression mode (14,835/14,835 lines across 2,861 files). There are 71
+contracted type names. The wiki mirror puts pages whose title contains a slash
 into subdirectories.
