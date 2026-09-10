@@ -1,7 +1,8 @@
 English | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
 
 <div align="center">
-  <img src=".github/td-atlas.png" width="120" alt="The td-atlas mark">
+  <p align="center"><img src=".github/cover.png" width="720"
+   alt="The td-atlas mark over a field of waveform lines."></p>
   <h1>td-atlas</h1>
   <p>
     An atomised index of TouchDesigner, a live bridge into a running instance,
@@ -23,14 +24,6 @@ English | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
   </p>
 </div>
 
-<!-- The screencast belongs here, once it is recorded. Drop the file in as
-     .github/demo.gif and replace this comment with:
-
-     <p align="center"><img src=".github/demo.gif" width="720"
-        alt="An agent is asked for a network, builds it in TouchDesigner, and
-             checks that nothing is silently dead."></p>
-
-     Nothing is shown until then, so that no reader meets a broken image. -->
 
 An agent building in TouchDesigner needs three things at once: exact knowledge
 of the operators and parameters on *this* machine, control of a running

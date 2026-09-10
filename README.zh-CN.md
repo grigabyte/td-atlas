@@ -1,7 +1,8 @@
 [English](README.md) | [Русский](README.ru.md) | 简体中文
 
 <div align="center">
-  <img src=".github/td-atlas.png" width="120" alt="td-atlas 标志">
+  <p align="center"><img src=".github/cover.png" width="720"
+   alt="td-atlas 标志置于波形线场之上。"></p>
   <h1>td-atlas</h1>
   <p>
     把 TouchDesigner 拆成原子的索引、通往运行中实例的实时桥，
@@ -23,14 +24,6 @@
   </p>
 </div>
 
-<!-- 录屏将放在这里。录好之后把文件放到 .github/demo.gif，
-     并把这段注释换成：
-
-     <p align="center"><img src=".github/demo.gif" width="720"
-        alt="智能体收到搭建网络的要求，在 TouchDesigner 里把它建起来，
-             再检查没有任何节点在无声地失效。"></p>
-
-     在那之前这里什么也不显示，读者不会遇到一张坏掉的图。 -->
 
 在 TouchDesigner 里搭建的智能体需要同时具备三样东西：对*这台*机器上算子与
 参数的准确认知、对运行中实例的控制且能一步撤销、以及在不打开工程的前提下
