@@ -17,7 +17,7 @@ td-atlas/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml          pytest and ruff, macOS and Windows, Python 3.11-3.14
-│   │   └── pages.yml       serves install.sh as the short /i address
+│   │   └── pages.yml       builds the site, and serves install.sh as /i
 │   ├── ISSUE_TEMPLATE/     build, OS and `td-atlas doctor` output
 │   └── td-atlas.png        the mark the README shows
 ├── docs/
@@ -35,7 +35,28 @@ td-atlas/
 │   ├── bundle.md           building and publishing the .mcpb
 │   ├── troubleshooting.md  every symptom, what it is, what to run
 │   ├── development.md      the test suite and the invariant it holds
-│   └── layout.md           this file
+│   ├── layout.md           this file
+│   └── ru/                 the Russian mirror, file for file, each one
+│                           carrying the hash of its English source
+├── site/                   the public site: the landing page and /docs/
+│   ├── index.html          the landing page, both languages in one document
+│   ├── baza.mjs            the base path, one place for both halves of the build
+│   ├── vite.config.ts      the vite build, and the base path in the page's links
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── public/             favicons and the apple touch icon
+│   ├── src/                the landing page in the browser
+│   │   ├── main.ts             motion, buttons, and the page at rest
+│   │   ├── dvizhenie.ts        scroll, reveal and parallax, loaded on its own
+│   │   ├── teksty.{ts,json}    every string of the page, both languages
+│   │   ├── stil.css            the movement laid over the locked markup
+│   │   └── objekt/             the first screen's field, canvas and WebGL2
+│   └── generator/          the documentation pages, built from this repository
+│       ├── sborka.mjs          sections, both languages, and every link
+│       ├── shablon.mjs         markup and theme, the d1 layout
+│       ├── md.mjs              markdown into blocks
+│       ├── fixtura.mjs         three canonical pages, for the layout check
+│       └── znak.svg            the mark in the header
 ├── .claude-plugin/
 │   └── marketplace.json    this repository as a marketplace
 ├── packaging/
