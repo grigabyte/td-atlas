@@ -46,6 +46,9 @@ A node's path is its path within the tree, minus the extension. Per operator:
 | `.table` | Table DAT cells |
 | `.panel` | panel UI state (layout only) |
 
+A component is held on disk in one of three forms: the network text alone, the
+text plus the `.tox` it was printed from, or the text plus the expanded tree.
+
 ### What each of those three forms costs
 
 Measured on this machine, with the atom index present, over three shipped
@@ -217,9 +220,9 @@ Three parsing traps:
   a pair, so the count has to come from the flags word.
 - **A value may be preceded by a byte-order mark.** 62 lines in the cache carry
   a BOM in the tail and 6 of them write `<BOM>"…"` where every other line writes
-  `"…"`. Treat the BOM as part of the value. Treat it as the value's first
-  character and the quotes become content, the expression splits on every space,
-  and what comes back is a fragment.
+  `"…"`. Treat the BOM as part of the value. If you take it as the value's
+  first character, the parse breaks: the quotes become content, the expression
+  splits on every space, and what comes back is a fragment.
 
 Two more measured details. An expression may be stored as the empty string
 (`Rawdata 201326673 "" ""`, 83 lines), and present and blank is not the same as
