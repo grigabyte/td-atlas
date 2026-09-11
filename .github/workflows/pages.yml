@@ -1,4 +1,5 @@
-# The short install address, and why nothing here can go stale.
+# The short install address, the site around it, and why nothing here can go
+# stale.
 #
 # The README hands out `curl -fsSL https://grigabyte.github.io/td-atlas/i | sh`.
 # That line has to fetch exactly the `install.sh` that is in `main`: a copy
@@ -6,21 +7,41 @@
 # person running it has no way to see that it did.
 #
 # So no copy is kept. This workflow renames the tracked `install.sh` to `i`
-# at deploy time and publishes that, on every push that touches the script.
-# There is nothing to keep in step — the only `install.sh` in the repository
-# is the one being served, and the shorter name is made on the way out.
+# at deploy time and publishes that. There is nothing to keep in step — the
+# only `install.sh` in the repository is the one being served, and the
+# shorter name is made on the way out.
 #
 # The name has no extension on purpose: that is the whole of the saving.
 # Pages serves it as a static file, and `sh` reads the pipe without ever
 # asking what the content type was.
+#
+# The landing page and the documentation are published on the same argument.
+# They are built here, from the checkout, and never uploaded from anyone's
+# working copy — so what is served is what is in `main`. That is also why the
+# run is no longer narrowed to the paths of the installer: a sentence fixed in
+# the repository that never reaches the site is the same silent drift in a
+# different file, so every push to `main` rebuilds and republishes.
+#
+# The base path is one variable. Project Pages serves this repository under
+# `/td-atlas/`, not at a domain root, so every absolute address on the site
+# carries that prefix. `BASE` is read once, in `site/baza.mjs`, and both
+# halves of the build take it from there — vite for the landing page, the
+# generator for the 21 documentation sections. Spelled twice it would
+# disagree eventually, and the links between the halves are what would break.
+#
+# The checkout is not shallow on purpose. The generator asks git two questions
+# a shallow clone answers badly. It reads the English file a translation was
+# made from out of the history, which simply fails and falls back to the
+# current text. And it asks for the date of the last commit that touched the
+# sources — a shallow root shows every file as added, so the answer is the
+# date of whatever commit is HEAD, whether or not it went near the
+# documentation. The site builds either way, carrying a translation notice
+# that is quietly wrong.
 name: Pages
 
 on:
   push:
     branches: [main]
-    paths:
-      - install.sh
-      - .github/workflows/pages.yml
   workflow_dispatch:
 
 permissions:
@@ -44,10 +65,34 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
+      # The version the site is built and measured on locally. `latest` would
+      # make an upstream release a red run here for reasons that have nothing
+      # to do with the commit under test — the same reasoning that pins the
+      # linter in ci.yml.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Install
+        run: npm ci --prefix site
+
+      - name: Build the site
+        run: BASE=/td-atlas/ npm --prefix site run build
+
+      # `dist` moves first and whole, then the installer lands beside it. The
+      # order is the safe one in both directions: nothing built can overwrite
+      # `i`, and the check says so out loud rather than letting `i` overwrite
+      # a page of the site if one is ever named that.
       - name: Lay out the site
         run: |
-          mkdir _site
+          mv site/dist _site
+          if [ -e _site/i ]; then
+            echo "the built site already has an _site/i — refusing to overwrite it" >&2
+            exit 1
+          fi
           cp install.sh _site/i
 
       - uses: actions/upload-pages-artifact@v3
