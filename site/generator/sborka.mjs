@@ -39,6 +39,7 @@ import {
   KNOPKA_ZHIVAJA, METKI_INSTR_RU, METKI_INSTR_EN,
 } from './shablon.mjs'
 import { fikstura } from './fixtura.mjs'
+import { adres } from '../baza.mjs'
 
 const TUT = dirname(fileURLToPath(import.meta.url))     // site/generator
 const SAJT = resolve(TUT, '..')                        // site
@@ -385,7 +386,7 @@ function perepisatSsylku(href, fajlIstochnika) {
   const celPuti = relative('.', join(bazaKat === '.' ? '' : bazaKat, put0)).replace(/\\/g, '/')
   const razdel = PO_FAJLU.get(celPuti)
   // якорь на GitHub остаётся настоящим слагом: там страница чужая
-  if (razdel) return '/docs/' + razdel.klyuch + '/' + yakor(celPuti, yakorRaw)
+  if (razdel) return adres('/docs/' + razdel.klyuch + '/') + yakor(celPuti, yakorRaw)
   return GITHUB + '/blob/' + KOMMIT + '/' + celPuti + (yakorRaw ? '#' + yakorRaw : '')
 }
 
@@ -415,7 +416,7 @@ function ssylkiVBlokah(bloki, fajl) {
 // одной ячейкой. Замок d1 разбирает ту же строку на три колонки —
 // ИНСТРУМЕНТ / АРГУМЕНТЫ / ДЛЯ ЧЕГО, — имя не переносится (white-space:
 // nowrap), а на 390 строка раскладывается списком с метками колонок.
-// Разбор тот же, что у фикстуры (docs/fixtura.mjs, функция instrumenty):
+// Разбор тот же, что у фикстуры (site/generator/fixtura.mjs, функция instrumenty):
 // имя — `[a-z_]+`, аргументы — всё в скобках. Опознаётся ФОРМОЙ строк,
 // а не подписью шапки: по-русски она «Инструмент | Зачем», по-английски
 // «Tool | Use it for», и завязываться на них нельзя.
@@ -771,10 +772,10 @@ const SKRIPT_OTKLIKA = `
 //  Сборка живой страницы
 // ═════════════════════════════════════════════════════════════════════════
 const YAKORYA = [
-  { imya: HROM['hdr.s2'].en, href: '/#s2', dt: 'hdr.s2' },
-  { imya: HROM['hdr.s3'].en, href: '/#s3', dt: 'hdr.s3' },
-  { imya: HROM['hdr.s4'].en, href: '/#s4', dt: 'hdr.s4' },
-  { imya: HROM['hdr.s5'].en, href: '/#s5', dt: 'hdr.s5' },
+  { imya: HROM['hdr.s2'].en, href: adres('/#s2'), dt: 'hdr.s2' },
+  { imya: HROM['hdr.s3'].en, href: adres('/#s3'), dt: 'hdr.s3' },
+  { imya: HROM['hdr.s4'].en, href: adres('/#s4'), dt: 'hdr.s4' },
+  { imya: HROM['hdr.s5'].en, href: adres('/#s5'), dt: 'hdr.s5' },
 ]
 
 function shapkaZhivaja() {
@@ -788,7 +789,7 @@ function shapkaZhivaja() {
     // битой. Язык меняет обработчик по data-lang, ключ ?lang= остаётся
     // рабочим адресом для рельса и внешних ссылок.
     perekl: '<a href="#verh" data-lang="ru">RU</a><i>·</i><a href="#verh" data-lang="en" class="tut">EN</a>',
-    knopkaHref: '/#s5',
+    knopkaHref: adres('/#s5'),
     knopkaImya: HROM['hdr.cta'].en,
     knopkaDt: 'hdr.cta',
   })
@@ -796,7 +797,7 @@ function shapkaZhivaja() {
 
 function menuZhivoe(tekushij) {
   return menu(RAZDELY.map(r => ({
-    imya: r.en, href: '/docs/' + r.klyuch + '/', akt: r.klyuch === tekushij, dt: 'razdel.' + r.klyuch,
+    imya: r.en, href: adres('/docs/' + r.klyuch + '/'), akt: r.klyuch === tekushij, dt: 'razdel.' + r.klyuch,
   })), {
     eyebrow: HROM['menu.eyebrow'].en, eyebrowDt: 'menu.eyebrow',
     zakryt: HROM['menu.zakryt'].en, zakrytDt: 'menu.zakryt',
@@ -845,7 +846,7 @@ const PLASHKA_INSTR = `<p class="plashka ru-tolko">${HROM['plashka.instr'].ru}</
 
 const KOMMENTARIJ = (imya, ist) => `  Сайт документации td-atlas, раунд 5, раскладка d1 (LOCK.md, «Раунд 5»).
   Раздел: ${imya}. Источник: ${ist} снимка ${KOMMIT}.
-  Собрано docs/sborka.mjs — руками не править, правится генератор.
+  Собрано site/generator/sborka.mjs — руками не править, правится генератор.
   Тема, шапка, подвал, стили кода и таблиц — из fanout/раунд-5/веер/ (d1).
   В дереве документа ровно один язык; второй лежит в <template id="ru-telo">.`
 
@@ -940,7 +941,7 @@ function stranicaRazdela(r) {
 // (ПРИЁМКА.md прямо говорит, что это не находка), а пункт 7 не ищет
 // источник для слов генератора.
 function stranicaUkazatelya() {
-  const punkty = RAZDELY.map(r => `<a href="/docs/${r.klyuch}/">
+  const punkty = RAZDELY.map(r => `<a href="${adres('/docs/' + r.klyuch + '/')}">
         <b data-t="razdel.${r.klyuch}">${esc(r.en)}</b>
         <span>${esc(r.fajly.join(', '))}</span>
       </a>`).join('\n      ')
