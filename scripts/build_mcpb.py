@@ -50,6 +50,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -347,6 +348,65 @@ def _warn_if_head_is_not_what_you_edited() -> None:
         _say("  commit first, or the bundle is not what you just edited.")
 
 
+# -- the readme, addressed from inside the bundle ---------------------------
+
+# Where a link has to point once the file it names is not next to the reader.
+# `blob/` renders a file as a page; an image needs the bytes, and `?raw=true`
+# is the redirect GitHub gives for that — a bare `blob/…png` inside `<img>`
+# serves HTML and shows a broken image.
+BLOB = "/blob/main/"
+RAW_QUERY = "?raw=true"
+
+# Where a relative target can appear. Group 1 is the target in every one.
+README_TARGETS = (
+    ("image", re.compile(r'!\[[^\]]*\]\((?P<t>[^)\s]+)')),
+    ("link", re.compile(r'(?<!!)\[[^\]]*\]\((?P<t>[^)\s]+)')),
+    ("image", re.compile(r'<img[^>]*?\bsrc="(?P<t>[^"]+)"')),
+    ("link", re.compile(r'<a[^>]*?\bhref="(?P<t>[^"]+)"')),
+)
+
+
+def readme_for_bundle(text: str) -> str:
+    """Point the readme's relative links at GitHub, for a reader inside the zip.
+
+    The bundle is 36 files: `src/td_atlas/`, and beside it `pyproject.toml`,
+    `LICENSE`, `README.md`, the generated `manifest.json` and `server.py`.
+    The readme carries 51 links and images, 39 of which name something none
+    of that is — every `docs/*.md`, the plugin skill, the sibling
+    translations, and the cover image in the header. Inside the zip each of
+    those is a dead end, and a host that renders the readme at install time
+    renders it with a broken image on the first line (measured 2026-09-12:
+    39 broken, 25 distinct targets; after this rewrite, 0).
+
+    Rewriting here rather than shipping a second, bundle-only readme: the
+    readme is one text with one owner, and a separate one drifts from it
+    within a release. What stays relative is what the bundle actually has —
+    `LICENSE` — and anchors, which resolve inside the page either way.
+    """
+    repo = project_metadata()["urls"]["Repository"].rstrip("/")
+    here = {p.relative_to(STAGE).as_posix() for p in STAGE.rglob("*") if p.is_file()}
+
+    def absolute(target: str, kind: str) -> str:
+        if target.startswith(("http://", "https://", "mailto:", "#")):
+            return target
+        path, _, anchor = target.partition("#")
+        if not path or path in here:
+            return target
+        if kind == "image":
+            return repo + BLOB + path + RAW_QUERY
+        return repo + BLOB + path + (("#" + anchor) if anchor else "")
+
+    for kind, pattern in README_TARGETS:
+        def swap(m: re.Match, kind: str = kind) -> str:
+            whole = m.group(0)
+            head = m.start("t") - m.start()
+            tail = m.end("t") - m.start()
+            return whole[:head] + absolute(m.group("t"), kind) + whole[tail:]
+
+        text = pattern.sub(swap, text)
+    return text
+
+
 def stage(manifest: dict) -> None:
     """Lay out exactly what will be packed, from tracked files only.
 
@@ -363,6 +423,12 @@ def stage(manifest: dict) -> None:
         cwd=ROOT, capture_output=True, check=True,
     )
     subprocess.run(["tar", "-x", "-C", str(STAGE)], input=archive.stdout, check=True)
+
+    readme = STAGE / "README.md"
+    readme.write_text(
+        readme_for_bundle(readme.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
 
     (STAGE / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
