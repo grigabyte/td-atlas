@@ -1,0 +1,194 @@
+{
+  "header.marka": {
+    "ru": "td-atlas",
+    "en": "td-atlas"
+  },
+  "header.anchor.s2": {
+    "ru": "Находит ошибки",
+    "en": "Spots errors"
+  },
+  "header.anchor.s3": {
+    "ru": "Правит сеть",
+    "en": "Edits blocks"
+  },
+  "header.anchor.s4": {
+    "ru": "Смотрит картинку",
+    "en": "Looks at frames"
+  },
+  "header.anchor.s5": {
+    "ru": "Установка",
+    "en": "Install"
+  },
+  "header.cta": {
+    "ru": "Попробовать",
+    "en": "Try it"
+  },
+  "hero.yarlyk": {
+    "ru": "td-atlas · коннектор для ИИ-агента к TouchDesigner",
+    "en": "td-atlas · a connector between your AI agent and TouchDesigner"
+  },
+  "hero.h1.a": {
+    "ru": "Ваш ИИ-агент теперь работает",
+    "en": "Point your AI agent"
+  },
+  "hero.h1.b": {
+    "ru": "в TouchDesigner",
+    "en": "at TouchDesigner"
+  },
+  "hero.abz": {
+    "ru": "Он видит ваш проект, правит блоки, смотрит картинку и говорит, что сломалось. Работает с Claude Code. Ставится одной командой",
+    "en": "It reads your project, edits the blocks, looks at what came out and says what broke. Works with Claude Code. One command to install"
+  },
+  "hero.cta": {
+    "ru": "Попробовать",
+    "en": "Try it"
+  },
+  "s2.kicker": {
+    "ru": "что не так",
+    "en": "gone quiet"
+  },
+  "s2.h2.a": {
+    "ru": "TouchDesigner не скажет,",
+    "en": "TouchDesigner goes quiet"
+  },
+  "s2.h2.b": {
+    "ru": "что сломалось. Агент скажет",
+    "en": "when it breaks. Ask the agent"
+  },
+  "s2.abz": {
+    "ru": "Проект открыт, картинки нет, подсказки тоже. Агент проходит по блокам и называет те, что молчат.",
+    "en": "Project open, no picture, no hint. The agent goes block by block and tells you which sit quiet."
+  },
+  "s2.konsol.imya": {
+    "ru": "td_health",
+    "en": "td_health"
+  },
+  "s2.konsol.r1": {
+    "ru": "агент прочитал ваш проект и проверил каждый блок",
+    "en": "went through your project, block by block"
+  },
+  "s2.konsol.r2.t": {
+    "ru": "этот блок ни разу не сработал:",
+    "en": "this block never ran once:"
+  },
+  "s2.konsol.r2.op": {
+    "ru": "jrn_noise (noiseTOP)",
+    "en": "jrn_noise (noiseTOP)"
+  },
+  "s2.konsol.r3.t": {
+    "ru": "и этот тоже:",
+    "en": "and this one:"
+  },
+  "s2.konsol.r3.op": {
+    "ru": "mask_comp (compositeTOP)",
+    "en": "mask_comp (compositeTOP)"
+  },
+  "s2.konsol.r4": {
+    "ru": "сам TouchDesigner об этом молчит",
+    "en": "and TouchDesigner never says a word"
+  },
+  "s3.kicker": {
+    "ru": "правит",
+    "en": "edits"
+  },
+  "s3.h2.a": {
+    "ru": "Агент правит сеть сам.",
+    "en": "Let the agent edit it."
+  },
+  "s3.h2.b": {
+    "ru": "Одна отмена возвращает всё",
+    "en": "One undo puts it all back"
+  },
+  "s3.abz": {
+    "ru": "Он меняет настройки блоков в открытом проекте. Вышло не то, Ctrl+Z возвращает прежний вид.",
+    "en": "It changes settings on blocks in your open project. Not what you wanted? Ctrl+Z, and it's back."
+  },
+  "s3.strelka": {
+    "ru": "блоки с ошибкой → те же блоки в работе",
+    "en": "errors → the same blocks, now running"
+  },
+  "s3.set.aria": {
+    "ru": "сеть блоков в рабочем состоянии",
+    "en": "a network of blocks, all running"
+  },
+  "s4.kicker": {
+    "ru": "видит",
+    "en": "looks"
+  },
+  "s4.h2.a": {
+    "ru": "Агент смотрит",
+    "en": "Let it look at"
+  },
+  "s4.h2.b": {
+    "ru": "картинку сам",
+    "en": "the picture"
+  },
+  "s4.abz": {
+    "ru": "Он снимает то, что вышло на экран, и говорит, похоже ли это на то, что вы просили.",
+    "en": "It takes what came out on screen and tells you whether that's what you asked for."
+  },
+  "s4.strelka": {
+    "ru": "кадры подряд, если картинка меняется во времени",
+    "en": "if the picture moves, you get several frames"
+  },
+  "s4.plenka.aria": {
+    "ru": "шесть кадров рендера подряд",
+    "en": "six render frames in a row"
+  },
+  "s5.kicker": {
+    "ru": "попробовать",
+    "en": "your turn"
+  },
+  "s5.h2.a": {
+    "ru": "Ставится",
+    "en": "Set up"
+  },
+  "s5.h2.b": {
+    "ru": "одной командой",
+    "en": "in one command"
+  },
+  "s5.terminal.imya": {
+    "ru": "terminal",
+    "en": "terminal"
+  },
+  "s5.cmd": {
+    "ru": "curl -fsSL https://grigabyte.github.io/td-atlas/i | sh",
+    "en": "curl -fsSL https://grigabyte.github.io/td-atlas/i | sh"
+  },
+  "s5.copy": {
+    "ru": "Скопировать",
+    "en": "Copy"
+  },
+  "s5.agent": {
+    "ru": "Claude Code или любой ИИ-агент с MCP, протоколом, через который агенты подключают инструменты",
+    "en": "Claude Code, or any AI agent that speaks MCP, the way agents plug into tools"
+  },
+  "s5.spravka": {
+    "ru": "справка и 483 примера уже внутри",
+    "en": "483 sample networks and the help"
+  },
+  "s5.github": {
+    "ru": "GitHub",
+    "en": "GitHub"
+  },
+  "footer.copy": {
+    "ru": "© 2026 td-atlas",
+    "en": "© 2026 td-atlas"
+  },
+  "footer.github": {
+    "ru": "GitHub",
+    "en": "GitHub"
+  },
+  "s5.copied": {
+    "ru": "Скопировано",
+    "en": "Copied"
+  },
+  "header.docs": {
+    "ru": "Документация",
+    "en": "Docs"
+  },
+  "s5.docs": {
+    "ru": "Документация",
+    "en": "Documentation"
+  }
+}

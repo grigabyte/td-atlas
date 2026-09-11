@@ -1,0 +1,307 @@
+/* Движение поверх замка p3-v2. Кожа страницы живёт в <style> самого замка
+   и не трогается: здесь только то, чего в статике не было.
+
+   ПРАВИЛО ФАЙЛА: прозрачность 0 не назначается НИКОМУ, кто остался в потоке.
+   Приёмка, п. 4 (е), краснеет на каждом видимом узле с computed opacity 0,
+   и живой проход снимается в случайный момент петли. Поэтому «до/после»
+   сети — stroke-opacity (computed opacity остаётся 1), а всё, чего в покое
+   быть не должно, снимается display:none.
+
+   Радиусов не добавлено (2px и 3px замка), семейств шрифтов не добавлено,
+   градиентов нет — банлист check.sh. */
+
+/* ── поле hero: три слоя на одном месте ───────────────────────────────── */
+.pole-kadr,
+.pole-volna { z-index: 1; }
+.pole-imena { z-index: 2; pointer-events: none; }
+/* Канвы прячутся и показываются ТОЛЬКО через display: узел с прозрачностью 0
+   краснит п. 4 (е), а живой проход снимается в случайный момент.
+   .pole-est ставится скриптом, когда канва уже несёт кадр, — иначе на стыке
+   первый экран мигает чёрным. */
+/* Канва волны прячется ВИДИМОСТЬЮ, а не display: с display:none её
+   getBoundingClientRect равен нулю, и канва печаталась бы 1×1 пикселем
+   (эта ловушка стоила кадра покоя: поле не рисовалось вовсе). */
+.pole-kadr { display: none; }
+.pole-volna { visibility: hidden; }
+html.pole-kadr-est .pole-kadr { display: block; }
+html.pole-kadr-est .pole-statika { display: none; }
+html.pole-volna-est .pole-volna { visibility: visible; }
+html.pole-volna-est .pole-kadr { display: none; }
+
+/* ── развёртка первого экрана ─────────────────────────────────────────── */
+/* Развёртка сделана CSS-анимациями, а не GSAP, НАРОЧНО. Замер (proba/
+   razvertka.mjs) на том же браузере, каким мерит рельс: модуль (gsap + lenis,
+   185 КБ) начинает выполняться на 1166 мс, а разворачивание контекста WebGL
+   и сборка шейдера на swiftshader держат главный поток ещё 925 мс. Развёртка
+   на таймлайне GSAP попадала целиком внутрь этих блокировок и не проигрывалась
+   вовсе: узлы просто возникали. CSS-анимация прозрачности и сдвига идёт
+   на компоновщике, начинается с первой отрисовки и главным потоком
+   не задерживается — это и есть ответ на «неплавно появляется».
+
+   Числа — таблица «Развёртка первого экрана» ТОКЕНОВ-ДВИЖЕНИЯ.md, шаг в шаг.
+   Кривая vykat = cubic-bezier(0.19, 1, 0.22, 1). */
+/* До первой отрисовки узлы первого экрана спрятаны: класс gotov ставит
+   инлайновый скрипт головы по first-contentful-paint (со сторожем 3 с). */
+html.zhivo .shapka,
+html.zhivo .yakorya a,
+html.zhivo .yarlyk,
+html.zhivo #s1 h1 span,
+html.zhivo .hero-abz,
+html.zhivo #s1 .knopka,
+html.zhivo .indikator a,
+html.zhivo .pole-statika { opacity: 0; }
+
+@keyframes vhod-sverhu { from { opacity: 0; transform: translateY(-64px); } to { opacity: 1; transform: none; } }
+@keyframes vhod-sleva  { from { opacity: 0; transform: translateX(-88px); } to { opacity: 1; transform: none; } }
+@keyframes vhod-44     { from { opacity: 0; transform: translateY(44px); }  to { opacity: 1; transform: none; } }
+@keyframes vhod-22     { from { opacity: 0; transform: translateY(22px); }  to { opacity: 1; transform: none; } }
+@keyframes vhod-pole   { from { opacity: 0; } to { opacity: 1; } }
+
+html.gotov .shapka,
+html.gotov .yakorya a,
+html.gotov .yarlyk,
+html.gotov #s1 h1 span,
+html.gotov .hero-abz,
+html.gotov #s1 .knopka,
+html.gotov .indikator a {
+  animation-timing-function: cubic-bezier(0.19, 1, 0.22, 1);
+  animation-fill-mode: both;
+}
+/* 1 — шапка блоком, сверху +64 px */
+html.gotov .shapka { animation-name: vhod-sverhu; animation-duration: 1100ms; }
+/* 2 — пункты меню по одному, слева −88 px, шаг 80 мс */
+html.gotov .yakorya a { animation-name: vhod-sleva; animation-duration: 800ms; }
+html.gotov .yakorya a:nth-child(2) { animation-delay: 80ms; }
+html.gotov .yakorya a:nth-child(3) { animation-delay: 160ms; }
+html.gotov .yakorya a:nth-child(4) { animation-delay: 240ms; }
+/* 3 — ярлык над H1 */
+html.gotov .yarlyk { animation-name: vhod-44; animation-duration: 800ms; animation-delay: 400ms; }
+/* 4 — строки H1 по одной */
+html.gotov #s1 h1 span { animation-name: vhod-44; animation-duration: 800ms; animation-delay: 600ms; }
+html.gotov #s1 h1 span:nth-child(2) { animation-delay: 700ms; }
+/* 5 — подзаголовок */
+html.gotov .hero-abz { animation-name: vhod-44; animation-duration: 800ms; animation-delay: 900ms; }
+/* 6 — кнопка и подписи низа, шаг 80 мс */
+html.gotov #s1 .knopka { animation-name: vhod-22; animation-duration: 700ms; animation-delay: 1100ms; }
+html.gotov .indikator a { animation-name: vhod-22; animation-duration: 700ms; animation-delay: 1180ms; }
+html.gotov .indikator a:nth-child(2) { animation-delay: 1260ms; }
+html.gotov .indikator a:nth-child(3) { animation-delay: 1340ms; }
+html.gotov .indikator a:nth-child(4) { animation-delay: 1420ms; }
+html.gotov .indikator a:nth-child(5) { animation-delay: 1500ms; }
+/* Поле живёт с первого кадра и проявляется из чёрного за 600 мс (ПЛАН-раунд-4,
+   «Движение»). Проявляется СТАТИЧНЫЙ слой замка: канва встаёт на его место
+   позже и без своего проявления — иначе поле мигнуло бы чёрным на подмене. */
+html.gotov .pole-statika { animation: vhod-pole 600ms cubic-bezier(0.19, 1, 0.22, 1) both; }
+
+/* ── появление по прокрутке: исходные положения до ScrollTrigger ──────── */
+/* Списки те же, что в main.ts (BLOKI / STROKI / PODPISI). Прячет CSS, а не
+   скрипт: иначе секции успевают мелькнуть до первого кадра модуля. */
+html.zhivo #s2 .obj, html.zhivo #s3 .obj, html.zhivo #s4 .obj,
+html.zhivo #s5 .terminal, html.zhivo #s5 .prav,
+html.zhivo #s2 .kicker, html.zhivo #s2 h2 span, html.zhivo #s2 p.abz,
+html.zhivo #s3 .kicker, html.zhivo #s3 h2 span, html.zhivo #s3 .niz p.abz,
+html.zhivo #s4 .kicker, html.zhivo #s4 h2 span, html.zhivo #s4 p.abz,
+html.zhivo #s5 .kicker, html.zhivo #s5 h2 span,
+html.zhivo #s3 .strelka, html.zhivo #s4 .strelka, html.zhivo .nomer { opacity: 0; }
+
+/* ── слои параллакса ──────────────────────────────────────────────────── */
+/* Задник едет на 0.20 — это ±180 px за экран, и без запаса по высоте из-под
+   него выглядывает канва страницы. Запас даётся ТОЛЬКО живой странице:
+   кадр покоя обязан совпасть с замком, а он снимается без класса zhivo. */
+html.zhivo .zadnik { top: -200px; height: calc(100% + 400px); }
+html.zhivo .zadnik,
+html.zhivo .obj,
+html.zhivo .tekst,
+html.zhivo #s5 .terminal { will-change: transform, translate; }
+/* Отвергнуто: will-change: opacity на крупных блоках. Слой под плёнкой
+   с шестью feTurbulence поднимал долю тяжёлых кадров с 0.170 до 0.229
+   (проба dvizhenie.mjs, только появление) — фильтры пересчитывались
+   при создании слоя. */
+
+/* ── петля s2: курсор консоли, 6 с, пять миганий, linear ──────────────── */
+@keyframes kursor {
+  0%, 9% { background-color: var(--akcent); }
+  10%, 19% { background-color: transparent; }
+  20%, 29% { background-color: var(--akcent); }
+  30%, 39% { background-color: transparent; }
+  40%, 49% { background-color: var(--akcent); }
+  50%, 59% { background-color: transparent; }
+  60%, 69% { background-color: var(--akcent); }
+  70%, 79% { background-color: transparent; }
+  80%, 89% { background-color: var(--akcent); }
+  90%, 100% { background-color: transparent; }
+}
+html.zhivo .konsol .kub { animation: kursor 6s linear infinite; }
+
+/* ── петля s3: три блока с ошибкой ⇄ те же блоки с галочкой, 6 с ──────── */
+.set .oshibki rect { fill: none; stroke: #ff5f56; stroke-width: 1.3; }
+.set .oshibki .krest { fill: none; stroke: #ff5f56; stroke-width: 1.4; stroke-linecap: round; }
+html.pokoj .set .oshibki { display: none; }
+@keyframes set-do {
+  0%, 45% { stroke-opacity: 1; }
+  50%, 95% { stroke-opacity: 0; }
+  100% { stroke-opacity: 1; }
+}
+@keyframes set-posle {
+  0%, 45% { stroke-opacity: 0; }
+  50%, 95% { stroke-opacity: 1; }
+  100% { stroke-opacity: 0; }
+}
+html.zhivo .set .oshibki { animation: set-do 6s linear infinite; }
+html.zhivo .set .uz3 .ptica { animation: set-posle 6s linear infinite; }
+
+/* ── петля s4: каретка по кадрам плёнки, 9.6 с, шесть шагов ───────────── */
+.plenka .metka rect { fill: none; stroke: var(--akcent); stroke-width: 1.6; }
+html.pokoj .plenka .metka { display: none; }
+@keyframes kadr-za-kadrom {
+  0%, 15.9% { transform: translate(0, 0); }
+  16.6%, 32.5% { transform: translate(318px, 0); }
+  33.3%, 49.2% { transform: translate(636px, 0); }
+  50%, 65.9% { transform: translate(0, 234px); }
+  66.6%, 82.5% { transform: translate(318px, 234px); }
+  83.3%, 100% { transform: translate(636px, 234px); }
+}
+html.zhivo .plenka .metka { animation: kadr-za-kadrom 9.6s linear infinite; }
+
+/* ── петля s5: курсор терминала, 6 с ──────────────────────────────────── */
+.terminal .kub { width: 11px; height: 21px; margin-left: 10px; vertical-align: -3px; }
+html.zhivo .terminal .kub { animation: kursor 6s linear infinite; }
+
+/* Петля секции, которой нет в окне, стоит: она ничего не показывает, а кадр
+   отнимает (числа — в журнале). */
+html.zhivo .ekran:not(.vidno) .kub,
+html.zhivo .ekran:not(.vidno) .oshibki,
+html.zhivo .ekran:not(.vidno) .ptica,
+html.zhivo .ekran:not(.vidno) .metka { animation-play-state: paused; }
+
+/* ── ДОВОДКА 07.09: отклик интерфейса (правки 3, 4, 5 владельца) ───────
+   Числа отклика — site/src/motion.ts (enter 200 мс, cubic-bezier(.16,1,.3,1);
+   reveal.offset 8 px), это «кривая интерфейса» контракта. Рефы владельца
+   прочитаны: animations.dev — курс без таблицы чисел (проза о том, что
+   плохая кривая или длительность убивает анимацию), в transitions.dev
+   (index.html репозитория) числа есть и совпадают с нашими: отклик кнопок
+   150–200 мс, кривая smooth-out, bounce отдельно и для кнопок не берётся.
+   Поэтому взяты токены motion.ts, а не чужие: свой набор ближе.
+   Всё, что двигается, висит на html.zhivo — кадр покоя обязан остаться
+   кадром замка. prefers-reduced-motion выключает переходы отдельно:
+   голова страницы в этом режиме ставит html.pokoj, но правило дублируется
+   медиазапросом, чтобы не зависеть от одного механизма. */
+:root { --krivaya: cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* ── правка 3: кнопки «Попробовать» (шапка и hero) ────────────────────── */
+/* Hero-кнопка крупнее и плотнее шапочной: кегль 13 px, padding 14×28.
+   ТОЛЬКО от 861 px: числа контракта — про 1440, а на 390 у замка своя шкала
+   (.knopka 7×13, кегль 10). Первый прогон рельса со сплошным правилом дал
+   s1@390 3.36 % против 0.00 % у базы — вся разница ушла в кнопку, которой
+   на узком экране никто не просил.
+
+   Отступу возвращается то, что забрала высота кнопки: 31 → 45.5 px, и
+   в колонке hero (justify-content: center) это подняло бы H1 на 7 px —
+   кадр покоя разошёлся с замком на 2.66 % при 0.00 % у базы. margin-top
+   34 → 20 держит высоту колонки прежней, и от замка отличается только
+   сама кнопка. */
+@media (min-width: 861px) {
+  #s1 .knopka.akc { font-size: 13px; padding: 14px 28px; margin-top: 20px; }
+}
+
+/* Чёрточка живёт в правом поле кнопки и позиционируется абсолютно: hover
+   не имеет права менять раскладку, а место в потоке её бы меняло. */
+.knopka.akc { position: relative; }
+/* Доводка 2 (09.09), правка 7: хвост кнопки — стрелка, а не чёрточка.
+   Владелец назвал чёрточку «странным стилем после текста». Выезд тот же:
+   200 мс, из-под правого поля, абсолютно — раскладку hover не меняет. */
+.knopka.akc::after {
+  content: '\2192';
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  line-height: 1;
+  opacity: 0;
+  transform: translate(-8px, -50%);
+}
+#s1 .knopka.akc::after { right: 12px; }
+html.zhivo .knopka.akc {
+  transition: background-color 200ms var(--krivaya), color 200ms var(--krivaya),
+              border-color 200ms var(--krivaya), scale 200ms var(--krivaya);
+}
+html.zhivo .knopka.akc::after {
+  transition: opacity 200ms var(--krivaya), transform 200ms var(--krivaya);
+}
+/* Заливка акцентом, текст цвета канвы. Без градиента, без свечения. */
+html.zhivo .knopka.akc:hover,
+html.zhivo .knopka.akc:focus-visible {
+  background-color: var(--akcent);
+  border-color: var(--akcent);
+  color: var(--obsidian);
+}
+html.zhivo .knopka.akc:hover::after,
+html.zhivo .knopka.akc:focus-visible::after { opacity: 1; transform: translate(0, -50%); }
+/* Сжатие пишется в scale, а не в transform: у hero-кнопки transform занят
+   ключевыми кадрами развёртки с fill-mode: both, и они бы его перебили. */
+html.zhivo .knopka.akc:active { scale: 0.98; transition-duration: 100ms; }
+.knopka.akc:focus-visible { outline: 1px solid var(--bone); outline-offset: 3px; }
+
+/* ── активная секция: индикатор и якорь шапки (было у kandidat-2) ─────── */
+.indikator a.tut { color: var(--bone); }
+.indikator a.tut::after { width: 22px; background: var(--akcent); }
+.yakorya a.tut { color: var(--bone); }
+
+/* ── отклик остальных кнопок (GitHub, «Скопировать»): было 8 px / 200 мс ─ */
+.knopka { transition: color 200ms var(--krivaya), border-color 200ms var(--krivaya); }
+html.zhivo .knopka:hover { color: var(--akcent); border-color: var(--akcent); }
+
+/* ── правка 4: индикатор 01–05 и якоря шапки — переход, а не скачок ───── */
+/* 260 мс из вилки контракта 240–300. Черта активного пункта растёт из своей
+   длины (10 → 22 px), а не появляется: анимируется width, узел на месте. */
+html.zhivo .indikator a { transition: color 260ms var(--krivaya); }
+html.zhivo .indikator a::after {
+  transition: width 260ms var(--krivaya), background-color 260ms var(--krivaya);
+}
+html.zhivo .yakorya a { transition: color 260ms var(--krivaya); }
+
+/* ── правка 5: «Скопировать» меняет подпись внутри себя ───────────────── */
+/* Ширина кнопки фиксируется скриптом по большему из двух текстов и ставится
+   только живой странице: кадр покоя обязан совпасть с замком, а замок знает
+   кнопку шириной по слову «Скопировать». Новая подпись лежит абсолютно —
+   она не может раздвинуть кнопку, даже если ширину не поставили. */
+.terminal .knopka { justify-content: center; position: relative; overflow: hidden; }
+.terminal .knopka .pdp { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.terminal .knopka .pdp-nov {
+  position: absolute;
+  left: 0;
+  right: 0;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(8px);
+}
+.terminal .knopka .pdp-nov svg { width: 11px; height: 11px; flex: none; }
+html.zhivo .terminal .knopka {
+  transition: background-color 200ms var(--krivaya), color 200ms var(--krivaya),
+              border-color 200ms var(--krivaya);
+}
+html.zhivo .terminal .knopka .pdp {
+  transition: opacity 200ms var(--krivaya), transform 200ms var(--krivaya);
+}
+/* Класс «идёт» ставится через кадр после вставки новой подписи: без этого
+   переход не с чего начинать, и подпись просто возникает. */
+html.zhivo .terminal .knopka.gotovo {
+  background-color: var(--akcent);
+  border-color: var(--akcent);
+  color: var(--obsidian);
+}
+html.zhivo .terminal .knopka.gotovo .pdp-est { opacity: 0; transform: translateY(8px); }
+html.zhivo .terminal .knopka.gotovo .pdp-nov { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .knopka.akc,
+  .knopka.akc::after,
+  .indikator a,
+  .indikator a::after,
+  .yakorya a,
+  .terminal .knopka,
+  .terminal .knopka .pdp { transition: none; }
+}
+
+@media (max-width: 860px) {
+  .terminal .kub { width: 9px; height: 15px; margin-left: 8px; vertical-align: -2px; }
+}
