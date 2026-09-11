@@ -1,7 +1,7 @@
 ---
 istochnik: docs/layout.md
-kommit: f767122
-hesh: 3b9b3a986fb5ae263a1652f6ca1c06806bf65451fea335073d3e9367cc32bbe1
+kommit: 15d5951
+hesh: 1b3b5399ae089fb8788d68753ab422ff266207ecbeaaebd0380a0fec7ec5dcce
 ---
 
 # Дерево репозитория
