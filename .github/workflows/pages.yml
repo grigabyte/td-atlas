@@ -68,13 +68,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The version the site is built and measured on locally. `latest` would
-      # make an upstream release a red run here for reasons that have nothing
-      # to do with the commit under test — the same reasoning that pins the
-      # linter in ci.yml.
+      # The version `ci.yml` pins, and the one vite's `engines` field accepts.
+      # `latest` would make an upstream release a red run here for reasons that
+      # have nothing to do with the commit under test — the same reasoning that
+      # pins the linter there.
       - uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: "22"
 
       - name: Install
         run: npm ci --prefix site
