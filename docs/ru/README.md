@@ -1,7 +1,7 @@
 ---
 istochnik: README.md
-kommit: 06ceee0
-hesh: 05ebf661fe0147a927e7b22ffa6c30bb74ea4f3cf5b9c16e86d2fd708103888f
+kommit: cf0fc32
+hesh: 4b7094f06c4b65a41cabc451260fe90b41a226237d5dc0e6b669d97127a30066
 ---
 
 td-atlas даёт агенту три вещи. Точные имена операторов и параметров из
