@@ -73,7 +73,7 @@ excluded as the declared gap above.
 Nine capabilities. In every row the reason has the same shape: something a
 person does to this machine once, or something that writes a directory to disk.
 
-| CLI | Why not an MCP tool |
+| CLI | Why a person runs it |
 | --- | --- |
 | `install` | Stages the bridge and prints a line to paste into TouchDesigner. An agent that could install the bridge would need the bridge to do it. |
 | `release-tox` | Builds a distributable `.tox` of the bridge. Maintenance of this project, not use of it. |
@@ -92,7 +92,7 @@ person types at a terminal, which are `exec`, `render`, `status`, `instances`
 and `log`. A bridge capability gets a subcommand when someone wants to type it,
 not for symmetry.
 
-| MCP | Group | Why not a CLI subcommand |
+| MCP | Group | Why an agent calls it |
 | --- | --- | --- |
 | `td_docs`, `td_glossary`, `td_example`, `td_expression_help`, `td_python_api`, `td_palette`, `td_search_parameters`, `td_op_info` | index lookups | A person reads the wiki, the palette browser and the operator's own help; `search` and `op` cover what a terminal is actually better at. |
 | `td_build`, `td_set_params`, `td_flags`, `td_set_flags`, `td_network`, `td_errors`, `td_annotate`, `td_annotations`, `td_undo`, `td_snapshot`, `td_extension_add`, `td_palette_load`, `td_health` | live editing | A person editing a network does it in TouchDesigner, where the result is visible. These exist because an agent cannot see the network. |
@@ -105,10 +105,10 @@ listed here fails the test.
 
 | Pair | Divergence | Why |
 | --- | --- | --- |
-| `op` / `td_operator_schema` | `--groups` is CLI only | The tool deliberately returns parameter *members* (`tx`, `ty`) and never the documented *groups* (`t`), because an agent that sets `t` gets a refusal it cannot read. The flag exists for a person cross-reading Derivative's own docs, which name the groups. |
+| `op` / `td_operator_schema` | `--groups` is CLI only | The tool returns parameter *members* (`tx`, `ty`) and never the documented *groups* (`t`), because an agent that sets `t` gets a refusal it cannot read. The flag exists for a person cross-reading Derivative's own docs, which name the groups. |
 | `render` / `td_render` | `-o/--output` is CLI only; `width` defaults to 512 in the tool and to the TOP's own resolution in the CLI | The tool hands the image back inline, so it has nowhere to write and every pixel costs context; the CLI writes a file, where the artist's own resolution is the right answer. |
 | `project read` / `td_project_read` | `--refresh` is CLI only | The expansion cache is keyed on the file's path, size and mtime, so a changed project is re-expanded without asking. The flag is a repair for a cache damaged by something outside this program — a person's problem, diagnosed at a terminal. |
-| `project text` / `td_project_text` | `--refresh` and `-o/--output` are CLI only; `max_bytes` is MCP only | `--refresh` as above. The tool must fit its answer in a context window, so it refuses a network over `max_bytes` rather than truncating one; the CLI writes to a file or a pipe, where there is no such ceiling and `-o` is the whole point. |
+| `project text` / `td_project_text` | `--refresh` and `-o/--output` are CLI only; `max_bytes` is MCP only | `--refresh` as above. The tool must fit its answer in a context window, so it refuses a network over `max_bytes`; the CLI writes to a file or a pipe, where there is no such ceiling and `-o` is the whole point. |
 | `project grep` / `td_project_grep` | `--fixed` is CLI only | An agent composing a pattern can escape it; a person typing `v1.2.3` at a prompt cannot be asked to. |
 | `doctor` / `td_doctor` | `--install-path` and `--clear-cache` are CLI only | Both change this machine — one points the index at another installation, the other deletes every cached expansion. Repairs belong to whoever owns the machine. |
 
