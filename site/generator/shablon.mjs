@@ -613,7 +613,8 @@ export function blokHTML(b, o = {}) {
       // у таблицы инструментов. На узком экране обычная таблица встаёт
       // списком, и без метки ячейка «Нет, если он собран» теряет колонку,
       // к которой относится. Текст метки — заголовок своей же колонки без
-      // знаков разметки (` * _`), а не сочинённая подпись: числа страницы
+      // знаков разметки (обратной кавычки и звёздочки), а не сочинённая
+      // подпись: числа страницы
       // от этого не прибавляются (пункт 7).
       // Метки ставит ТОЛЬКО живой сайт (o.metkiTablic) — у фикстуры пункта 2
       // ключа нет, и она остаётся байт в байт равной вееру (--sverit-veer).
@@ -622,7 +623,7 @@ export function blokHTML(b, o = {}) {
       // «2,060» (урок таблицы инструментов, замер 09.09).
       const rz = o.razdelMetki || ''
       const metka = i => (!o.metkiTablic || pusto || !b.shapka[i]) ? ''
-        : `<span class="metka">${esc(String(b.shapka[i]).replace(/[`*_]/g, ''))}</span>${rz}`
+        : `<span class="metka">${esc(String(b.shapka[i]).replace(/[`*]/g, ''))}</span>${rz}`
       const tr = b.ryady.map(r => `<tr>${r.map((c, i) => `<td>${c ? metka(i) : ''}${vstroke(c)}</td>`).join('\n')}</tr>`).join('\n      ')
       return `<div class="tabl obychnaya"><table>
       ${pusto ? '' : `<thead><tr>${th}</tr></thead>`}
