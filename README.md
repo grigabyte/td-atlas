@@ -66,8 +66,8 @@ Three things have to be there first.
 [Compatibility](docs/compatibility.md) lists the platforms and what the
 connector can change in your project.
 
-On macOS and Linux, one line from a terminal. The installer is a POSIX shell
-script, so Windows takes the step-by-step sequence below.
+On macOS, one line from a terminal. The installer is a POSIX shell script,
+so Windows takes the step-by-step sequence below.
 
 ```bash
 curl -fsSL https://grigabyte.github.io/td-atlas/i | sh
@@ -84,9 +84,11 @@ virtualenv beside it, installs the package, builds the index and stages the
 [bridge](docs/bridge.md). Every command is printed before it runs.
 
 It asks two questions: where to clone, and whether to build the index now.
-With no terminal to ask, it takes the default for both.
+The default answer to the first is `~/td-atlas`. With no terminal to ask, it
+takes the default for both.
 
-Two directories end up on disk: the checkout you name and `~/.td-atlas`.
+Two directories end up on disk: the checkout, `~/td-atlas` unless you named
+another, and `~/.td-atlas`.
 Besides those, `uv` or `pip` fills its own package cache, as it does for any
 package. No sudo. System directories and your shell startup files are left
 alone. Run it again on an existing checkout and it updates that checkout.
@@ -109,18 +111,22 @@ There is no package on PyPI. `pip install td-atlas` and `uvx td-atlas` will
 find nothing. Then, from the checkout:
 
 ```bash
-.venv/bin/td-atlas build      # offline index, 23–30 s, no TouchDesigner process
+.venv/bin/td-atlas build      # offline index, 13–16 s, no TouchDesigner process
 .venv/bin/td-atlas install    # stage the bridge, print the bootstrap and MCP lines
 ```
 
 </details>
 
-Commands from here on are written `td-atlas` for short. Unless the virtualenv is
-activated, call it by path. That is `.venv/bin/td-atlas`, or
-`.venv\Scripts\td-atlas` on Windows. A system Python does not see the package.
+Commands from here on are written `td-atlas` for short. Unless the virtualenv
+is activated, call it by path. Standing in the checkout that is
+`.venv/bin/td-atlas`, and from anywhere else the whole path,
+`~/td-atlas/.venv/bin/td-atlas` for the default directory. On Windows it is
+`.venv\Scripts\td-atlas`. A system Python does not see the package.
 
-`td-atlas install` prints two things to paste. First, into TouchDesigner's
-textport (Dialogs → Textport and DATs), once per project:
+`td-atlas install` prints two things to paste. The `curl` line ran it for you,
+so both are already at the end of what it printed; running it again prints them
+again. First, into TouchDesigner's textport (Dialogs → Textport and DATs), once
+per project:
 
 ```python
 exec(open('/Users/you/.td-atlas/bootstrap.py').read())
