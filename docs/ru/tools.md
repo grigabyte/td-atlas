@@ -1,7 +1,7 @@
 ---
 istochnik: plugin/skills/touchdesigner/references/tools.md
-kommit: f5b49c0
-hesh: b004c43352b42c846cb09ba556795ff6f86ffff5f204f82326e89b10a1e728ba
+kommit: 0a1fec2
+hesh: 842e662d9204ee68566c09d4998db3fb23d3bc5eb84d683f4b24089c1e22b5c4
 ---
 
 # Справочник инструментов

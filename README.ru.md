@@ -25,8 +25,8 @@
   </p>
 </div>
 
-td-atlas даёт агенту три вещи. Точные имена операторов и параметров *этой*
-машины. Руки внутри запущенной программы, с откатом в один шаг. И способ
+td-atlas даёт агенту три вещи. Точные имена операторов и параметров из
+*вашей* копии программы. Руки внутри запущенной программы, с откатом в один шаг. И способ
 прочитать сохранённый проект, не открывая его.
 
 ## Что он делает
@@ -106,7 +106,7 @@ uv pip install -e .         # or: .venv/bin/pip install -e .
 Дальше, из клона:
 
 ```bash
-.venv/bin/td-atlas build      # offline index, 23–30 s, no TouchDesigner process
+.venv/bin/td-atlas build      # offline index, 13–16 s, no TouchDesigner process
 .venv/bin/td-atlas install    # stage the bridge, print the bootstrap and MCP lines
 ```
 
