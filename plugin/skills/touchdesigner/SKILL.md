@@ -19,14 +19,19 @@ to exactly this.
 
 Run **`td_health`** after building anything, and whenever something "looks fine
 but does nothing". It is the tool that catches these. When it says nothing is
-cooking, **`td_flags`** says which of display, render, bypass and cooking is the
-reason, and `td_set_flags` reads every write back, so a flag a family will not
-take comes back as a refusal.
+cooking, **`td_flags`** says which flag is the reason. The keys are the ones
+TouchDesigner uses, so cooking is `allowCooking`, not `cooking`; the full set is
+`display`, `render`, `bypass`, `lock`, `expose`, `viewer`, `activeViewer`,
+`cloneImmune`, `allowCooking`, `selected`, `pickable`. `td_set_flags` reads every
+write back, so a flag a family will not take comes back as a refusal, and so does
+a name that is not one of these.
 
 ## Order of work
 
 1. **Search the index first.** It is offline and free, with no round trip to
-   TouchDesigner. Never guess a parameter name.
+   TouchDesigner. Never guess a parameter name. The index is not there until
+   `td-atlas build` has run once; `references/tools.md` has that command and the
+   rest of the setup.
 2. **Read the schema** of any operator before creating it.
 3. **Build with `td_build`**, not a series of single calls.
 4. **Look at the result** with `td_render`, and at motion with a contact sheet.
@@ -61,8 +66,9 @@ Two things it cannot do, and the way round each:
 
 ## Parameter names
 
-`td_operator_schema("noiseTOP")` gives exact names, defaults, menu options and
-ranges. Two traps:
+`td_operator_schema("noiseTOP")` gives exact names, and — once `td-atlas probe`
+has run against a live TouchDesigner — defaults, menu options and ranges. Without
+that run the schema says so itself, in place of the values. Two traps:
 
 - **The documentation describes parameter *groups*; you must set the members.**
   The docs say `t` (Translate); the settable parameters are `tx`, `ty`, `tz`.
@@ -75,7 +81,9 @@ ranges. Two traps:
 
 `td_build` validates parameter names against the index before sending anything,
 resolving each target's type itself, so a mistake comes back as
-`t: is a parameter group, not a settable parameter (try: tx, ty, tz)`.
+`t: is a parameter group, not a settable parameter (try: tx, ty, tz)`. The check
+is a convenience, not a guarantee: with no index built, and for an existing node
+whose type the bridge cannot report, the batch goes out unchecked.
 `td_set_params` does the same **only when you pass `op_type`**; without it the
 name goes straight to TouchDesigner.
 
@@ -129,8 +137,9 @@ being recorded into. Call `td_undo` on its own, after.
 
 If another agent or session may be in the same project, claim your subtree with
 `td_claim_scope(path, owner)` first. Then **pass that same `owner` into every
-`td_build`, `td_set_params`, `td_set_flags` and `td_annotate`**, or your own
-claim refuses your own writes. `td_release_scope` hands it back, and `td_scopes`
+tool that writes: `td_build`, `td_set_params`, `td_set_flags`, `td_annotate`,
+`td_palette_load` and `td_extension_add`**, or your own claim refuses your own
+writes. `td_release_scope` hands it back, and `td_scopes`
 says what is already held.
 
 `td_annotate` leaves the reason for what you built beside the nodes, as a box

@@ -1,7 +1,7 @@
 ---
 istochnik: plugin/skills/touchdesigner/references/tools.md
 kommit: 0a1fec2
-hesh: 842e662d9204ee68566c09d4998db3fb23d3bc5eb84d683f4b24089c1e22b5c4
+hesh: 42f8531dc92677f35df4d9374fefaac007697be2c4df7ff6c4e752a2a6a80906
 ---
 
 # Справочник инструментов
@@ -43,7 +43,7 @@ hesh: 842e662d9204ee68566c09d4998db3fb23d3bc5eb84d683f4b24089c1e22b5c4
 | `td_extension_add(class_name, code, path, parent, name, extension_name, promote, index, position, owner)` | Attach a Python class to a COMP as an extension — DAT, three Extensions parameters and the re-init in one call. Parses the code here first, and reads the result back: a class that fails to instantiate leaves the COMP reporting nothing at all. |
 | `td_annotate(text, parent, title, name, path, size, color, position, font_size, mode, owner)` | Leave a note in the network saying what you built and why — a coloured box beside the nodes it describes. Pass `path` to rewrite a note instead of adding another. |
 | `td_annotations(path, depth)` | Read the notes in a network, including a brief a person left for you, with the nodes each note's box sits over. Invisible to every other tool here. |
-| `td_flags(path)` | The flags that decide whether a node runs and what is visible: display, render, bypass, cooking, and which ones this operator does not have. Check it when a correct-looking network produces nothing. |
+| `td_flags(path)` | The flags that decide whether a node runs and what is visible — `display`, `render`, `bypass`, `lock`, `expose`, `viewer`, `activeViewer`, `cloneImmune`, `allowCooking`, `selected`, `pickable` — and which of them this operator does not have. Cooking is `allowCooking`; there is no flag named `cooking`. Check it when a correct-looking network produces nothing. |
 | `td_set_flags(path, flags, owner)` | Turn those flags on or off. Every write is read back, so a flag the family will not take comes back as a refusal. |
 | `td_render(path, width, height)` | A TOP's image, returned to you. |
 | `td_errors(path)` | Operators reporting an error or warning, at and under `path` — the project by default. Do not ask for `/`: the walk is breadth-first and bounded, and TouchDesigner's own `/ui` and `/sys` are thousands of operators wide near the top, so the budget runs out before anything of yours is reached (measured: 5000 nodes from `/` covered 3,979 of `/ui` and 954 of `/sys`, and missed a warning planted inside the project). The reply names the subtree it walked and says when the walk stopped early; see *When a reply is cut short* below. |
