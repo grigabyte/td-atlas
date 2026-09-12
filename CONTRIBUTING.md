@@ -41,6 +41,9 @@ code, not editing a line of config, and the reasoning is in `AGENTS.md`.
 - Anything that changes `PROTOCOL_VERSION`, or what the connector may change in
   a user's project, gets a `CHANGELOG.md` entry.
 - Every number in a comment names how it was measured.
+- Commit messages are in English, in the present tense, and say what the
+  change makes true rather than what was done to the files. The whole
+  history reads that way; a message in another language reads as a seam.
 
 ## Reporting a problem
 
