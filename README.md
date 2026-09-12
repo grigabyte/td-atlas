@@ -88,10 +88,10 @@ The default answer to the first is `~/td-atlas`. With no terminal to ask, it
 takes the default for both.
 
 Two directories end up on disk: the checkout, `~/td-atlas` unless you named
-another, and `~/.td-atlas`.
-Besides those, `uv` or `pip` fills its own package cache, as it does for any
-package. No sudo. System directories and your shell startup files are left
-alone. Run it again on an existing checkout and it updates that checkout.
+another, and `~/.td-atlas`. Besides those, `uv` or `pip` fills its own package
+cache, as it does for any package. No sudo. System directories and your shell
+startup files are left alone. Run it again on an existing checkout and it
+updates that checkout.
 
 <details>
 <summary>By hand, or on Windows, the same sequence step by step</summary>
@@ -118,15 +118,15 @@ find nothing. Then, from the checkout:
 </details>
 
 Commands from here on are written `td-atlas` for short. Unless the virtualenv
-is activated, call it by path. Standing in the checkout that is
-`.venv/bin/td-atlas`, and from anywhere else the whole path,
+is activated, call it by path. In the checkout that path is
+`.venv/bin/td-atlas`. From anywhere else it is the whole path,
 `~/td-atlas/.venv/bin/td-atlas` for the default directory. On Windows it is
 `.venv\Scripts\td-atlas`. A system Python does not see the package.
 
 `td-atlas install` prints two things to paste. The `curl` line ran it for you,
 so both are already at the end of what it printed; running it again prints them
-again. First, into TouchDesigner's textport (Dialogs → Textport and DATs), once
-per project:
+again. First, into TouchDesigner's textport (Dialogs → Textport and DATs),
+once per project:
 
 ```python
 exec(open('/Users/you/.td-atlas/bootstrap.py').read())
