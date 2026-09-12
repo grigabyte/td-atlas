@@ -33,10 +33,11 @@ And a way to read a saved project without opening it.
 - **[The atom index](docs/atom-index.md)** is the name list. Two passes read
   every operator and parameter out of your own copy of the application into one
   SQLite file. The values in it are the values that copy reports.
-- **[The bridge](docs/bridge.md)** is the agent's hands inside a running
-  TouchDesigner. A script builds it in your project out of two ordinary nodes,
-  a Web Server DAT and a callbacks DAT. You can read it, see its changes in
-  git, and upgrade it in place.
+- **[The bridge](docs/bridge.md)** lets an agent change your project while
+  TouchDesigner is running. A script builds it there out of four ordinary
+  nodes: a Web Server DAT, a callbacks DAT, a status panel, and an Execute DAT
+  that fires when you save. You can read it, see its changes in git, and
+  upgrade it in place.
 - **[What TouchDesigner does not report](docs/health.md)**. `errors` covers
   what TouchDesigner itself calls an error, and `td_health` covers the
   breakage it stays quiet about.

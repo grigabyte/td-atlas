@@ -31,8 +31,10 @@ td-atlas 给智能体三样东西。来自*这台*机器的准确算子名和参
 
 - **[原子索引](docs/atom-index.md)** 分两遍从你自己那份程序里构建出一个
   SQLite 索引。索引里的值，就是那份程序报出的值。
-- **[桥](docs/bridge.md)** 是一个 Web Server DAT 和一个回调 DAT，
-  由脚本在你的工程里搭建。你可以读它，在 git 里看到它的改动，并就地升级它。
+- **[桥](docs/bridge.md)** 让智能体在 TouchDesigner 运行时改动你的工程。
+  脚本用四个普通节点在那里搭建它：一个 Web Server DAT、一个回调 DAT、一个
+  状态面板，以及一个在保存时触发的 Execute DAT。你可以读它，在 git 里看到
+  它的改动，并就地升级它。
 - **[TouchDesigner 不会报告的事](docs/health.md)**。`errors` 覆盖 TouchDesigner
   自己称之为错误的部分，`td_health` 覆盖它闭口不谈的那些损坏。
 - **[调用日志](docs/journal.md)** 每次桥调用写一行，写在宿主机上，

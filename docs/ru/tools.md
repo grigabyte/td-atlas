@@ -16,58 +16,57 @@ hesh: 161444e66c21f5e2250610e8155899b9f7089471f37b98103714c0785dc8b4c0
 
 | Инструмент | Зачем |
 | --- | --- |
-| `td_search_operators(query, family, limit)` | Find an operator by what it does. Plain language. `family` narrows to TOP/CHOP/SOP/DAT/MAT/COMP/POP. |
-| `td_operator_schema(op_type, page, include_hidden)` | Exact parameter names, defaults, menu options, ranges, connector counts, path to a shipped example. Menu options print as `value — Label` where the label says more than the value, which is where costs like "(GPU)" live. |
-| `td_search_parameters(query, limit)` | Which operator has a parameter doing X. How `alwayscook` gets found. |
-| `td_python_api(name, query)` | Members and methods of a class, with inherited ones resolved. |
-| `td_docs(query, page, limit)` | 2,060 wiki pages — concepts, techniques, tutorials, not just operators. |
-| `td_glossary(term, limit)` | 185 glossary entries: Cook, Time Slice, Clone, Perform Mode. |
-| `td_palette(query, category, limit)` | 277 ready-made components shipped with TouchDesigner. |
-| `td_expression_help(query, limit)` | Expression and command syntax. |
-| `td_example(op_type, depth)` | A real working network for an operator, from the shipped snippet library. |
+| `td_search_operators(query, family, limit)` | Находит оператор по тому, что он делает. Обычными словами. `family` сужает до TOP/CHOP/SOP/DAT/MAT/COMP/POP. |
+| `td_operator_schema(op_type, page, include_hidden)` | Точные имена параметров, значения по умолчанию, пункты меню, границы, счёт входов и выходов, путь к примеру из поставки. Пункты меню печатаются как `value — Label`, и подпись говорит больше значения: цена вроде "(GPU)" стоит там. |
+| `td_search_parameters(query, limit)` | У какого оператора есть параметр, который делает X. Так находят `alwayscook`. |
+| `td_python_api(name, query)` | Поля и методы класса, вместе с теми, что достались от родителей. |
+| `td_docs(query, page, limit)` | 2 060 страниц вики: понятия, приёмы, уроки и операторы. |
+| `td_glossary(term, limit)` | 185 статей глоссария: Cook, Time Slice, Clone, Perform Mode. |
+| `td_palette(query, category, limit)` | 277 готовых компонентов, которые идут вместе с TouchDesigner. |
+| `td_expression_help(query, limit)` | Синтаксис выражений и команд. |
+| `td_example(op_type, depth)` | Рабочая сеть для оператора, из библиотеки примеров в поставке. |
 
 ## Живые: действие в запущенной программе
 
 | Инструмент | Зачем |
 | --- | --- |
-| `td_status()` | Is the bridge up, what project is open. |
-| `td_log(limit, failures, summary, method)` | Your own trail: every bridge call this host made, how long it took and what it refused with. `td_status` reports no call history at all; this survives the session and answers "what did I break yesterday". `failures=True` for the refusals alone with the repair for the latest; `summary=True` for which methods refuse and which are slow. Offline tools never dial the bridge and leave no trace here. |
-| `td_instances()` | Every running TouchDesigner that registered a bridge, and which one these tools reach. Check it before believing an edit landed in the project you meant. |
-| `td_doctor()` | Every link — install, index, probe pass, bridge, this server — with the command that fixes each. Catches the index built from another TouchDesigner build, which raises nothing. The read cache is a CLI-only concern: `td-atlas doctor` on a terminal also says how many unpacked projects it holds and `td-atlas doctor --clear-cache` empties it, neither of which this tool reports or does — deleting a user's cache is not something a tool call should do on its own. |
-| `td_health(path, interval)` | **The silent-failure detector.** Run after building anything. `interval` is clamped, so a long wait comes back sooner than asked and says so. Read the reply for the two ways it can be partial — a truncated walk and script errors it could not read; see *When a reply is cut short* below. |
-| `td_network(path, depth)` | What is inside a component and how it is wired. A network too large for one reply comes back cut, and every cut is named; see *When a reply is cut short* below. |
-| `td_op_info(path)` | One operator: type, wiring, live parameter values, errors. |
-| `td_build(operations, undo_name, owner)` | Multi-step edits as one atomic, undoable block. Validated first. A created node with no `position` is given a free spot, and one wired inside its own `op_create` lands to the right of its source, so a batch reads left to right. `op_create` takes a `text` key for a DAT's contents, so shader and script source needs no separate `td_exec`. |
-| `td_set_params(path, pars, op_type, owner)` | Set parameters on an existing operator. Names are checked against the index **only if you pass `op_type`**; without it the name goes straight to TouchDesigner and comes back as an `AttributeError`. |
-| `td_palette_load(name, parent, rename, position, category, owner)` | Install a palette component by the name `td_palette` reports. Checks the .tox is on disk first, and reports the name TouchDesigner actually gave the node. |
-| `td_extension_add(class_name, code, path, parent, name, extension_name, promote, index, position, owner)` | Attach a Python class to a COMP as an extension — DAT, three Extensions parameters and the re-init in one call. Parses the code here first, and reads the result back: a class that fails to instantiate leaves the COMP reporting nothing at all. |
-| `td_annotate(text, parent, title, name, path, size, color, position, font_size, mode, owner)` | Leave a note in the network saying what you built and why — a coloured box beside the nodes it describes. Pass `path` to rewrite a note instead of adding another. |
-| `td_annotations(path, depth)` | Read the notes in a network, including a brief a person left for you, with the nodes each note's box sits over. Invisible to every other tool here. |
-| `td_flags(path)` | The flags that decide whether a node runs and what is visible: `display`, `render`, `bypass`, `lock`, `expose`, `viewer`, `activeViewer`, `cloneImmune`, `allowCooking`, `selected`, `pickable`, and which of them this operator does not have. Cooking is `allowCooking`; there is no flag named `cooking`. Check it when a correct-looking network produces nothing. |
-| `td_set_flags(path, flags, owner)` | Turn those flags on or off. Every write is read back, so a flag the family will not take comes back as a refusal. |
-| `td_render(path, width, height)` | A TOP's image, returned to you. |
-| `td_errors(path)` | Operators reporting an error or warning, at and under `path` — the project by default. Do not ask for `/`: the walk is breadth-first and bounded, and TouchDesigner's own `/ui` and `/sys` are thousands of operators wide near the top, so the budget runs out before anything of yours is reached (measured: 5000 nodes from `/` covered 3,979 of `/ui` and 954 of `/sys`, and missed a warning planted inside the project). The reply names the subtree it walked and says when the walk stopped early; see *When a reply is cut short* below. |
-| `td_exec(code)` | Arbitrary Python inside TouchDesigner. Last resort. |
-| `td_undo(redo)` | Undo or redo, including whole `td_build` batches. Cannot be a step inside `td_build` — that is refused, because two of them in a row reach past the batch into the artist's own history. |
-| `td_snapshot(label, path)` | Save a component for later diffing. |
-| `td_claim_scope(path, owner, ttl_seconds)` | Announce a subtree as yours before a run of edits, when another agent or session may be in the same project. Covers everything below `path`; lapses on its own. It guards against *every* unnamed caller including you, so carry the same `owner` into each write that follows. |
-| `td_release_scope(path, owner)` | Hand a claimed subtree back as soon as you are done. Until you do, the next agent waits out the claim. |
-| `td_scopes()` | Which subtrees are claimed, by whom, until when. Check before editing a project someone else may be in. |
+| `td_status()` | Поднят ли мост, какой проект открыт. |
+| `td_log(limit, failures, summary, method)` | Ваш след: каждый вызов моста с этой стороны, сколько он занял и чем отказал. `td_status` истории вызовов не показывает совсем; этот след переживает сессию и отвечает на вопрос «что я вчера сломал». `failures=True` даёт одни отказы и починку для самого свежего; `summary=True` даёт, какие методы отказывают и какие медлят. Офлайновые инструменты мост не набирают и следа здесь не оставляют. |
+| `td_instances()` | Все запущенные TouchDesigner, которые зарегистрировали мост, и тот, до которого дотягиваются эти инструменты. Загляните сюда, прежде чем поверить, что правка легла в тот проект, который вы имели в виду. |
+| `td_doctor()` | Каждое звено: установка, индекс, проход пробы, мост, этот сервер, и команда, которая чинит каждое. Ловит индекс, собранный на другой сборке TouchDesigner, о чём иначе никто не скажет. Кеш чтения живёт только в CLI: `td-atlas doctor` в терминале ещё говорит, сколько распакованных проектов он держит, а `td-atlas doctor --clear-cache` его очищает. Этот инструмент ни того, ни другого не делает: стирать кеш пользователя вызов инструмента сам по себе не должен. |
+| `td_health(path, interval)` | **Ловит тихие поломки.** Зовите после любой стройки. `interval` зажат сверху, поэтому долгое ожидание вернётся раньше, чем просили, и скажет об этом. В ответе ищите две причины неполноты: обрезанный обход и ошибки скриптов, которые прочитать не удалось; смотрите *Когда ответ обрезан* ниже. |
+| `td_network(path, depth)` | Что внутри компонента и как он связан проводами. Сеть, которая в один ответ не влезла, приходит обрезанной, и каждая обрезка названа; смотрите *Когда ответ обрезан* ниже. |
+| `td_op_info(path)` | Один оператор: тип, провода, живые значения параметров, ошибки. |
+| `td_build(operations, undo_name, owner)` | Правки в несколько шагов одним блоком, целиком и с откатом. Сначала проверяет. Узел без `position` получает свободное место, а узел, которому провод задали прямо в его `op_create`, встаёт справа от источника, поэтому пачка читается слева направо. `op_create` берёт ключ `text` для содержимого DAT, поэтому исходник шейдера и скрипта обходится без отдельного `td_exec`. |
+| `td_set_params(path, pars, op_type, owner)` | Ставит параметры на уже существующий оператор. Имена сверяются с индексом **только если вы передали `op_type`**; без него имя уходит прямо в TouchDesigner и возвращается как `AttributeError`. |
+| `td_palette_load(name, parent, rename, position, category, owner)` | Ставит компонент палитры по имени, которое печатает `td_palette`. Сначала проверяет, что .tox лежит на диске, и сообщает имя, которое TouchDesigner дал узлу на самом деле. |
+| `td_extension_add(class_name, code, path, parent, name, extension_name, promote, index, position, owner)` | Вешает класс Python на COMP расширением: DAT, три параметра Extensions и повторный запуск одним вызовом. Сначала разбирает код здесь, а результат читает обратно: класс, который не создаётся, оставляет COMP вообще без сообщений. |
+| `td_annotate(text, parent, title, name, path, size, color, position, font_size, mode, owner)` | Оставляет в сети записку о том, что вы построили и зачем: цветная рамка рядом с узлами, о которых она говорит. Передайте `path`, чтобы переписать записку поверх старой. |
+| `td_annotations(path, depth)` | Читает записки в сети, в том числе задание от человека, вместе с узлами, на которых лежит рамка каждой записки. Остальным инструментам отсюда эти записки не видны. |
+| `td_flags(path)` | Флаги, от которых зависит, работает ли узел и что видно: `display`, `render`, `bypass`, `lock`, `expose`, `viewer`, `activeViewer`, `cloneImmune`, `allowCooking`, `selected`, `pickable`, и какие из них у этого оператора отсутствуют. Готовку включает `allowCooking`; флага с именем `cooking` нет. Загляните сюда, когда правильная на вид сеть ничего не даёт. |
+| `td_set_flags(path, flags, owner)` | Включает и выключает эти флаги. Каждая запись читается обратно, поэтому флаг, которого семейство не принимает, приходит отказом. |
+| `td_render(path, width, height)` | Отдаёт вам картинку TOP. |
+| `td_errors(path)` | Операторы с ошибкой или предупреждением, на `path` и ниже; без `path` берётся проект. За `/` не ходите: обход идёт в ширину и ограничен числом узлов, а собственные `/ui` и `/sys` TouchDesigner у самого верха шириной в тысячи операторов, поэтому бюджет кончается раньше, чем обход доберётся до вашего (замер: 5000 узлов от `/` накрыли 3 979 в `/ui` и 954 в `/sys` и пропустили предупреждение, подложенное внутрь проекта). Ответ называет поддерево, которое обошли, и говорит, если обход кончился раньше времени; смотрите *Когда ответ обрезан* ниже. |
+| `td_exec(code)` | Произвольный Python внутри TouchDesigner. Последнее средство. |
+| `td_undo(redo)` | Откат и возврат, включая целые пачки `td_build`. Шагом внутри `td_build` быть не может: такой шаг отклоняется, потому что два подряд уходят за границу пачки в собственную историю художника. |
+| `td_snapshot(label, path)` | Сохраняет компонент, чтобы позже сравнить. |
+| `td_claim_scope(path, owner, ttl_seconds)` | Объявляет поддерево вашим перед серией правок, когда в том же проекте может сидеть другой агент или другая сессия. Накрывает всё ниже `path`; заявка истекает сама. Она закрывает поддерево от *любого* безымянного вызова, включая ваш, поэтому носите тот же `owner` в каждую следующую запись. |
+| `td_release_scope(path, owner)` | Возвращает занятое поддерево, как только вы закончили. Пока этого нет, следующий агент ждёт, когда заявка истечёт. |
+| `td_scopes()` | Какие поддеревья заняты, кем и до какого срока. Загляните сюда, прежде чем править проект, в котором может сидеть кто-то ещё. |
 
 ## Файлы проекта: на диске
 
 | Инструмент | Зачем |
 | --- | --- |
-| `td_project_read(file, path, depth, params)` | Operator tree of a .toe/.tox without TouchDesigner. |
-| `td_project_text(file, path, max_bytes)` | The whole network as JSON — every parameter, wire, flag and DAT line. Reach for it when the tree is not enough; narrow with `path`, since a big network is refused. |
-| `td_project_write(file, text, output)` | The return leg of `td_project_text`: write an edited dump into a new `.toe`/`.tox`, no instance running. `file` must still be the original — the dump covers five of the forty-odd kinds of file a `.toe` holds and the rest are copied from it — and `output` must not exist. Read the gaps in the reply: anything that could not be written is listed, not approximated. |
-| `td_project_grep(file, pattern, limit)` | Search the Python and GLSL inside DATs. |
-| `td_project_diff(before, after, show_moves, include_text)` | Semantic comparison of two files. |
-| `td_variant_save(file, label, note, path)` | Keep the current state of a `.toe`/`.tox` before trying a direction. A variant is the network text plus a byte copy of the file, under `~/.td-atlas/variants` — the text alone cannot rebuild a `.toe`, and the copy costs a median 19% on top of the text. A label already in use is refused, never overwritten. |
-| `td_variant_list(file)` | What has been saved — of one project, or of every project that has any. Says whether the original has changed since each save; that is information, not a warning, because a restore reads the variant's own copy. |
-| `td_variant_restore(file, label, output)` | Write a saved state back out. A copy, not a repack: `toecollapse` never runs, so nothing of the user's is moved aside to a
-`.bkp1` file. `output` must not exist; a directory keeps the saved file name. |
-| `td_variant_diff(file, before, after, show_moves, include_text)` | Compare two saved states with the same semantic diff `td_project_diff` runs. |
+| `td_project_read(file, path, depth, params)` | Дерево операторов .toe/.tox без TouchDesigner. |
+| `td_project_text(file, path, max_bytes)` | Вся сеть в JSON: каждый параметр, провод, флаг и строка DAT. Берите, когда дерева мало; сужайте `path`, потому что большую сеть инструмент отклоняет. |
+| `td_project_write(file, text, output)` | Обратный ход `td_project_text`: пишет правленый дамп в новый `.toe`/`.tox`, без запущенной программы. В `file` по-прежнему подаётся оригинал, потому что дамп покрывает пять из четырёх с лишним десятков видов файлов внутри `.toe`, а остальное копируется оттуда; `output` существовать не должен. Читайте в ответе список пропусков: всё, что записать не вышло, там перечислено. |
+| `td_project_grep(file, pattern, limit)` | Ищет по Python и GLSL внутри DAT. |
+| `td_project_diff(before, after, show_moves, include_text)` | Сравнивает два файла по смыслу. |
+| `td_variant_save(file, label, note, path)` | Откладывает текущее состояние `.toe`/`.tox` перед тем, как пробовать направление. Вариант хранит текст сети и побайтную копию файла в `~/.td-atlas/variants`: по одному тексту `.toe` не собрать. Копия стоит сверх текста медианных 19%. Метку, которая уже занята, инструмент отклоняет и ничего не переписывает. |
+| `td_variant_list(file)` | Что сохранено: по одному проекту или по всем, у кого есть хоть что-то. Говорит, менялся ли оригинал после каждого сохранения. Читайте это как справку: восстановление берёт собственную копию варианта. |
+| `td_variant_restore(file, label, output)` | Выписывает сохранённое состояние обратно. Пишет копию: `toecollapse` не запускается, поэтому ничего пользовательского не сдвигается в файл `.bkp1`. `output` существовать не должен; для каталога берётся имя сохранённого файла. |
+| `td_variant_diff(file, before, after, show_moves, include_text)` | Сравнивает два сохранённых состояния тем же смысловым разбором, что и `td_project_diff`. |
 
 ## Когда ответ обрезан
 
