@@ -226,6 +226,11 @@ const HROM = {
   // Вторая строка замка, только «Инструменты»: описания там английские
   // по решению владельца 08.09, и страница обязана это назвать.
   'plashka.instr': { ru: 'Имена и описания оставлены как в источнике, по-английски.', en: '' },
+  // Раунд 8, находка L1: подпись-признак прокрутки у схемы шире экрана.
+  // Цифр в ней нет (пункт 7 читает прозу без кода, подпись туда попадает),
+  // длинного тире нет (правило 12 банлиста). Стрелка U+2192 вне диапазона
+  // правила 8 check.sh (U+1F000–1FAFF и U+2600–27BF).
+  'shema.shirokaya': { ru: 'шире экрана, прокрутите вбок →', en: 'wider than the screen, scroll →' },
 }
 for (const r of RAZDELY) HROM['razdel.' + r.klyuch] = { ru: r.ru, en: r.en }
 
@@ -697,9 +702,23 @@ const SKRIPT_OTKLIKA = `
     }
   }
   function pri() { if (zhdet) return; zhdet = true; requestAnimationFrame(schitat) }
+  /* ── признак прокрутки у схемы шире экрана (раунд 8, находка L1) ─────────
+     Класс ставится по НАСТОЯЩЕЙ ширине полотна, а не по медиазапросу: на
+     768 все три схемы сайта влезают целиком (722 из 722), и подпись там
+     была бы неправдой. Ни петли, ни привязки к прокрутке здесь нет —
+     ворота 4-доки меряют и то, и другое. */
+  function shirokieShemy() {
+    var s = document.querySelectorAll('figure.shema')
+    for (var i = 0; i < s.length; i++) {
+      var p = s[i].querySelector('.shema-polotno')
+      s[i].classList.toggle('shirokaya', !!p && p.scrollWidth > p.clientWidth + 1)
+    }
+  }
+
   function zavesti() {
     var kn = document.querySelectorAll('button.kopir')
     for (var i = 0; i < kn.length; i++) obernut(kn[i])
+    shirokieShemy()
     celi = sobrat(); tek = -1; schitat()
   }
 
@@ -764,6 +783,7 @@ const SKRIPT_OTKLIKA = `
   }
   addEventListener('scroll', pri, { passive: true })
   addEventListener('resize', pri, { passive: true })
+  addEventListener('resize', shirokieShemy, { passive: true })
   zavesti()
 })()
 </script>`
@@ -911,12 +931,12 @@ function stranicaRazdela(r) {
     ZASLON,
     '<main>',
     '  ' + menuZhivoe(r.klyuch),
-    '  ' + prozaHTML({ h1: en.h1, bloki: en.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_EN, razdelMetki: '\n', shemy: true }),
+    '  ' + prozaHTML({ h1: en.h1, bloki: en.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_EN, razdelMetki: '\n', shemy: true, podskazkaShemy: HROM['shema.shirokaya'].en }),
     '  ' + oglavlenie(en.bloki, OGL),
     '</main>',
     ru
       ? '<template id="ru-telo">' +
-        prozaHTML({ h1: ru.h1, bloki: ru.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_RU, razdelMetki: '\n', shemy: true }) +
+        prozaHTML({ h1: ru.h1, bloki: ru.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_RU, razdelMetki: '\n', shemy: true, podskazkaShemy: HROM['shema.shirokaya'].ru }) +
         oglavlenie(ru.bloki, OGL) +
         '</template>'
       : '',

@@ -289,11 +289,36 @@ html[data-lang="ru"] .en-tolko{display:none}
    Кегль 13 px — пол пункта 8 для кода. Межстрочный 1.25: рамки диаграммы
    смыкаются по вертикали, при 1.75 между рядами оставались просветы. */
 :root{--sistemnyj-mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace}
-.proza .shema{max-width:70ch; margin:0 0 24px; padding:16px; border:1px solid var(--ash);
-  border-radius:3px; background:var(--plita); overflow-x:auto}
+.proza .shema{max-width:70ch; margin:0 0 24px; border:1px solid var(--ash);
+  border-radius:3px; background:var(--plita)}
+.shema-polotno{padding:16px; overflow-x:auto}
 .shema code{display:block; font-family:var(--sistemnyj-mono); font-weight:400; font-size:13px;
   line-height:1.15; color:var(--bone); background:none; border:0; border-radius:0; padding:0;
   white-space:pre; overflow-wrap:normal}
+
+/* ── РАУНД 8, находка L1: у схемы, которая шире экрана, виден признак ─────
+   На 390 внутренняя ширина полотна 344 px, а схема /docs/architecture/
+   доходит до 556, /docs/gotchas/ до 626, /docs/layout/ до 650 (замер
+   fanout/раунд-8/kadry/skan-shem.mjs): схема обрывалась правым краем,
+   и признака прокрутки не было — накладные полосы macOS и iOS в покое
+   не рисуются.
+   Перенос строки, которым починены обычные блоки кода (находка J1),
+   схеме не годится: pre-wrap рвёт строку псевдографики и рамка
+   рассыпается. Поэтому у схемы своё поведение — настоящая прокрутка
+   полотна плюс подпись-признак над ним.
+   Подпись стоит СВЕРХУ и ВНЕ полотна: внутри она уехала бы вбок вместе
+   с рамками, а снизу её не видно у схемы /docs/layout/ (107 строк,
+   высота с два экрана). Устройство подписи — то же, что у метки языка
+   в шапке код-блока (.kod .bar + .yaz): те же отступы, та же типографика,
+   ни нового семейства, ни нового радиуса (check.sh считает и то, и другое).
+   Класс .shirokaya ставит скрипт по настоящему scrollWidth, а не
+   медиазапрос: на 768 все три схемы влезают целиком (722 из 722),
+   и подпись там была бы неправдой. */
+.shema figcaption{display:none; align-items:center; gap:7px;
+  padding:8px 10px 8px 16px; border-bottom:1px solid var(--setka);
+  font-family:'Martian Mono',monospace; font-weight:300; font-size:11px;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--orn)}
+.shema.shirokaya figcaption{display:flex}
 
 /* ── правка 4: панель разделов вместо полосы «Разделы» ───────────────────
    Значок в шапке выдвигает панель слева, задник затемняет страницу,
@@ -472,12 +497,21 @@ export const eShema = b => ESHEMA.test(b.tekst)
 // (иначе каждый из них шёл бы в «без кнопки»), пункт 7 не читает <code>,
 // пункт 16 сравнивает по <pre> — блоки выпадают из сверки симметрично
 // в обоих языках. Цена названа в отчёте.
-export function shemaHTML(b) {
-  return `<figure class="shema"><code>${esc(b.tekst)}</code></figure>`
+// РАУНД 8, находка L1: полотно схемы вынесено в свой <div>, а прокрутка —
+// на него. Подпись-признак прокрутки стоит НАД полотном и вне его: внутри
+// полотна она уехала бы вбок вместе с рамками, а под схемой её не видно —
+// схема /docs/layout/ на 390 высотой в два экрана (107 строк).
+// Класс .metka — тот же, которым помечены метки колонок таблицы
+// инструментов: прибор считает такие узлы хромом, а не прозой, и пол
+// «кегль прозы ≥ 16 px» к подписи в 11 px не применяет (так же устроены
+// .yaz у код-блока и .eyebrow у меню).
+export function shemaHTML(b, podskazka = '') {
+  const pd = podskazka ? `<figcaption class="metka shema-metka">${esc(podskazka)}</figcaption>` : ''
+  return `<figure class="shema">${pd}<div class="shema-polotno"><code>${esc(b.tekst)}</code></div></figure>`
 }
 
 export function kodHTML(b, podpis = 'Скопировать', o = {}) {
-  if (o.shemy && eShema(b)) return shemaHTML(b)
+  if (o.shemy && eShema(b)) return shemaHTML(b, o.podskazkaShemy)
   const stroki = b.tekst.split('\n').map(l => {
     const mp = l.match(/^(\s*)\$ (.*)$/)
     if (mp) {
@@ -533,7 +567,7 @@ export function blokHTML(b, o = {}) {
     // Кадры от этого не меняются: сверка фикстуры с замком остаётся 0 %.
     case 'ul': return `<ul>${b.punkty.map(p => `<li>${vstroke(p)}</li>`).join('\n')}</ul>`
     case 'ol': return `<ol>${b.punkty.map(p => `<li>${vstroke(p)}</li>`).join('\n')}</ol>`
-    case 'code': return kodHTML(b, knopka, { shemy: o.shemy })
+    case 'code': return kodHTML(b, knopka, { shemy: o.shemy, podskazkaShemy: o.podskazkaShemy })
     case 'table': {
       // Таблица систем в README идёт с пустой шапкой (`| | |`):
       // пустой ряд с линейкой не печатается.
@@ -580,11 +614,11 @@ export function blokHTML(b, o = {}) {
 
 // ── проза страницы ────────────────────────────────────────────────────────
 // plashka — готовый HTML или ''. h1 — заголовок страницы.
-export function prozaHTML({ h1, bloki, plashka = '', knopka, metki, razdelMetki, shemy = false }) {
+export function prozaHTML({ h1, bloki, plashka = '', knopka, metki, razdelMetki, shemy = false, podskazkaShemy = '' }) {
   // Первый блок, повторяющий H1 страницы (в EN-ломтике это «## Install»),
   // не печатается: заголовок страницы уже стоит выше.
   const b = bloki.filter((x, i) => !(i === 0 && x.t === 'h2' && x.tekst === h1))
-  const telo = b.map(x => blokHTML(x, { knopka, metki, razdelMetki, shemy })).join('\n')
+  const telo = b.map(x => blokHTML(x, { knopka, metki, razdelMetki, shemy, podskazkaShemy })).join('\n')
   return `<article class="proza">
     <h1 id="verh">${esc(h1)}</h1>
     ${plashka}
