@@ -5,9 +5,9 @@
 **Almost everything an agent needs to know about TouchDesigner already ships
 inside the application.** A 5 MB parameter database, a 182 MB offline mirror of
 the entire wiki, 483 worked examples, 277 finished components. An index derived
-from the installed build is exact for that build, and it rebuilds in under half
-a minute with no network (25.8 s wall clock, measured 2026-09-06 on build
-2025.32460).
+from the installed build is exact for that build, and it rebuilds in under
+twenty seconds with no network (13–16 s wall clock over three runs, measured
+2026-09-12 on build 2025.32460).
 
 **TouchDesigner reports almost nothing when work silently does nothing.** A
 branch nothing displays never cooks. An output device switched off produces

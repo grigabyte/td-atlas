@@ -124,7 +124,7 @@ Runs the MCP server on stdio. MCP clients start it themselves from the line
 
 ### `td-atlas build`
 
-The offline pass reads the installed application bundle and writes the index. 23–30 seconds, no TouchDesigner process, no network.
+The offline pass reads the installed application bundle and writes the index. 13–16 seconds, no TouchDesigner process, no network.
 
 | Flag | |
 | --- | --- |

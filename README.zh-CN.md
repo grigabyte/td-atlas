@@ -98,7 +98,7 @@ PyPI 上没有这个包。`pip install td-atlas` 和 `uvx td-atlas` 什么都找
 然后，在检出目录里：
 
 ```bash
-.venv/bin/td-atlas build      # offline index, 23–30 s, no TouchDesigner process
+.venv/bin/td-atlas build      # offline index, 13–16 s, no TouchDesigner process
 .venv/bin/td-atlas install    # stage the bridge, print the bootstrap and MCP lines
 ```
 

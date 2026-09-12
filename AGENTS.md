@@ -77,7 +77,7 @@ person does to this machine once, or something that writes a directory to disk.
 | --- | --- |
 | `install` | Stages the bridge and prints a line to paste into TouchDesigner. An agent that could install the bridge would need the bridge to do it. |
 | `release-tox` | Builds a distributable `.tox` of the bridge. Maintenance of this project, not use of it. |
-| `build` | Rebuilds the index from a TouchDesigner installation — 23–30 s of one-off setup, and `td_doctor` already says to run it. |
+| `build` | Rebuilds the index from a TouchDesigner installation — 13–16 s of one-off setup, and `td_doctor` already says to run it. |
 | `probe` | The same, for the runtime half of the index: it needs a running instance whose cook it will occupy for a minute. |
 | `reload` | Replaces the running bridge's own handler. A tool that can restart its own transport reports its outcome to nobody. |
 | `mcp` | Starts the MCP server. It is how the tools exist; it cannot be one of them. |
@@ -183,7 +183,7 @@ application present.
 Rebuilding the index after changing an extractor:
 
 ```bash
-td-atlas build               # offline, 23-30 s
+td-atlas build               # offline, 13-16 s
 td-atlas probe               # needs TouchDesigner open with the bridge
 td-atlas reload              # push handler changes into a running instance
 ```

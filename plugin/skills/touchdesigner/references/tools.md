@@ -130,7 +130,7 @@ contact_sheet(BridgeClient.discover(), "/project1/out", "sheet.png",
 ## Setup
 
 ```bash
-td-atlas build     # offline index, 23-30 s
+td-atlas build     # offline index, 13-16 s
 td-atlas install   # stage the bridge, print the bootstrap line
 # paste that line into TouchDesigner's textport, once per project
 td-atlas probe     # runtime facts: defaults, ranges, menus, type aliases

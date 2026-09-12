@@ -29,7 +29,7 @@
 # assumes. Every command that runs is printed before it runs.
 #
 # Two questions are asked when a terminal is attached: where to clone, and
-# whether to build the index now (23-30 seconds, no TouchDesigner process).
+# whether to build the index now (13-16 seconds, no TouchDesigner process).
 # Piped from `curl` with no terminal, both take their default and nothing
 # waits for an answer.
 #
@@ -247,7 +247,7 @@ elif [ -f "$TD_HOME/atlas.db" ]; then
     if confirm "   Rebuild it anyway?" "n"; then BUILD=yes; fi
 else
     say "   the offline pass reads your TouchDesigner installation."
-    say "   23-30 seconds, no TouchDesigner process, no network."
+    say "   13-16 seconds, no TouchDesigner process, no network."
     if confirm "   Build the index now?" "y"; then BUILD=yes; fi
 fi
 

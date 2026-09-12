@@ -2,8 +2,8 @@
 
 Two passes produce one SQLite index, exact for the build it was made from.
 
-**Static pass.** Offline, no TouchDesigner process, 23–30 seconds measured on
-an M-series Mac:
+**Static pass.** Offline, no TouchDesigner process, 13–16 seconds over three
+runs, measured 2026-09-12 on an M-series Mac and build 2025.32460:
 
 | Source in the app bundle | What it yields |
 | --- | --- |
