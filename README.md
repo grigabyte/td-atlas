@@ -18,7 +18,7 @@ English | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
   </p>
   <p>
     <a href="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml"><img src="https://github.com/grigabyte/td-atlas/actions/workflows/ci.yml/badge.svg" alt="CI: pytest and ruff on macOS and Windows"></a>
-    <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11 or newer on the host">
+    <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11 or newer, on the same computer as TouchDesigner">
     <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS; the Windows code paths run in CI, TouchDesigner on Windows is unverified">
     <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="Licence: MIT"></a>
   </p>
@@ -30,17 +30,18 @@ And a way to read a saved project without opening it.
 
 ## What it does
 
-- **[The atom index](docs/atom-index.md)** builds one SQLite index in two
-  passes, from your own copy of the application. The values in it are the
-  values that copy reports.
-- **[The bridge](docs/bridge.md)** is a Web Server DAT and a callbacks DAT
-  that a script builds in your project. You can read it, see its changes in
+- **[The atom index](docs/atom-index.md)** is the name list. Two passes read
+  every operator and parameter out of your own copy of the application into one
+  SQLite file. The values in it are the values that copy reports.
+- **[The bridge](docs/bridge.md)** is the agent's hands inside a running
+  TouchDesigner. A script builds it in your project out of two ordinary nodes,
+  a Web Server DAT and a callbacks DAT. You can read it, see its changes in
   git, and upgrade it in place.
 - **[What TouchDesigner does not report](docs/health.md)**. `errors` covers
   what TouchDesigner itself calls an error, and `td_health` covers the
   breakage it stays quiet about.
-- **[The call journal](docs/journal.md)** writes one line per bridge call, on
-  the host, and it outlives the session.
+- **[The call journal](docs/journal.md)** writes one line per bridge call to a
+  file on disk, and it outlives the session.
 - **[Reading projects offline](docs/offline-projects.md)** inspects, searches
   and compares a project with TouchDesigner closed, and the original file is
   left alone.
@@ -55,7 +56,7 @@ Three things have to be there first.
 - **TouchDesigner**, already installed. The [index](docs/atom-index.md) is
   built from *your* copy of the application and holds the values that copy
   reports. There is nothing to download.
-- **Python 3.11 or newer**, on the host.
+- **Python 3.11 or newer**, on the same computer as TouchDesigner.
 - **An AI agent that speaks [MCP](https://modelcontextprotocol.io)**. The
   agent is what calls these tools. td-atlas was built and measured against
   [Claude Code](https://docs.claude.com/en/docs/claude-code/overview), whose
@@ -65,7 +66,8 @@ Three things have to be there first.
 [Compatibility](docs/compatibility.md) lists the platforms and what the
 connector can change in your project.
 
-One line, from a terminal:
+On macOS and Linux, one line from a terminal. The installer is a POSIX shell
+script, so Windows takes the step-by-step sequence below.
 
 ```bash
 curl -fsSL https://grigabyte.github.io/td-atlas/i | sh
@@ -89,10 +91,12 @@ Besides those, `uv` or `pip` fills its own package cache, as it does for any
 package. No sudo. System directories and your shell startup files are left
 alone. Run it again on an existing checkout and it updates that checkout.
 
-It is a POSIX shell script. Windows takes the sequence below.
-
 <details>
 <summary>By hand, or on Windows, the same sequence step by step</summary>
+
+The block below uses [`uv`](https://github.com/astral-sh/uv), a fast installer
+for Python packages. Each line carries a second form in the comment beside it,
+and that one runs on the `python3` you already have.
 
 ```bash
 git clone https://github.com/grigabyte/td-atlas
@@ -122,12 +126,21 @@ textport (Dialogs → Textport and DATs), once per project:
 exec(open('/Users/you/.td-atlas/bootstrap.py').read())
 ```
 
+The textport answers with `[td-atlas]` lines. The last one names your
+TouchDesigner build and the project the bridge attached to.
+
+```
+[td-atlas] registered as /Users/you/.td-atlas/instances/9977.json
+[td-atlas] bridge ready at /tdatlas on port 9977 (auth: token)
+[td-atlas] TouchDesigner 2025.32460, project 'NewProject.1.toe'
+```
+
 Second, a `claude mcp add` line for your MCP client. See
 [As an MCP server](#as-an-mcp-server). To also write that same entry into
 `DIR/.mcp.json`, or merge it into one that is already there, pass
 `--write-mcp-json DIR`.
 
-With TouchDesigner open and the bridge staged, finish the index:
+Once the textport has answered, finish the index.
 
 ```bash
 td-atlas probe
@@ -141,9 +154,25 @@ Last, check the install. If you came in halfway, start here.
 td-atlas doctor
 ```
 
+A finished install answers with every link `ok`, and one closing line.
+
+```
+environment   : ok — running from /Users/you/td-atlas/.venv …
+touchdesigner : ok — build 2025.32460 at /Applications/TouchDesigner.app …
+index         : ok — 667 ops, 24251 params, 2060 articles …
+index build   : ok — index and installation agree: 2025.32460
+probe         : ok — runtime pass complete: 647 ops probed …
+bridge        : ok — connected on port 9977 to 'NewProject.1.toe' …
+mcp server    : ok — 'claude mcp add …' launches …
+
+every link checked out.
+```
+
+The counts come off your own copy of TouchDesigner, so yours will differ.
 Every link that is not `ok` comes with its repair, and a broken one makes the
-command exit non-zero. On a host with nothing built it reports
-`index : FAIL … fix: td-atlas build` and `bridge : warn … fix: td-atlas install`.
+command exit non-zero. Before the index is built you see
+`index : FAIL … fix: td-atlas build`, and before the bridge is staged,
+`bridge : warn … fix: td-atlas install`.
 
 ## As an MCP server
 
