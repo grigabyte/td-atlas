@@ -1,6 +1,7 @@
 # The bridge
 
-A Web Server DAT and a callbacks DAT, built in place by a script. The bridge is
+Four nodes, built in place by a script: a Web Server DAT, a callbacks DAT, a
+status panel and an Execute DAT that fires on `projectpostsave`. The bridge is
 readable, it lives in version control as source, and its edits show up in a
 diff. Re-running the bootstrap upgrades it where it stands, and so does
 `td-atlas reload` through the bridge itself.

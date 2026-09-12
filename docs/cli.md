@@ -63,7 +63,7 @@ is dead or too old to talk.
 
 The `project` actions read an index when one exists and work without it. The
 index sharpens type resolution, since a saved file stores contracted type
-names, `tox` for `textTOP`, that the index expands.
+names, `compTOP` for `compositeTOP`, that the index expands.
 
 ## Setting up and checking
 
@@ -137,7 +137,7 @@ The runtime pass instantiates every operator type inside a sandbox with cooking
 disabled and records what documentation does not. That is defaults,
 ranges and clamps, menu options, parameter pages, connector counts, and the
 contracted type names. Needs TouchDesigner open with the bridge, and occupies
-its cook for about a minute.
+its cook for around fifteen seconds.
 
 | Flag | |
 | --- | --- |

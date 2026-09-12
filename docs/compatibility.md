@@ -51,7 +51,8 @@ agent at work you care about.
 
 - **The bridge is a component inside your open project.** Pasting the bootstrap
   line builds `/tdatlas` in the running project, as a Web Server DAT, a
-  callbacks DAT and a status panel. Re-running the line upgrades those nodes in
+  callbacks DAT, a status panel and an Execute DAT that fires on
+  `projectpostsave`. Re-running the line upgrades those nodes in
   place. It is a node in your network like any other, and it is saved with the
   project if you save the project.
 - **Edits are real edits.** `td_build`, `td_set_params`, `td_set_flags`,

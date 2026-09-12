@@ -66,7 +66,8 @@ unsettable.
 
 ## The bridge
 
-A Web Server DAT and a callbacks DAT, **built by a script**. The bridge is
+Four nodes, **built by a script**: a Web Server DAT, a callbacks DAT, a status
+panel and an Execute DAT on `projectpostsave`. The bridge is
 readable and diffable, it lives in version control as source, and re-running
 the bootstrap upgrades it in place. A running bridge can replace its own
 handler with `td-atlas reload`, and nobody goes back to the textport.

@@ -19,7 +19,8 @@ td-atlas/
 │   │   ├── ci.yml          pytest and ruff, macOS and Windows, Python 3.11-3.14
 │   │   └── pages.yml       builds the site, and serves install.sh as /i
 │   ├── ISSUE_TEMPLATE/     build, OS and `td-atlas doctor` output
-│   └── td-atlas.png        the mark the README shows
+│   ├── cover.png           the image the three READMEs show
+│   └── td-atlas.png        the square mark
 ├── docs/
 │   ├── architecture.md     the three layers and the reasoning
 │   ├── cli.md              every subcommand and flag, and what it needs
@@ -107,6 +108,7 @@ td-atlas/
 └── tests/
     ├── conftest.py         shared fixtures
     ├── live_network.py     the fixture network the live text diff is measured on
+    ├── windows_gaps.py     the two things Windows does not have, measured in CI
     └── test_*.py           a plain run needs no TouchDesigner running
 ```
 
