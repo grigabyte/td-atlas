@@ -399,6 +399,42 @@ html[data-lang="ru"] .en-tolko{display:none}
 @media (max-width:860px){
   .kod code{white-space:pre-wrap; overflow-wrap:anywhere}
 }
+
+/* ── РАУНД 8, находка L2: обычная таблица на узком экране — список ────────
+   На 390 третья колонка таблицы «Три слоя» (/docs/contributing/) сжималась
+   до 50 px, и чип src/td_atlas/project/ рисовался столбиком из
+   ОДИННАДЦАТИ рамок по два знака. Причина не в рамке, а в раскладке:
+   .proza code из CSS_D1 несёт overflow-wrap:anywhere, минимальная ширина
+   чипа равна одному знаку, и браузер честно отдаёт колонке 50 px.
+   Замер до правки (fanout/раунд-8/kadry/skan-shem.mjs): на 390 рвущихся
+   чипов в ячейках 392 по сайту, худший 11; на 768 — 144, худший 4.
+
+   Почему это не чинилось само собой: список — не общее правило таблиц,
+   а свойство ОТДЕЛЬНОГО типа блока. Таблица инструментов приходит из
+   генератора блоком instr с авторскими метками колонок и своим классом
+   .instr, и перестройка в список в CSS_D1 написана под него. Любая
+   markdown-таблица получает класс .obychnaya и на 390 имела ровно одно
+   отличие — кегль 16 px. Правило обобщено: метку колонки печатает
+   шаблон из собственного <th> таблицы (см. blokHTML, ветка table),
+   раскладка списка повторяет .instr.
+
+   CSS живёт в CSS_ZHIVOJ, а метки — под ключом o.metkiTablic: фикстура
+   пункта 2 не получает ни того, ни другого и остаётся байт в байт равной
+   вееру. Живые страницы правку получают — на 390 и 768 обычные таблицы
+   /docs/ теперь читаются списком, а не сеткой из узких колонок. Порог
+   860 px взят у .instr, не выбран заново. */
+.obychnaya .metka{display:none}
+@media (max-width:860px){
+  .obychnaya table,.obychnaya tbody,.obychnaya tr,.obychnaya td{display:block; width:auto}
+  .obychnaya thead{display:none}
+  .obychnaya tr{padding:16px 0; border-bottom:1px solid var(--setka)}
+  .obychnaya tr:last-child{border-bottom:0}
+  .obychnaya td{border:0; padding:0 0 8px}
+  .obychnaya td:last-child{padding-bottom:0}
+  .obychnaya .metka{display:block; font-family:'Martian Mono',monospace; font-weight:300;
+    font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--orn);
+    padding-bottom:4px}
+}
 `
 
 export const POLOSA_D1 = maketRazdely =>
@@ -573,7 +609,21 @@ export function blokHTML(b, o = {}) {
       // пустой ряд с линейкой не печатается.
       const pusto = b.shapka.every(c => !c)
       const th = b.shapka.map(c => `<th>${vstroke(c)}</th>`).join('\n')
-      const tr = b.ryady.map(r => `<tr>${r.map(c => `<td>${vstroke(c)}</td>`).join('\n')}</tr>`).join('\n      ')
+      // РАУНД 8, находка L2: метка колонки в каждой ячейке — то же, что
+      // у таблицы инструментов. На узком экране обычная таблица встаёт
+      // списком, и без метки ячейка «Нет, если он собран» теряет колонку,
+      // к которой относится. Текст метки — заголовок своей же колонки без
+      // знаков разметки (` * _`), а не сочинённая подпись: числа страницы
+      // от этого не прибавляются (пункт 7).
+      // Метки ставит ТОЛЬКО живой сайт (o.metkiTablic) — у фикстуры пункта 2
+      // ключа нет, и она остаётся байт в байт равной вееру (--sverit-veer).
+      // Разделитель razdelMetki обязателен: без него метка склеивается
+      // со значением ячейки в textContent и пункт 16 читает «060» вместо
+      // «2,060» (урок таблицы инструментов, замер 09.09).
+      const rz = o.razdelMetki || ''
+      const metka = i => (!o.metkiTablic || pusto || !b.shapka[i]) ? ''
+        : `<span class="metka">${esc(String(b.shapka[i]).replace(/[`*_]/g, ''))}</span>${rz}`
+      const tr = b.ryady.map(r => `<tr>${r.map((c, i) => `<td>${c ? metka(i) : ''}${vstroke(c)}</td>`).join('\n')}</tr>`).join('\n      ')
       return `<div class="tabl obychnaya"><table>
       ${pusto ? '' : `<thead><tr>${th}</tr></thead>`}
       <tbody>
@@ -614,11 +664,11 @@ export function blokHTML(b, o = {}) {
 
 // ── проза страницы ────────────────────────────────────────────────────────
 // plashka — готовый HTML или ''. h1 — заголовок страницы.
-export function prozaHTML({ h1, bloki, plashka = '', knopka, metki, razdelMetki, shemy = false, podskazkaShemy = '' }) {
+export function prozaHTML({ h1, bloki, plashka = '', knopka, metki, razdelMetki, shemy = false, podskazkaShemy = '', metkiTablic = false }) {
   // Первый блок, повторяющий H1 страницы (в EN-ломтике это «## Install»),
   // не печатается: заголовок страницы уже стоит выше.
   const b = bloki.filter((x, i) => !(i === 0 && x.t === 'h2' && x.tekst === h1))
-  const telo = b.map(x => blokHTML(x, { knopka, metki, razdelMetki, shemy, podskazkaShemy })).join('\n')
+  const telo = b.map(x => blokHTML(x, { knopka, metki, razdelMetki, shemy, podskazkaShemy, metkiTablic })).join('\n')
   return `<article class="proza">
     <h1 id="verh">${esc(h1)}</h1>
     ${plashka}

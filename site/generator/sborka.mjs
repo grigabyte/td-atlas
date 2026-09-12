@@ -931,12 +931,12 @@ function stranicaRazdela(r) {
     ZASLON,
     '<main>',
     '  ' + menuZhivoe(r.klyuch),
-    '  ' + prozaHTML({ h1: en.h1, bloki: en.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_EN, razdelMetki: '\n', shemy: true, podskazkaShemy: HROM['shema.shirokaya'].en }),
+    '  ' + prozaHTML({ h1: en.h1, bloki: en.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_EN, razdelMetki: '\n', shemy: true, podskazkaShemy: HROM['shema.shirokaya'].en, metkiTablic: true }),
     '  ' + oglavlenie(en.bloki, OGL),
     '</main>',
     ru
       ? '<template id="ru-telo">' +
-        prozaHTML({ h1: ru.h1, bloki: ru.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_RU, razdelMetki: '\n', shemy: true, podskazkaShemy: HROM['shema.shirokaya'].ru }) +
+        prozaHTML({ h1: ru.h1, bloki: ru.bloki, plashka, knopka: KNOPKA_ZHIVAJA, metki: METKI_INSTR_RU, razdelMetki: '\n', shemy: true, podskazkaShemy: HROM['shema.shirokaya'].ru, metkiTablic: true }) +
         oglavlenie(ru.bloki, OGL) +
         '</template>'
       : '',
