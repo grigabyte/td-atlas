@@ -428,8 +428,7 @@ html[data-lang="ru"] .en-tolko{display:none}
   .obychnaya table,.obychnaya tbody,.obychnaya tr,.obychnaya td{display:block; width:auto}
   .obychnaya thead{display:none}
   .obychnaya tr{padding:16px 0; border-bottom:1px solid var(--setka)}
-  .obychnaya tr:last-child{border-bottom:0}
-  .obychnaya td{border:0; padding:0 0 8px}
+  .obychnaya td{border:0; padding:0 0 6px}
   .obychnaya td:last-child{padding-bottom:0}
   .obychnaya .metka{display:block; font-family:'Martian Mono',monospace; font-weight:300;
     font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--orn);
