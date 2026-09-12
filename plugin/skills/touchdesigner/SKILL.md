@@ -66,9 +66,10 @@ Two things it cannot do, and the way round each:
 
 ## Parameter names
 
-`td_operator_schema("noiseTOP")` gives exact names, and — once `td-atlas probe`
-has run against a live TouchDesigner — defaults, menu options and ranges. Without
-that run the schema says so itself, in place of the values. Two traps:
+`td_operator_schema("noiseTOP")` always gives exact names. Defaults, menu
+options and ranges appear once `td-atlas probe` has run against a live
+TouchDesigner; without that run the schema says so itself, in place of the
+values. Two traps:
 
 - **The documentation describes parameter *groups*; you must set the members.**
   The docs say `t` (Translate); the settable parameters are `tx`, `ty`, `tz`.
