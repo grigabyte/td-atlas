@@ -1,7 +1,7 @@
 ---
 istochnik: docs/layout.md
 kommit: e088d81
-hesh: 8cbaaedc3df58bbcdad52d709b275ecd5546e29a1b6f3a4ade2e44b892ac4d8f
+hesh: 571d418d9a10ccca02fa7b165790e6247290be403220273d61ac7a5e73e21781
 ---
 
 # Дерево репозитория

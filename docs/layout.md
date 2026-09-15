@@ -9,7 +9,8 @@ td-atlas/
 ├── CONTRIBUTING.md         the short version: how to run the checks
 ├── CLAUDE.md               entry points for an agent opening this repository
 ├── CHANGELOG.md            Keep a Changelog; every protocol change is in it
-├── LICENSE                 MIT
+├── LICENSE                 MIT, and nothing else, so the card reads MIT
+├── NOTICE                  TouchDesigner is Derivative's, and this is not theirs
 ├── install.sh              the one-line install, POSIX sh, nothing outside
 │                           the checkout and ~/.td-atlas
 ├── pyproject.toml

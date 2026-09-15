@@ -1,0 +1,12 @@
+Third-party notice
+==================
+
+TouchDesigner is a product of Derivative Inc. This project is not affiliated
+with or endorsed by Derivative. It reads documentation and resources from a
+local TouchDesigner installation for the user's own use; it does not
+redistribute any of them.
+
+This notice lived at the end of LICENSE until 2026-09-15. It was moved here
+because GitHub's licence detector matches a whole file against known licence
+texts, and anything appended makes an MIT file read as "Other" on the
+repository card, where a reader filtering by licence never sees it.
