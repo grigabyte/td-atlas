@@ -222,8 +222,26 @@ def td_operator_schema(
         for p in db.parameters(op_type)
         if p["settable"] and (include_hidden or not p["hidden"])
     ]
-    if page:
-        pars = [p for p in pars if (p["page"] or "").lower() == page.lower()]
+    # `page` arrives from a model, which types it as it pleases: the schema
+    # says str, and a client that does not coerce sends the integer the model
+    # wrote. Calling .lower() on that raised inside this package and told the
+    # reader the package was at fault, which is the least useful thing a tool
+    # can say. And a page name that matches nothing used to return the header
+    # with no parameters under it, from which the only available conclusion is
+    # that the operator has none.
+    if page not in ("", None):
+        hochu = str(page).lower()
+        stranicy = [p["page"] for p in pars if p["page"]]
+        otobrannye = [p for p in pars if (p["page"] or "").lower() == hochu]
+        if not otobrannye:
+            izvestnye = list(dict.fromkeys(stranicy))
+            out.append(
+                f"\nno parameter page named '{page}'."
+                + (f" This operator's pages: {', '.join(izvestnye)}." if izvestnye else "")
+                + " Omit `page` for every parameter."
+            )
+            return "\n".join(out)
+        pars = otobrannye
 
     current = object()
     for par in pars:

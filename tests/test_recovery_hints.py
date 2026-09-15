@@ -304,6 +304,37 @@ def test_an_unknown_operator_type_points_at_the_search(monkeypatch):
     assert "td_search_operators" in text
 
 
+def test_a_page_that_matches_nothing_names_the_pages_there_are(monkeypatch):
+    """An empty page filter used to return the header and no parameters.
+
+    From which the only conclusion available to the reader is that the
+    operator has none. Found while rehearsing the demo: a model wrote
+    `page=1`, the schema declares a string, the client passed the integer
+    through, and `.lower()` raised inside this package — so the tool told
+    the reader the package was at fault, which it was, but uselessly.
+    """
+    op = {
+        "type": "blurTOP", "family": "TOP", "label": "Blur", "summary": "",
+        "probed": 1, "min_inputs": 1, "max_inputs": 1, "num_outputs": 1,
+        "snippet_path": "",
+    }
+    par = {
+        "name": "size", "label": "Size", "page": "Blur", "settable": 1,
+        "hidden": 0, "kind": "float", "default": "1", "menu": None,
+        "min": None, "max": None, "help": "",
+    }
+
+    class _WithParams(_Store):
+        def parameters(self, op_type):
+            return [par]
+
+    monkeypatch.setattr(server, "store", lambda: _WithParams([op]))
+    for bad in (1, "no-such-page"):
+        text = server.td_operator_schema("blurTOP", bad)
+        assert f"no parameter page named '{bad}'" in text
+        assert "Omit `page`" in text
+
+
 def test_a_missing_index_tells_you_which_command_builds_it(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "_store", None)
     monkeypatch.setattr(server.cfg, "db_path", lambda: tmp_path / "nothing.db")
