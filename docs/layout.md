@@ -18,7 +18,8 @@ td-atlas/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml          pytest and ruff, macOS and Windows, Python 3.11-3.14
-│   │   └── pages.yml       builds the site, and serves install.sh as /i
+│   │   ├── pages.yml       builds the site, and serves install.sh as /i
+│   │   └── publish-pypi.yml  uploads to PyPI on a published release, no token
 │   ├── ISSUE_TEMPLATE/     build, OS and `td-atlas doctor` output
 │   ├── cover.png           the image the three READMEs show
 │   └── td-atlas.png        the square mark

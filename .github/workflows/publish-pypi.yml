@@ -1,0 +1,65 @@
+# Publishing to PyPI without a token anywhere.
+#
+# PyPI accepts an upload from this workflow on the strength of a signature
+# GitHub mints for the run itself (OIDC), checked against a Trusted Publisher
+# the project owner registers on pypi.org. Nothing secret is stored: not on a
+# laptop, not in repository secrets, not in .pypirc. A stolen laptop or a
+# leaked secret cannot publish, because there is no secret to leak.
+#
+# The trigger is a published GitHub release, not a tag push. A tag is cheap to
+# create by accident; a release is a deliberate act, and by then the .mcpb is
+# already attached by scripts/publish.sh. One release, one version on PyPI.
+#
+# The version comes from pyproject.toml alone. There is no step that reads the
+# tag name, because two sources for one number is how a release ships 0.1.0
+# under the tag v0.2.0.
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build the sdist and the wheel
+        run: pipx run build
+
+      # The gate that catches the release this workflow exists to prevent: a
+      # release fired at a commit whose pyproject still carries the version
+      # already on PyPI. Twine's own check reads the metadata the same way
+      # PyPI will, so a broken README or a bad classifier fails here rather
+      # than halfway through an upload.
+      - name: Check the artefacts the way PyPI will
+        run: pipx run twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      # The one permission that makes this work, and the only one granted.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
