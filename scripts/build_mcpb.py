@@ -70,6 +70,7 @@ MCPBIGNORE = ROOT / "packaging" / ".mcpbignore"
 MANIFEST_VERSION = "0.4"
 
 # The official registry validates submissions against this schema.
+SITE_URL = "https://grigabyte.github.io/td-atlas/"
 SERVER_SCHEMA = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
 
 # GitHub namespace authentication: the registry only accepts `io.github.<user>/*`
@@ -295,7 +296,11 @@ def build_server_json(version: str, description: str, repo_url: str,
         "description": description,
         "version": version,
         "repository": {"url": repo_url, "source": "github"},
-        "websiteUrl": repo_url,
+        # The landing page, not the repository: the registry card is the first
+        # thing a reader sees, and the site explains the product in plain
+        # words where the repository opens on a README for people who already
+        # know what an MCP server is.
+        "websiteUrl": SITE_URL,
         "packages": [
             {
                 # The registry accepts MCPB artefacts from GitHub and GitLab

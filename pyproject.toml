@@ -40,9 +40,14 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/grigabyte/td-atlas"
+# Homepage is the landing page, not the repository: on PyPI that link is the
+# one a reader follows before deciding to install, and the site says in plain
+# words what the repository's README assumes you already know.
+Homepage = "https://grigabyte.github.io/td-atlas/"
+Documentation = "https://grigabyte.github.io/td-atlas/docs/"
 Repository = "https://github.com/grigabyte/td-atlas"
 Issues = "https://github.com/grigabyte/td-atlas/issues"
+Changelog = "https://github.com/grigabyte/td-atlas/blob/main/CHANGELOG.md"
 
 [project.scripts]
 td-atlas = "td_atlas.cli:main"
@@ -53,6 +58,27 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/td_atlas"]
+
+# The source distribution carries what a reader needs to build and check the
+# package, and nothing else. Without this it also carried the landing page
+# sources and the 836 KB README cover, which made a 1.8 MB sdist around a
+# 217 KB wheel.
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/td_atlas",
+    "tests",
+    "docs",
+    "plugin",
+    "packaging",
+    "scripts",
+    "install.sh",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "AGENTS.md",
+    "LICENSE",
+    "pyproject.toml",
+]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
