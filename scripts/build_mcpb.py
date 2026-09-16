@@ -165,10 +165,13 @@ def build_manifest() -> dict:
         "version": meta["version"],
         "description": meta["description"],
         "long_description": LONG_DESCRIPTION.strip(),
-        "author": {"name": author["name"], "url": urls.get("Homepage")},
+        # The author's URL is the person, not the product: pyproject's
+        # Homepage became the landing page, and pointing an author field at it
+        # says the author is a website.
+        "author": {"name": author["name"], "url": urls.get("Repository")},
         "repository": {"type": "git", "url": urls["Repository"]},
         "homepage": urls.get("Homepage"),
-        "documentation": urls.get("Homepage"),
+        "documentation": urls.get("Documentation") or urls.get("Homepage"),
         "support": urls.get("Issues"),
         "server": {
             # "uv" rather than "python": a "python" bundle must carry its own

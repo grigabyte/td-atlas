@@ -13,8 +13,8 @@
     "type": "git",
     "url": "https://github.com/grigabyte/td-atlas"
   },
-  "homepage": "https://github.com/grigabyte/td-atlas",
-  "documentation": "https://github.com/grigabyte/td-atlas",
+  "homepage": "https://grigabyte.github.io/td-atlas/",
+  "documentation": "https://grigabyte.github.io/td-atlas/docs/",
   "support": "https://github.com/grigabyte/td-atlas/issues",
   "server": {
     "type": "uv",
