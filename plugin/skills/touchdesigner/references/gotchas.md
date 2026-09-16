@@ -44,6 +44,47 @@ Adding that turns the same network into `3/3 operators cooking`.
 A recorder must be *inside* what the keep-alive pulls. Wire
 `out → rec → keepalive`, not `out → keepalive` with `rec` hanging off `out`.
 
+## A script that reads the clock inside cook() runs once and freezes
+
+The previous trap is about a branch nobody pulls. This one is the opposite and
+looks identical on screen: the branch *is* displayed, the render *is* cooking,
+and the picture still never changes.
+
+A Script SOP or Script CHOP whose `cook()` reads `absTime.seconds` has no
+dependency on it. TouchDesigner decides what to re-cook from parameters and
+inputs, not from what a function body happens to read, so the node cooks once
+and its output is frozen from then on.
+
+**Symptom.** Geometry built from a time-varying formula is correct but static.
+Sampling the same point twice, seconds apart, returns identical coordinates —
+which is the cheapest way to tell this apart from a slow network.
+
+**Fix.** Put the clock on a parameter, because a parameter expression *is* a
+dependency. Add a custom parameter in `setupParameters`, drive it with
+`absTime.seconds`, and read that parameter in `cook()`:
+
+```python
+def setupParameters(scriptOp):
+    scriptOp.appendCustomPage('Form').appendFloat('Time')
+
+def cook(scriptOp):
+    t = scriptOp.par.Time.eval()   # depends on the clock; absTime here does not
+```
+
+Then set the expression once: `op('…/curve').par.Time.expr = 'absTime.seconds'`.
+
+## A render chain is not connected to anything the artist is looking at
+
+Building `camera + light + geometry → renderTOP → bloomTOP` leaves a chain that
+renders correctly and appears nowhere. The artist is looking at whatever their
+output node shows, which is still the old network, and reports that nothing
+works.
+
+`td_render` hides this, because it forces a cook of the node you name and
+returns its image, so the tool sees a correct picture while the screen does
+not. Wire the end of the chain into the project's output node before saying
+anything about how it looks.
+
 ## A Python extension attached the wiki's way is silently absent
 
 The offline wiki's `Extensions` page shows the extension expression written as
