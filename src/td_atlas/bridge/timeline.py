@@ -37,12 +37,77 @@ def parse_frames(spec: str) -> list[list[int]]:
     return ranges
 
 
+PROFILE_ROWS = 40
+
+
+def _ms(value: float | None) -> str:
+    return "     —" if value is None else f"{value:6.2f}"
+
+
+def describe_profile(profile: dict, walked: int, rows: int = PROFILE_ROWS) -> list[str]:
+    """The profile's table, costliest first, each row saying what it is worth.
+
+    A row is a forced cook timed with the GPU waited for. What makes a number
+    misleading is said on its own row, not in a legend: an operator that did
+    not cook on its own on any frame walked is not part of the frame's cost
+    (report 3's `44 ms` from a cook 374,144 frames old), and one cooked inside
+    an earlier operator's measurement has its cost in that operator's too.
+    """
+    lines = [
+        f"  measured {profile.get('measured', 0)} of {walked} frames, "
+        f"{profile.get('nodes', 0)} operators"
+    ]
+    table = profile.get("rows") or []
+    if not table:
+        return lines
+    frame_sum = sum(
+        row["mean"] for row in table
+        if row.get("mean") is not None and row.get("cooked")
+    )
+    lines.append(
+        f"  sum of means of operators that cooked on their own: {frame_sum:.2f} ms"
+    )
+    lines.append("    mean     max  cooked  operator (ms per frame, GPU waited for)")
+    for row in table[:rows]:
+        frames = row.get("frames") or 0
+        text = (
+            f"  {_ms(row.get('mean'))}  {_ms(row.get('max'))}  "
+            f"{row.get('cooked', 0):>3}/{frames:<3} {row['path']} ({row.get('type')})"
+        )
+        marks = []
+        if frames and not row.get("cooked"):
+            marks.append("did not cook on its own on any frame walked — not in the frame's cost")
+        if row.get("pulled"):
+            marks.append(
+                f"cooked inside an earlier operator's measurement on {row['pulled']} "
+                f"frame(s), so its cost is counted there too"
+            )
+        if row.get("refused"):
+            marks.append(f"the forced cook did not happen on {row['refused']} frame(s)")
+        if row.get("errors"):
+            marks.append(f"{row['errors']} failed: {row.get('error')}")
+        if marks:
+            text += " — " + "; ".join(marks)
+        lines.append(text)
+    if len(table) > rows:
+        lines.append(f"  … {len(table) - rows} cheaper operator(s) not shown")
+    if profile.get("truncated"):
+        lines.append(
+            f"  stopped at {profile.get('limit')} operators; at least "
+            f"{profile['truncated']} more were not walked"
+        )
+    return lines
+
+
 def describe(job: dict) -> list[str]:
     """A job's progress as lines an agent reads at a glance."""
     if not job.get("job"):
         return ["no timeline job has run in this TouchDesigner session"]
     first, last = job["walk"]
-    what = "saving frames of" if job.get("mode") == "capture" else "advancing"
+    what = {
+        "capture": "saving frames of",
+        "profile": "profiling everything under",
+    }.get(job.get("mode"), "advancing")
     lines = [f"job {job['job']}: {job['state']} — {what} {job['path']}"]
     where = f"frame {job['frame']} of walk {first}..{last}"
     if job.get("tiles", 1) > 1 and job.get("tile") is not None:
@@ -78,4 +143,6 @@ def describe(job: dict) -> list[str]:
             lines.append(f"  timeline left {mode}")
         if restored.get("crop"):
             lines.append("  crop back to 0..1 on " + ", ".join(restored["crop"]))
+    if isinstance(job.get("profile"), dict):
+        lines.extend(describe_profile(job["profile"], last - first + 1))
     return lines

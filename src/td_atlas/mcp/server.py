@@ -986,6 +986,8 @@ def td_timeline_run(
 def td_timeline_status(job: str = "") -> str:
     """Progress of a td_timeline_run job: frame, pass, files saved, errors.
 
+    For a td_timeline_profile job, the table measured so far.
+
     Without `job`, the latest one, finished or not. A walk that has not taken
     a step for several seconds is reported as stalled, with what to do.
     """
@@ -1010,6 +1012,60 @@ def td_timeline_cancel(job: str = "") -> str:
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
     return _warn(client) + "\n".join(timeline.describe(result))
+
+
+@mcp.tool()
+@guarded
+def td_timeline_profile(
+    path: str,
+    frames: str,
+    limit: int = 100,
+    settle: int = 2,
+) -> str:
+    """What each operator costs per frame, on real timeline frames — as a job.
+
+    Reach for this when the frame rate drops and you need to know who spends
+    the frame. Do not time `cook(force=True)` in td_exec: a TOP's cook only
+    queues GPU work and returns, so a hand-written loop reads ~0 ms for a TOP
+    that costs 80 (it took an agent a whole wrong hypothesis to see it). And do
+    not trust td_health's cookTime alone: it is the last cook, which may be
+    hundreds of thousands of frames old.
+
+    `frames` is the walk, e.g. "3000..3009"; every frame of it is measured.
+    Every TOP/CHOP/SOP/POP at or under `path` (up to `limit`, breadth-first)
+    is forced to cook on each frame, upstream first, and timed with the GPU
+    waited for. Returns at once with a job id like td_timeline_run — they share
+    one slot, since both move the timeline — and td_timeline_status shows the
+    table so far: mean and max ms per frame, costliest first. A row marked
+    "did not cook on its own" is what the operator would cost, not part of the
+    frame; one marked as cooked inside an earlier measurement shares its cost
+    with that operator (a Render TOP pulling its geometry, typically).
+
+    The timeline is paused for the walk and its play mode given back; each
+    step forces the whole list, so a heavy network makes each step as long as
+    its frame. Profile a component, not `/`.
+    """
+    try:
+        walk = timeline.parse_frames(frames)
+    except ValueError as exc:
+        return f"error: {exc}"
+    if len(walk) != 1:
+        return "error: `frames` is one range to walk, e.g. '3000..3009'"
+    client = bridge()
+    try:
+        job = client.call(
+            "timeline_profile",
+            path=path, start=walk[0][0], end=walk[0][1],
+            limit=limit, settle=settle,
+        )
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    lines = timeline.describe(job)
+    lines.append(
+        f"Poll with td_timeline_status(job={job['job']!r}) for the table; stop "
+        f"with td_timeline_cancel."
+    )
+    return _warn(client) + "\n".join(lines)
 
 
 @mcp.tool()
