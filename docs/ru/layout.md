@@ -1,6 +1,6 @@
 ---
 istochnik: docs/layout.md
-kommit: 28a9b09
+kommit: a297556
 hesh: 5aa85d79b97a7f3dec13eb006e492f8ff5c93fa5bee4bf3c9d1c15f422ec05dd
 ---
 
