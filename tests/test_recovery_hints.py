@@ -104,6 +104,7 @@ def test_hints_that_know_no_action_name_nothing_to_call():
     [
         ("bridge_unreachable", "td-atlas install"),
         ("bridge_timeout", "main thread"),
+        ("bridge_asleep", "to the front"),
         ("bridge_http", "td-atlas doctor"),
         ("bridge_protocol", "td-atlas reload"),
     ],
