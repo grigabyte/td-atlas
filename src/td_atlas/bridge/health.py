@@ -394,8 +394,13 @@ def check(
         risk = node.get("negativeFloat")
         if isinstance(risk, dict):
             negative_depth = max(negative_depth, int(risk.get("depth") or 0))
-            head = (f"{node['path']} ({risk.get('format')}, black level "
-                    f"{risk.get('blacklevel')}")
+            # Each setting that takes this Level below zero, by name: contrast
+            # above 1, inlow above 0, outlow below 0 (handler.py,
+            # `_negative_float_risk`, for the measurement).
+            settings = risk.get("settings") or {}
+            head = ", ".join([str(risk.get("format"))] + [
+                f"{name} {value}" for name, value in settings.items()])
+            head = f"{node['path']} ({head}"
             adds = risk.get("adds") or []
             if adds:
                 negative_add.append(f"{head}, added in {', '.join(adds)})")
@@ -592,7 +597,8 @@ def check(
             Finding(
                 "warning", "negative-float",
                 f"{len(negative_add)} Level TOP(s) can output negative values "
-                f"— a float format, a black level above 0 and no clamp — and "
+                f"— a float format, no clamp, and contrast above 1, inlow "
+                f"above 0 or outlow below 0, each named beside its path — and "
                 f"an Add below takes them away from what it adds to, which "
                 f"darkens it. Turn on the Post page clamp with clamplow2 0. "
                 f"Checked: Level TOPs only, and an Add TOP or a Composite set "
@@ -605,8 +611,9 @@ def check(
             Finding(
                 "note", "negative-float",
                 f"{len(negative_only)} Level TOP(s) can output negative "
-                f"values — a float format, a black level above 0 and no "
-                f"clamp. No Add TOP or Composite set to add was found within "
+                f"values — a float format, no clamp, and contrast above 1, "
+                f"inlow above 0 or outlow below 0, each named beside its "
+                f"path. No Add TOP or Composite set to add was found within "
                 f"{negative_depth} operators downstream; anything else that "
                 f"sums (a GLSL, a Math) is not checked. The Post page clamp "
                 f"with clamplow2 0 removes them",

@@ -4,9 +4,11 @@ The bridge walks up a TOP's inputs and reads each image's minimum, mean and
 maximum (component/handler.py, `m_trace`). This module decides which node to
 point at, and it lives on the host so that decision can be tested without
 TouchDesigner. It was asked for by an agent that did the walk by hand twice,
-and both times it found the cause: a Level TOP in 16-bit float with black
-level 0.42 and no clamp went to -0.21, and the Add below it took that away
-from what it added to (report of 2026-09-20).
+and both times it found the cause: a Level TOP in 16-bit float with no
+clamp went to -0.21, and the Add below it took that away from what it added
+to (report of 2026-09-20). The report blamed black level 0.42; measured
+since, black level alone stops at 0, and contrast above 1 or a Range In Low
+above 0 is what goes below it (handler.py, `_negative_float_risk`).
 
 Four things are marked, each where it starts rather than everywhere it
 shows: the node where the image goes black while an input still carried
@@ -79,12 +81,26 @@ def facts(entry: dict) -> list[str]:
     if isinstance(opacity, (int, float)) and not isinstance(opacity, bool) \
             and opacity <= 0:
         found.append("opacity 0")
+    # Black level takes what is under it to 0, not below (2025.32460,
+    # 2026-09-24: a Constant at 0.2 through a Level in rgba16float, clamp
+    # off, black level 0.5 -> 0.0), so it is a reason for black, and never
+    # one for negative values.
+    black = (entry.get("pars") or {}).get("blacklevel")
+    if isinstance(black, (int, float)) and not isinstance(black, bool) \
+            and black > 0:
+        found.append(f"blacklevel {black}, which cuts dark values to 0")
     risk = entry.get("negativeFloat")
     if risk:
-        found.append(
-            f"{risk.get('format')}, blacklevel {risk.get('blacklevel')}, "
-            f"no clamp at 0"
-        )
+        # The settings that take a Level below zero, measured on the same
+        # build and day: contrast 3 -> -0.4 and inlow 0.5 -> -0.6 from 0.2;
+        # outlow below 0 is the Range page's floor (handler.py,
+        # `_negative_float_risk`).
+        settings = risk.get("settings") or {}
+        found.append(", ".join(
+            [str(risk.get("format"))]
+            + [f"{name} {value}" for name, value in settings.items()]
+            + ["no clamp at 0"]
+        ))
     if entry.get("errors"):
         line = str(entry["errors"]).strip().splitlines()[0]
         if len(line) > _ERROR_EXCERPT:

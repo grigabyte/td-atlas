@@ -1127,9 +1127,10 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
       forced cooks carry a stale trail
     - bypassed gain operators (Level, Math, HSV Adjust), which pass their
       input through at full strength instead of switching the layer off
-    - Level TOPs that can output negative floats (float format, black level
-      above 0, no clamp), and whether an Add below them takes those values
-      away from what it adds to
+    - Level TOPs that can output negative floats (float format, no clamp, and
+      contrast above 1, inlow above 0 or outlow below 0 — black level only
+      cuts to 0), and whether an Add below them takes those values away from
+      what it adds to
     - reads of the application clock (absTime) or an unseeded random
       generator, which keep a render from reproducing between runs
 
@@ -1395,8 +1396,10 @@ def td_trace(path: str, depth: int = 12) -> str:
       something (opacity 0, a bypassed source, an empty input, an error), or
       an Add / Composite `add` is fed a negative input and so subtracts it
     - `negative values start here` — a float image gone below zero, typically
-      a Level TOP with black level above 0 and no clamp: invisible on its own
-      tile, it darkens whatever it is added to
+      a Level TOP with contrast above 1, inlow above 0 or outlow below 0 and
+      no clamp: invisible on its own tile, it darkens whatever it is added to.
+      A black level above 0 cuts to 0, not below, and is named under
+      `dropped here`
     - `alpha goes to 0 here` — colour still there under an alpha of 0,
       which vanishes once composited
     - `NaN/Inf start here` — usually a shader dividing by zero

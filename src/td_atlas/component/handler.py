@@ -4162,14 +4162,26 @@ def _feedback_state(target):
 def _negative_float_risk(level):
     """A Level TOP that can hand negative values downstream, or None.
 
-    Measured by an agent on build 2025.32460 (reported 2026-09-20): black
-    level 0.42 in rgba16float with the Post-page clamp off gave -0.21 to
-    -0.38, and a Composite adding it darkened what it was added to. Only that
-    condition is checked — a float format that can hold a negative, a black
-    level above zero, and no clamp at or above zero. `pixelFormatName` is the
-    format the TOP really has; its `format` parameter says `useinput` as often
-    as not. rgba11float stores positive values only (the parameter's own menu
-    label), so it cannot carry the fault.
+    An agent on build 2025.32460 (reported 2026-09-20) saw a Level in
+    rgba16float with the Post-page clamp off give -0.21 to -0.38, and a
+    Composite adding it darkened what it was added to. It put that down to
+    black level 0.42, and so did the first version of this check. Measured
+    since (2025.32460, demo2.toe, 2026-09-24): a Constant TOP at 0.2 into a
+    Level TOP in rgba16float, clamp off, minimum R out of numpyArray() —
+    untouched 0.2; blacklevel 0.5 -> 0.0; contrast 3 -> -0.4; inlow 0.5 ->
+    -0.6; brightness1 -0.5 -> 0.0; gamma1 0.3 -> 0.005; invert 1 -> 0.8;
+    blacklevel 0.5 with clamplow2 -1 -> 0.0. So black level cuts to zero and
+    does not go below it; contrast above 1 and a Range In Low above 0 do.
+    Out Low below 0 is included unmeasured: it is the floor the Range page
+    maps onto, so it is where the input's lowest value lands. Brightness,
+    gamma and invert stayed at or above zero and are not checked.
+
+    The fault needs a float format that can hold a negative, one of those
+    settings, and no clamp at or above zero. `pixelFormatName` is the format
+    the TOP really has; its `format` parameter says `useinput` as often as
+    not. rgba11float stores positive values only (the parameter's own menu
+    label), so it cannot carry the fault. Every setting that applies is
+    named, so the finding says which one to undo.
 
     Then a short walk downstream for an Add, either an Add TOP or a Composite
     set to `add`: those are where a negative subtracts instead of adding.
@@ -4177,8 +4189,15 @@ def _negative_float_risk(level):
     fmt = str(_attr(level, "pixelFormatName") or "")
     if "float" not in fmt or "11float" in fmt:
         return None
-    black = _par_value(level, "blacklevel")
-    if not isinstance(black, (int, float)) or black <= 0:
+    settings = {}
+    for name, below_zero in (("contrast", lambda v: v > 1),
+                             ("inlow", lambda v: v > 0),
+                             ("outlow", lambda v: v < 0)):
+        value = _par_value(level, name)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) \
+                and below_zero(value):
+            settings[name] = round(float(value), 4)
+    if not settings:
         return None
     if _par_value(level, "clamp"):
         low = _par_value(level, "clamplow2")
@@ -4203,7 +4222,7 @@ def _negative_float_risk(level):
         frontier = following
     return {
         "format": fmt,
-        "blacklevel": round(float(black), 4),
+        "settings": settings,
         "adds": adds,
         "depth": _NEGATIVE_DEPTH,
     }
@@ -5386,8 +5405,10 @@ _TRACE_SIDE = 256
 # Parameters whose value alone can explain a black or missing image, read
 # wherever an operator has them. `opacity` is the Level TOP's and the Luma
 # Level TOP's (index); `operand` is the Composite TOP's, where `add` is the
-# case that subtracts a negative input.
-_TRACE_PARS = ("opacity", "operand")
+# case that subtracts a negative input. `blacklevel` is the Level TOP's: it
+# takes what is under it to 0, not below (2025.32460, 2026-09-24: 0.2 in,
+# 0.0 out at black level 0.5, in rgba16float with no clamp).
+_TRACE_PARS = ("opacity", "operand", "blacklevel")
 
 
 def _trace_stats(numpy, image):

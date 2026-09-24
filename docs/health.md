@@ -46,9 +46,11 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
   full strength, so the layer it was dimming comes back instead of going away.
   Such an operator is named here and not again under `bypassed`.
 - `negative-float` (warning with an Add below, note without) names a Level TOP
-  in a float pixel format with a black level above 0 and no clamp. It outputs
-  values below zero, and an Add TOP or a Composite set to `add` within four
-  operators downstream subtracts them.
+  in a float pixel format with no clamp and with `contrast` above 1, `inlow`
+  above 0 or `outlow` below 0, and says which. It outputs values below zero,
+  and an Add TOP or a Composite set to `add` within four operators downstream
+  subtracts them. A black level above 0 is not on the list: it cuts to 0 and
+  stops there (measured on 2025.32460, 0.2 in and 0.0 out at black level 0.5).
 - `nondeterministic` (warning) names each read of `absTime`, `time.time()` or
   an unseeded `random` in a parameter expression or a callback. The frame then
   does not reproduce between runs. When the bridge's time budget ends the

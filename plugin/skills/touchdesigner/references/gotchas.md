@@ -552,15 +552,25 @@ case `brightness1 = 0` on the Level TOP did it. Disconnecting it works too.
 
 ## A Level TOP in a float format can output negative values
 
-A Level TOP with `blacklevel` above 0 in `rgba16float` or `rgba32float`, with
-the Post page `clamp` off, outputs values below zero. An agent measured −0.21
-to −0.38 at black level 0.42. An 8-bit format clamps them away. A float one
-keeps them, and a Composite set to `add` then *subtracts* them from what it adds
-to. A background went black that way, and was turned up twice by hand before a
-sample down the chain found the cause.
+A Level TOP in `rgba16float` or `rgba32float`, with the Post page `clamp` off,
+outputs values below zero when `contrast` is above 1 or the Range page's
+`inlow` is above 0. Measured on build 2025.32460: a Constant TOP at 0.2 through
+such a Level came out at −0.4 with `contrast = 3` and at −0.6 with
+`inlow = 0.5`. `outlow` below 0 is the floor the Range page maps onto, so it
+goes below zero as well; that one was not measured. `blacklevel` does not do
+it. At 0.5 it took the same 0.2 to 0.0, and stopped there. `brightness1 = −0.5`
+also gave 0.0, `gamma1 = 0.3` gave 0.005 and `invert = 1` gave 0.8.
 
-`td_health` reports `negative-float` for such a Level TOP. It reads the TOP's
-actual pixel format, not its `format` parameter, which usually says `useinput`.
+An 8-bit format clamps the negatives away. A float one keeps them, and a
+Composite set to `add` then *subtracts* them from what it adds to. A background
+went black that way, and was turned up twice by hand before a sample down the
+chain found the cause. The agent measured −0.21 to −0.38 there and put it down
+to black level 0.42. By the measurement above, that Level had contrast or a
+Range setting as well.
+
+`td_health` reports `negative-float` for such a Level TOP and names the setting
+that does it. It reads the TOP's actual pixel format, not its `format`
+parameter, which usually says `useinput`.
 It is a warning when an Add TOP or a Composite set to `add` sits within four
 operators downstream, and a note otherwise. Anything else that sums, such as a
 GLSL TOP or a Math, is not checked.

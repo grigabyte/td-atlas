@@ -8,8 +8,8 @@ the repository, 2026-09-20 and 2026-09-24):
   trail;
 - a Feedback TOP that `cook(force=True)` does not advance — an hour;
 - a bypassed Level TOP taken for a switched-off layer;
-- a Level TOP with a black level in a float format handing negative values to
-  an Add, which darkened what it was added to;
+- a Level TOP in a float format handing negative values to an Add, which
+  darkened what it was added to;
 - a camera driven by `absTime.seconds`, the application's clock, so no two
   recordings moved alike.
 
@@ -201,7 +201,7 @@ def test_the_bypass_warning_counts_the_gain_operators_it_leaves_to_the_note():
 # -- B4: negative values out of a Level TOP in a float format ---------------
 
 def test_a_level_handing_negative_values_to_an_add_is_a_warning():
-    risk = {"format": "rgba16float", "blacklevel": 0.42,
+    risk = {"format": "rgba16float", "settings": {"contrast": 3.0},
             "adds": ["/project1/cement/ray_add"], "depth": 4}
     nodes = [node("/project1/cement/ray_lev", 10, type="levelTOP",
                   negativeFloat=risk)]
@@ -210,14 +210,26 @@ def test_a_level_handing_negative_values_to_an_add_is_a_warning():
     negative = finding(result, "negative-float")
     assert negative is not None and negative.severity == "warning"
     assert negative.paths == [
-        "/project1/cement/ray_lev (rgba16float, black level 0.42, "
+        "/project1/cement/ray_lev (rgba16float, contrast 3.0, "
         "added in /project1/cement/ray_add)"
     ]
     assert "clamp" in negative.message
+    assert "contrast above 1" in negative.message
+    assert "black level" not in negative.message
+
+
+def test_every_setting_that_takes_the_level_below_zero_is_named():
+    risk = {"format": "rgba32float", "settings": {"inlow": 0.5, "outlow": -0.1},
+            "adds": [], "depth": 4}
+    nodes = [node("/p/lev", 10, type="levelTOP", negativeFloat=risk)]
+    result = check(sample(0, nodes), sample(60, [dict(nodes[0], cooks=70)]))
+    assert finding(result, "negative-float").paths == [
+        "/p/lev (rgba32float, inlow 0.5, outlow -0.1)"]
 
 
 def test_a_level_with_no_add_downstream_is_only_a_note():
-    risk = {"format": "rgba32float", "blacklevel": 0.1, "adds": [], "depth": 4}
+    risk = {"format": "rgba32float", "settings": {"inlow": 0.5}, "adds": [],
+            "depth": 4}
     nodes = [node("/p/lev", 10, type="levelTOP", negativeFloat=risk)]
     result = check(sample(0, nodes), sample(60, [dict(nodes[0], cooks=70)]))
     negative = finding(result, "negative-float")
@@ -373,10 +385,12 @@ def test_the_bridge_sends_a_feedback_target(monkeypatch, td_globals):
         "target": "/project1/out", "reset": False}
 
 
-def _level(path, fmt="rgba16float", black=0.42, clamp=False, low=0.0):
+def _level(path, fmt="rgba16float", black=0.0, clamp=False, low=0.0,
+           contrast=3.0, inlow=0.0, outlow=0.0):
     return Op(path, "levelTOP", pixelFormatName=fmt,
-              pars=[Par("blacklevel", black), Par("clamp", clamp),
-                    Par("clamplow2", low)])
+              pars=[Par("blacklevel", black), Par("contrast", contrast),
+                    Par("inlow", inlow), Par("outlow", outlow),
+                    Par("clamp", clamp), Par("clamplow2", low)])
 
 
 def test_the_bridge_names_an_add_below_a_level_in_float(monkeypatch, td_globals):
@@ -389,14 +403,36 @@ def test_the_bridge_names_an_add_below_a_level_in_float(monkeypatch, td_globals)
     reply = sampled(monkeypatch, lev, null, comp)
     risk = entry(reply, "/project1/ray_lev")["negativeFloat"]
     assert risk["format"] == "rgba16float"
-    assert risk["blacklevel"] == 0.42
+    assert risk["settings"] == {"contrast": 3.0}
     assert risk["adds"] == ["/project1/ray_add"]
 
 
+# Measured on 2025.32460 (demo2.toe, 2026-09-24): a Constant TOP at 0.2 into
+# a Level TOP in rgba16float, clamp off. Minimum R out: contrast 3 -> -0.4,
+# inlow 0.5 -> -0.6. outlow below 0 is the Range mapping's own floor and was
+# not measured.
+@pytest.mark.parametrize("level, settings", [
+    (_level("/project1/l"), {"contrast": 3.0}),
+    (_level("/project1/l", contrast=1.0, inlow=0.5), {"inlow": 0.5}),
+    (_level("/project1/l", contrast=1.0, outlow=-0.2), {"outlow": -0.2}),
+    (_level("/project1/l", inlow=0.5), {"contrast": 3.0, "inlow": 0.5}),
+])
+def test_a_level_names_each_setting_that_takes_it_below_zero(
+    monkeypatch, td_globals, level, settings
+):
+    reply = sampled(monkeypatch, level)
+    assert entry(reply, "/project1/l")["negativeFloat"]["settings"] == settings
+
+
+# Same measurement: black level 0.5 took 0.2 to 0.0, not below it, and so did
+# brightness1 -0.5; gamma1 0.3 gave 0.005 and invert 0.8. None of them takes
+# the Level below zero on its own.
 @pytest.mark.parametrize("level", [
     _level("/project1/l", fmt="rgba8fixed"),
     _level("/project1/l", fmt="rgba11float"),   # positive values only
-    _level("/project1/l", black=0.0),
+    _level("/project1/l", contrast=1.0),
+    _level("/project1/l", contrast=1.0, black=0.42),
+    _level("/project1/l", contrast=0.5),
     _level("/project1/l", clamp=True, low=0.0),
 ])
 def test_a_level_that_cannot_go_negative_is_not_flagged(

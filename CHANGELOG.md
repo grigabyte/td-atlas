@@ -112,8 +112,9 @@ either from the code they are running:
 - **`td_trace`: why the output is black.** It walks up a TOP's inputs,
   reads each image's minimum, mean and maximum without forcing a cook, and
   marks where the picture dropped, went negative, lost its alpha or turned
-  NaN, with the cause the parameters show (bypass, opacity 0, an empty
-  input, a Level TOP in float with a black level and no clamp). It stops at
+  NaN, with the cause the parameters show (bypass, opacity 0, a black level,
+  an empty input, a Level TOP in float with no clamp and contrast above 1,
+  inlow above 0 or outlow below 0). It stops at
   40 operators and half a second of reading. MCP only.
 - **`td_timeline_profile`: who spends the frame.** A job in the same slot as
   `td_timeline_run` walks real timeline frames and, on each, cooks every

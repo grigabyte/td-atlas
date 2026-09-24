@@ -392,7 +392,7 @@ def test_prints_what_each_new_section_costs():
     with_gains, gain_result = timed(sample(0, gains_first),
                                     sample(60, gains_second))
 
-    risk = {"format": "rgba16float", "blacklevel": 0.42,
+    risk = {"format": "rgba16float", "settings": {"contrast": 3.0},
             "adds": ["/p/add"], "depth": 4}
     neg_first = [node(f"/p/v{i}", 100 + i, type="levelTOP",
                       negativeFloat=risk) for i in range(count)]

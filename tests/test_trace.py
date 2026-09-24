@@ -195,6 +195,7 @@ def test_the_byte_budget_skips_an_image_too_large_to_download():
 def test_a_level_that_can_go_negative_carries_the_parameters_that_say_so():
     src = Node("/p/src", op_type="noiseTOP")
     lev = Node("/p/lev", [src], fmt="rgba16float", blacklevel=0.42,
+               contrast=1.0, inlow=0.5, outlow=0.0,
                clamp=False, clamplow2=0.0, opacity=1.0)
     add = Node("/p/add", [src, lev], op_type="addTOP")
 
@@ -202,8 +203,9 @@ def test_a_level_that_can_go_negative_carries_the_parameters_that_say_so():
 
     risk = by["/p/lev"]["negativeFloat"]
     assert risk["format"] == "rgba16float"
-    assert risk["blacklevel"] == 0.42
+    assert risk["settings"] == {"inlow": 0.5}
     assert risk["adds"] == ["/p/add"]
+    assert by["/p/lev"]["pars"]["blacklevel"] == 0.42
     assert by["/p/lev"]["pars"]["opacity"] == 1.0
 
 
@@ -251,8 +253,11 @@ def marked(text):
 
 
 # The case from the report that asked for this tool: a Level in 16-bit float
-# with black level 0.42 and no clamp went to -0.21, and the Add below it took
-# that away from what it added to.
+# with no clamp went to -0.21, and the Add below it took that away from what
+# it added to. The report put it down to black level 0.42, but black level
+# alone takes values to 0, not below (2025.32460, 2026-09-24: 0.2 in, 0.0 out
+# at black level 0.5), so that Level had contrast or a Range setting as well;
+# which one was not recorded, and contrast stands in for it here.
 NEGATIVE_LEVEL = reply([
     row("/p/outT", ["/p/grade"], "nullTOP", 0, rgb(0.008, 0.028, 0.071)),
     row("/p/grade", ["/p/ray_add"], "levelTOP", 1, rgb(0.008, 0.028, 0.071)),
@@ -260,7 +265,8 @@ NEGATIVE_LEVEL = reply([
         rgb(0.0, 0.009, 0.020)),
     row("/p/post_out", [], "noiseTOP", 3, rgb(0.032, 0.037, 0.046)),
     row("/p/ray_lev", ["/p/rays"], "levelTOP", 3, rgb(-0.21, -0.21, -0.21),
-        negativeFloat={"format": "rgba16float", "blacklevel": 0.42,
+        negativeFloat={"format": "rgba16float",
+                       "settings": {"contrast": 3.0},
                        "adds": ["/p/ray_add"], "depth": 4}),
     row("/p/rays", [], "noiseTOP", 4, rgb(0.0, 0.2, 0.5)),
 ])
@@ -277,7 +283,8 @@ def test_the_negative_level_is_where_the_values_went_wrong_and_the_add_where_it_
     negatives = [line for line in lines if "negative values start here" in line]
     assert len(negatives) == 1 and "ray_lev" in negatives[0]
     assert "rgba16float" in negatives[0]
-    assert "blacklevel 0.42" in negatives[0]
+    assert "contrast 3.0" in negatives[0]
+    assert "blacklevel" not in negatives[0]
     assert "no clamp" in negatives[0]
 
     assert len(lines) == 2
@@ -351,6 +358,22 @@ def test_opacity_zero_and_an_empty_input_are_named_as_reasons():
     lines = marked(text)
     assert len(lines) == 1 and "blur" in lines[0]
     assert "0 of 1" in lines[0]
+
+
+def test_a_black_level_is_named_where_the_image_went_to_zero():
+    # Black level cuts to 0 rather than below it: 2025.32460, 2026-09-24, a
+    # Constant at 0.2 through a Level in rgba16float with black level 0.5
+    # came out at 0.0.
+    text = trace.render(reply([
+        row("/p/out", ["/p/lev"], "nullTOP", 0, rgb(0, 0, 0)),
+        row("/p/lev", ["/p/src"], "levelTOP", 1, rgb(0, 0, 0),
+            pars={"blacklevel": 0.5}),
+        row("/p/src", [], "constantTOP", 2, rgb(0.2, 0.2, 0.2)),
+    ]))
+    lines = marked(text)
+    assert len(lines) == 1 and "lev" in lines[0]
+    assert "dropped here" in lines[0]
+    assert "blacklevel 0.5" in lines[0]
 
 
 def test_nan_is_marked_where_it_first_appears():
