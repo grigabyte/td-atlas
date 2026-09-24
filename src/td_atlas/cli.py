@@ -1007,9 +1007,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # with a grown cache very often also has a broken link — an early return
     # on the broken branch withheld the number exactly when it was asked for.
     cached, kept, where = cache_summary()
+    # Over the ceiling is a backlog, not a broken ceiling: each new expansion
+    # trims at most _MAX_EVICTIONS_PER_CALL of it. "1246 cached, 200 kept"
+    # with nothing more was read as a limit that does not work.
+    draining = (
+        f" {cached - kept} over the ceiling, trimmed a few at a time as new "
+        f"projects are read."
+        if cached > kept else ""
+    )
     print(
         f"reading a .toe or .tox unpacks it into {where}: {cached} expansion(s) "
-        f"cached, {kept} kept. Empty it with 'td-atlas doctor --clear-cache'."
+        f"cached, {kept} kept.{draining} Empty it with "
+        f"'td-atlas doctor --clear-cache'."
     )
     return 1 if broken else 0
 
