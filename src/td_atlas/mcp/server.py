@@ -1293,6 +1293,43 @@ def td_errors(path: str = "/project1") -> str:
     return _warn(client) + "\n".join(lines) + cut
 
 
+@mcp.tool()
+@guarded
+def td_trace(path: str, depth: int = 12) -> str:
+    """Why is this TOP black, or darker than its parameters say? Find the node.
+
+    Reach for it when td_render shows black, a washed-out or a dimmed image
+    and every parameter looks right. Starting at the TOP at `path`, it walks
+    up every wired input (breadth first, `depth` hops, at most 40 nodes),
+    reads each image's min / mean / max over R, G, B and the alpha mean, and
+    marks the node where the signal was lost, with the reason when the node's
+    own settings show it:
+
+    - `dropped here` — the image goes black while an input still carried
+      something (opacity 0, a bypassed source, an empty input, an error), or
+      an Add / Composite `add` is fed a negative input and so subtracts it
+    - `negative values start here` — a float image gone below zero, typically
+      a Level TOP with black level above 0 and no clamp: invisible on its own
+      tile, it darkens whatever it is added to
+    - `NaN/Inf start here` — usually a shader dividing by zero
+
+    A `?` on a mark means an input could not be read, and the loss may have
+    come from there. Nothing is cooked to take a reading: a node that never
+    cooked says so instead of reporting zeros, and so does a non-TOP input, a
+    node past the time or download budget, and an image the read failed on.
+    Wires only: an image a Select TOP or a Render TOP reaches through a
+    parameter is not followed — trace from that operator next.
+    """
+    from ..bridge.trace import render
+
+    client = bridge()
+    try:
+        result = client.call("trace", path=path, depth=depth)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    return _warn(client) + render(result)
+
+
 def _indented(text: str) -> str:
     return "\n".join("  " + line for line in text.rstrip("\n").splitlines())
 

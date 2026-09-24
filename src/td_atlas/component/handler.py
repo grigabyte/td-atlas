@@ -4948,6 +4948,241 @@ def m_flags_set(params):
     }
 
 
+# -- trace: where a TOP chain's signal went -----------------------------------
+#
+# An agent reported doing this by hand twice, sampling a chain node by node to
+# find where the image went dark, and both times it found the cause: a Level
+# TOP in 16-bit float gone negative, taken away from what an Add added it to
+# (report of 2026-09-20). The walk collects facts only; which node to blame is
+# decided on the host (bridge/trace.py), where it can be tested.
+#
+# The ceilings are chosen, not measured. Forty nodes covers the 87-node
+# composition that report built, one chain at a time; twelve hops is a long
+# chain with room above it, and the caller can ask for up to 32. The time
+# budget is half a second — thirty frames at 60 fps, a stall a person notices
+# but an agent asking "why is it black" has already paid for. The byte budget
+# bounds what `numpyArray()` downloads, float32 RGBA at the TOP's size: 640 MB
+# is twenty 1920x1080 images or five at 3840x2160 (computed from the layout
+# numpyArray() returns, as for _MAX_CAPTURE_BYTES). What one read costs inside
+# TouchDesigner has not been timed; every sampled node reports its own `ms`,
+# so the first live run is the measurement.
+_TRACE_MAX_NODES = 40
+_TRACE_DEFAULT_DEPTH = 12
+_TRACE_MAX_DEPTH = 32
+_TRACE_BUDGET_S = 0.5
+_TRACE_BUDGET_BYTES = 640 * 1024 * 1024
+# The statistics read at most this many pixels along the image's long side,
+# by stride. It bounds the numpy work, not the download, and it can step over
+# a feature thinner than the stride: the reply carries the stride it used.
+_TRACE_SIDE = 256
+# Parameters whose value alone can explain a black or missing image, read
+# wherever an operator has them. `opacity` is the Level TOP's and the Luma
+# Level TOP's (index); `operand` is the Composite TOP's, where `add` is the
+# case that subtracts a negative input.
+_TRACE_PARS = ("opacity", "operand")
+
+
+def _trace_stats(numpy, image):
+    """Min, mean and max per channel, and how many values were NaN or Inf.
+
+    The extremes and the mean are over finite values only, so one NaN does
+    not turn every number into NaN and hide how much of the image is fine.
+    Every value is cast to a Python number: numpy's own scalars do not pass
+    through json.dumps.
+    """
+    height, width = int(image.shape[0]), int(image.shape[1])
+    stride = max(1, -(-max(height, width) // _TRACE_SIDE))
+    view = image[::stride, ::stride]
+    channels = 1 if view.ndim == 2 else int(view.shape[2])
+    flat = view.reshape(-1, channels)
+    lows, means, highs = [], [], []
+    for index in range(channels):
+        column = flat[:, index]
+        finite = column[numpy.isfinite(column)]
+        if finite.size:
+            lows.append(round(float(finite.min()), 4))
+            means.append(round(float(finite.mean()), 4))
+            highs.append(round(float(finite.max()), 4))
+        else:
+            lows.append(None)
+            means.append(None)
+            highs.append(None)
+    return {
+        "min": lows,
+        "mean": means,
+        "max": highs,
+        "nan": int(numpy.isnan(flat).sum()),
+        "inf": int(numpy.isinf(flat).sum()),
+        "stride": stride,
+        "pixels": int(flat.shape[0]),
+        "channels": channels,
+    }
+
+
+def _trace_sample(target):
+    """The statistics of a TOP's current image, or None when it has none.
+
+    Reads what is there and cooks nothing: a forced cook would advance a
+    feedback loop and change the very state being asked about.
+    """
+    import numpy
+
+    image = target.numpyArray()
+    if image is None:
+        return None
+    return _trace_stats(numpy, image)
+
+
+def _trace_entry(node, level, below):
+    """What one operator in the chain is, before its pixels are read."""
+    inputs = [getattr(source, "path", str(source))
+              for source in (_attr(node, "inputs") or [])]
+    entry = {
+        "path": node.path,
+        "name": _attr(node, "name"),
+        "type": _attr(node, "OPType"),
+        "family": _attr(node, "family"),
+        "depth": level,
+        "below": below,
+        "inputs": inputs,
+        "minInputs": _attr(node, "minInputs"),
+        "bypass": bool(_attr(node, "bypass")),
+        "lock": bool(_attr(node, "lock")),
+        "cooks": _attr(node, "totalCooks"),
+    }
+    try:
+        errors = node.errors(recurse=False)
+        warnings = node.warnings(recurse=False)
+        entry["errors"] = _clip(errors) if errors else None
+        entry["warnings"] = _clip(warnings) if warnings else None
+    except Exception:
+        entry["errors"] = entry["warnings"] = None
+    if entry["family"] != "TOP":
+        return entry
+    for key, attr in (("width", "width"), ("height", "height"),
+                      ("format", "pixelFormatName")):
+        value = _attr(node, attr)
+        entry[key] = value if isinstance(value, (int, float)) else (
+            str(value) if value is not None else None)
+    pars = {}
+    for name in _TRACE_PARS:
+        value = _par_value(node, name)
+        if isinstance(value, (bool, int, float, str)):
+            pars[name] = value
+    entry["pars"] = pars
+    if entry["type"] == "levelTOP":
+        risk = _negative_float_risk(node)
+        if risk:
+            entry["negativeFloat"] = risk
+    return entry
+
+
+def _trace_walk(target, depth, sample, clock=time.perf_counter,
+                budget_s=_TRACE_BUDGET_S, budget_bytes=_TRACE_BUDGET_BYTES):
+    """Walk up a TOP's inputs breadth first, reading each image once.
+
+    Only wires are followed. An operator read through a parameter — a Select
+    TOP's `top`, a Render TOP's camera — is not an input, and the host says
+    so. A non-TOP input is named and left there: its values are not pixels,
+    and nothing above it feeds this image through a wire.
+
+    When a budget runs out the walk goes on without reading, so the shape of
+    the chain still comes back and every unread node says why.
+    """
+    deadline = clock() + budget_s
+    spent = 0
+    stopped = False
+    entries = []
+    seen = {target.path}
+    queue = [(target, 0, None)]
+    while queue and len(entries) < _TRACE_MAX_NODES:
+        node, level, below = queue.pop(0)
+        entry = _trace_entry(node, level, below)
+        entries.append(entry)
+        if entry["family"] != "TOP":
+            entry["unsampled"] = (
+                "not a TOP (%s): its values are not pixels, and the walk "
+                "does not go past it" % entry["family"]
+            )
+            continue
+        cost = 16 * int(entry.get("width") or 0) * int(entry.get("height") or 0)
+        if entry["cooks"] == 0:
+            entry["unsampled"] = (
+                "never cooked: nothing has asked for this image, so there is "
+                "none to read"
+            )
+        elif clock() >= deadline:
+            stopped = True
+            entry["unsampled"] = (
+                "the time budget (%.2f s) ran out before this node" % budget_s
+            )
+        elif spent + cost > budget_bytes:
+            stopped = True
+            entry["unsampled"] = (
+                "over the byte budget: reading this %sx%s image would take "
+                "the download past %d MB"
+                % (entry.get("width"), entry.get("height"),
+                   budget_bytes // (1024 * 1024))
+            )
+        else:
+            started = clock()
+            try:
+                stats = sample(node)
+            except Exception as exc:
+                stats = None
+                entry["unsampled"] = "reading the image failed: %s: %s" % (
+                    type(exc).__name__, exc)
+            if stats is not None:
+                spent += cost
+                stats["ms"] = round((clock() - started) * 1000.0, 2)
+                entry["stats"] = stats
+            elif "unsampled" not in entry:
+                entry["unsampled"] = "no image to read (numpyArray returned none)"
+        if level >= depth:
+            if entry["inputs"]:
+                entry["deeper"] = True
+            continue
+        for source in _attr(node, "inputs") or []:
+            path = getattr(source, "path", None)
+            if path is None or path in seen:
+                continue
+            seen.add(path)
+            queue.append((source, level + 1, node.path))
+    return {
+        "nodes": entries,
+        "unvisited": len(queue),
+        "maxNodes": _TRACE_MAX_NODES,
+        "budget": {
+            "seconds": budget_s,
+            "bytes": budget_bytes,
+            "spentBytes": spent,
+            "stopped": stopped,
+        },
+    }
+
+
+def m_trace(params):
+    """Sample a TOP and every TOP above it, to find where the image was lost."""
+    target = _resolve(params.get("path"))
+    if target.family != "TOP":
+        raise TypeError(
+            "trace follows a TOP's image up its inputs, but %s is a %s (%s)"
+            % (target.path, target.family, target.OPType)
+        )
+    depth = params.get("depth")
+    depth = _TRACE_DEFAULT_DEPTH if depth is None else int(depth)
+    depth = max(0, min(depth, _TRACE_MAX_DEPTH))
+    started = time.perf_counter()
+    result = _trace_walk(target, depth, _trace_sample)
+    result.update({
+        "root": target.path,
+        "frame": absTime.frame,
+        "depth": depth,
+        "ms": round((time.perf_counter() - started) * 1000.0, 2),
+    })
+    return result
+
+
 # Three methods were removed on 2026-09-06 rather than kept for symmetry:
 # `perf` (every field of it is in `health_sample`, which the host does call),
 # `par_get` (`op_info` returns the same parameter values in the same shape),
@@ -4989,6 +5224,7 @@ METHODS = {
     "release_scope": m_release_scope,
     "scopes": m_scopes,
     "status_note": m_status_note,
+    "trace": m_trace,
 }
 
 
