@@ -52,4 +52,9 @@ never lands in the file. Code and DAT text are clipped at 4 KB and other
 values at 1,000 characters, with the full length noted; a batch keeps its
 first 64 steps and counts the rest; one line never passes 32 KB. The file is
 bounded at 16 MiB and the oldest lines are dropped first. The bridge token is
-scrubbed from every line before it is written, code included.
+scrubbed from every line before it is written, code included. Other secrets
+are hidden by pattern: a quoted value assigned or passed to a name such as
+`password`, `secret`, `token`, `api_key`, `access_key` or `auth`, and keys
+that announce themselves (`sk-…`, `ghp_…`, `xoxb-…`, `AKIA…`), become
+`[redacted]`. A pattern is a net, not a guarantee: a key in no known format
+under a name that says nothing is written as sent.

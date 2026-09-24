@@ -140,13 +140,89 @@ def test_a_short_exec_is_kept_whole():
     assert code in journal.format_calls([call])
 
 
+def test_named_secrets_in_recorded_code_are_hidden():
+    """Code an agent ran can carry someone else's key; the journal keeps code."""
+    code = (
+        'api_key = "live-3f9a7c2e1b"\n'
+        "client.login(user='me', password='hunter2')\n"
+        "headers = {'X-Auth-Token': 'abc123def456'}\n"
+        'SECRET_KEY: "s3cr3t-value"\n'
+    )
+    journal.record("exec", ok=True, seconds=0.0, params={"code": code})
+    raw = journal.journal_path().read_text()
+    for value in ("live-3f9a7c2e1b", "hunter2", "abc123def456", "s3cr3t-value"):
+        assert value not in raw
+    (call,) = journal.read()
+    stored = call.change["code"]
+    assert 'api_key = "[redacted]"' in stored
+    assert "password='[redacted]'" in stored
+    assert "'X-Auth-Token': '[redacted]'" in stored
+    assert "client.login(user='me', " in stored
+
+
+def test_keys_that_announce_themselves_are_hidden_wherever_they_stand():
+    keys = ["sk-" + "a1B2c3D4e5F6g7H8i9J0", "ghp_" + "A" * 36,
+            "xoxb-" + "123456789012-abcdef", "AKIA" + "ABCDEFGHIJKLMNOP"]
+    code = "\n".join("connect(%r)" % key for key in keys)
+    journal.record("exec", ok=True, seconds=0.0, params={"code": code})
+    raw = journal.journal_path().read_text()
+    for key in keys:
+        assert key not in raw
+    assert raw.count("[redacted]") == len(keys)
+
+
+def test_a_refusal_that_quotes_the_line_hides_the_secret_in_it_too():
+    """A SyntaxError from `exec` quotes the source line it stopped on."""
+    journal.record("exec", ok=False, seconds=0.0, params={"code": "x"},
+                   error_type="SyntaxError",
+                   error_message="invalid syntax: password = 'hunter2' +")
+    raw = journal.journal_path().read_text()
+    assert "hunter2" not in raw
+    assert "password = '[redacted]'" in raw
+
+
+def test_a_parameter_named_as_a_secret_is_written_hidden():
+    journal.record("par_set", ok=True, seconds=0.0,
+                   params={"path": "/project1/web1",
+                           "pars": {"password": "hunter2", "url": "https://x"}})
+    (call,) = journal.read()
+    assert call.change["pars"] == {"password": "[redacted]", "url": "https://x"}
+
+
+def test_ordinary_code_that_mentions_tokens_is_kept_as_written():
+    """Names without a string value, comparisons and look-alikes stay intact."""
+    code = (
+        "token_count = 3\n"
+        "token = get_token()\n"
+        'if token == "abc":\n'
+        "    author = 'Bob'\n"
+        "password_hash = 'x1'\n"
+        "tokens = split(text)\n"
+    )
+    journal.record("exec", ok=True, seconds=0.0, params={"code": code})
+    (call,) = journal.read()
+    assert call.change["code"] == code
+
+
 def test_the_token_is_scrubbed_out_of_recorded_code():
+    """The bridge's own token, even where no name says it is one.
+
+    Under a name like `X-TD-Atlas-Token` the secret patterns hide it first
+    (the case above); passed bare, only `_scrub` knows it.
+    """
     _write_config()
     journal.record("exec", ok=True, seconds=0.0,
-                   params={"code": "headers = {'X-TD-Atlas-Token': '%s'}" % TOKEN})
+                   params={"code": "send(%r)" % TOKEN})
     raw = journal.journal_path().read_text()
     assert TOKEN not in raw
     assert "<token redacted>" in raw
+
+
+def test_the_token_under_a_header_name_is_hidden_either_way():
+    _write_config()
+    journal.record("exec", ok=True, seconds=0.0,
+                   params={"code": "headers = {'X-TD-Atlas-Token': '%s'}" % TOKEN})
+    assert TOKEN not in journal.journal_path().read_text()
 
 
 def test_batch_records_every_step_and_what_each_changed():

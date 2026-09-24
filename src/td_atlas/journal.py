@@ -69,13 +69,17 @@ Every line is scrubbed of the bridge token before it is written — see
 `_scrub`. The token does not travel in parameters by design, but `exec` code
 is whatever an agent typed, and a credential leaked into a log file is not
 recoverable by deleting the line. The scrub runs on the finished line, so the
-recorded change passes through it like every other field.
+recorded change passes through it like every other field. Someone else's
+secret is hidden too, by pattern, in the change and in the refusal text: a
+quoted value given to a name like `password` or `api_key`, and keys that
+announce themselves (`sk-`, `ghp_`, `xoxb-`, `AKIA`). See `_redact`.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -203,6 +207,48 @@ def _scrub(line: str, extra: str = "") -> str:
     return line
 
 
+# Secrets that are not ours. Since lines began to carry what a call changed,
+# the journal holds the code `exec` ran and the values `par_set` wrote, and an
+# agent pastes a service key into either as readily as anything else. `_scrub`
+# only knows the bridge's own token; these catch the two common shapes of
+# someone else's. They are patterns, so they are a net, not a guarantee: a key
+# in no known format assigned to a name that says nothing is written as sent.
+#
+# A name that says "secret", given a quoted string by `=` or `:`, as an
+# assignment, a keyword argument or a dict entry. The name must end at the
+# keyword (or at a `_key`/`_token`/`_header` after it), so `author`,
+# `password_hash` and `token_count` are not names of secrets, and the value
+# must be a string literal, so `token = get_token()` and `token == "x"` keep
+# their text.
+_SECRET_NAME = (
+    r"[\w-]*?(?:password|passwd|secret|token|api_?key|access_?key|auth)"
+    r"(?:[_-]?(?:key|token|header))?"
+)
+_SECRET_ASSIGNED = re.compile(
+    r"(?i)\b(" + _SECRET_NAME + r")\b(['\"]?\s*[:=]\s*)(['\"])(?!\3)(.+?)(\3)"
+)
+_SECRET_KEY_NAME = re.compile(r"(?i)^" + _SECRET_NAME + r"$")
+# Keys that announce themselves by prefix, wherever they stand: OpenAI-style
+# `sk-`, GitHub personal tokens `ghp_`, Slack `xoxb-`/`xoxa-`/`xoxp-`, AWS
+# access key ids `AKIA`.
+_SECRET_LITERAL = re.compile(
+    r"\bsk-[A-Za-z0-9_-]{16,}"
+    r"|\bghp_[A-Za-z0-9]{20,}"
+    r"|\bxox[bap]-[A-Za-z0-9-]{10,}"
+    r"|\bAKIA[0-9A-Z]{16}\b"
+)
+REDACTED = "[redacted]"
+
+
+def _redact(text: str) -> str:
+    """`text` with the values of named secrets and self-announcing keys hidden."""
+    text = _SECRET_LITERAL.sub(REDACTED, text)
+    return _SECRET_ASSIGNED.sub(
+        lambda m: m.group(1) + m.group(2) + m.group(3) + REDACTED + m.group(5),
+        text,
+    )
+
+
 # -- writing ----------------------------------------------------------------
 
 def _clip(text: str, limit: int) -> str:
@@ -239,9 +285,16 @@ _FROM_RESULT = {"flags_set": ("before",), "par_set": ("applied",)}
 
 def _bounded(value: Any, limit: int, long_limit: int, key: str = "",
              depth: int = 0) -> Any:
-    """`value` with every string clipped and every container shortened."""
+    """`value` with every string clipped and every container shortened.
+
+    Secrets are hidden before the clip, so a clip cannot cut a value in two
+    and leave half of it unrecognised; a string under a name that says it is
+    a secret (`{"password": "..."}`) is hidden whole.
+    """
     if isinstance(value, str):
-        return _clip(value, long_limit if key in _LONG_KEYS else limit)
+        if key and _SECRET_KEY_NAME.match(key):
+            return REDACTED
+        return _clip(_redact(value), long_limit if key in _LONG_KEYS else limit)
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if depth >= 6:
@@ -376,7 +429,7 @@ def record(
         if error_reason:
             entry["reason"] = str(error_reason)
         if error_message:
-            entry["message"] = _clip(error_message, MAX_ERROR_CHARS)
+            entry["message"] = _clip(_redact(error_message), MAX_ERROR_CHARS)
     global _write_failure
     try:
         _append(_scrub(_bounded_line(entry, method, params, result), token))

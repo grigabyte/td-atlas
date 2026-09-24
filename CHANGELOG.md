@@ -20,8 +20,13 @@ either from the code they are running:
 
 - **The bridge speaks protocol 8, and protocol 8 is now also the minimum the
   host accepts.** Run `td-atlas reload` once in every project that holds the
-  bridge. A bridge laid down by an earlier build is refused at connect with
-  that fix in the message. Three methods joined the table (`timeline_run`,
+  bridge, and restart the MCP server, which in practice means restarting the
+  client that launched it. Host and bridge are checked against each other
+  only at connect, by the numbers each loaded when it started: a server
+  started before the upgrade refuses the reloaded bridge as newer than it
+  expects, and the new server refuses every bridge that was not reloaded. A bridge
+  laid down by an earlier build is refused at connect with that fix in the
+  message. Three methods joined the table (`timeline_run`,
   `timeline_status`, `timeline_cancel`), and five replies gained fields an
   older bridge does not send: `ping` (`absFrame`, `tick` and a `timeline`
   block),
@@ -37,7 +42,10 @@ either from the code they are running:
   `~/.td-atlas`, so "put it back the way it was yesterday" can be answered
   from the log. The old value of a parameter is not recorded. Every line is
   clipped (code and DAT text at 4 KB, 32 KB a line), the token is scrubbed as
-  before, and the file cap rises from 1 MiB to 16 MiB. `td_log` and
+  before, and other secrets are hidden by pattern: a quoted value given to a
+  name such as `password`, `secret`, `token` or `api_key`, and keys that
+  announce themselves (`sk-…`, `ghp_…`, `xoxb-…`, `AKIA…`), become
+  `[redacted]`. The file cap rises from 1 MiB to 16 MiB. `td_log` and
   `td-atlas log` print the change under each call. Calls that only read are
   logged as before.
 - `td_status` and `td-atlas status` name the timeline's own frame, whether it
