@@ -325,7 +325,7 @@ only way to see it is `par.eval()`, which returns `None`; `par.val` happily
 returns the string you wrote. When `td_op_info` shows an OP parameter, check
 that its value is an operator and not just text you typed.
 
-`td_build` and `td_set_params` (given `op_type`) catch the common case. A `../`
+`td_build` and `td_set_params` catch the common case. A `../`
 reference that resolves, from the parent, to nothing is refused with the
 sibling and absolute spellings. Re-measured on 2026-09-24: `material='mat1'`
 beside `mat1` resolves, `'../mat1'` gives `None`, and `'./x'` reaches a child
@@ -416,9 +416,9 @@ them and reports `output-off`.
 The shipped help documents `t` (Translate), `r` (Rotate) and `s` (Scale), which
 are *groups*. The settable parameters are `tx`, `ty`, `tz`. `td_operator_schema`
 returns the members and marks the groups; `td_build` rejects a group name with
-the members as a suggestion. `td_set_params` only does the same when you pass
-`op_type`; otherwise the name reaches TouchDesigner and comes back as an
-`AttributeError`.
+the members as a suggestion. `td_set_params` does the same, asking the bridge
+for the operator's type when you do not pass `op_type`; only with no index
+built does the name reach TouchDesigner and come back as an `AttributeError`.
 
 Not every operator has the transform parameters you expect. `circleTOP` has no
 `tx`, it has `centerx`/`centery`.

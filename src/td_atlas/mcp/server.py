@@ -816,13 +816,25 @@ def td_set_params(
     """Set parameters on an existing operator, checked against the index first.
 
     Values may be a constant, {"expr": "..."} for an expression, {"bind": "..."}
-    or {"pulse": true}. Pass `op_type` to have the names validated locally
-    before anything is sent. Pass the same `owner` you claimed the area with,
-    or your own claim refuses this write.
+    or {"pulse": true}. Names and '../' OP references are validated against
+    the index before anything is sent; without `op_type` the operator's type
+    is asked of the bridge first, in the same call that resolves the
+    references. Pass the same `owner` you claimed the area with, or your own
+    claim refuses this write.
     """
-    if op_type:
-        # The same '../' check td_build makes, asked of the same bridge.
+    db = None
+    try:
+        db = store()
+    except RuntimeError:
+        pass  # validation is a convenience; without an index, nothing to ask
+    if db is not None:
+        # The same checks td_build makes, from the same one `op_types` call:
+        # the '../' targets, and the node's own type when the caller did not
+        # say it. Without the type, a reference that resolves to nothing was
+        # sent unchecked and read back as None.
         wanted = op_reference_lookups(pars, path)
+        if not op_type and path:
+            wanted.add(path)
         resolved: dict[str, str | None] = {}
         if wanted:
             try:
@@ -833,14 +845,18 @@ def td_set_params(
         def exists(p: str) -> bool | None:
             return (resolved[p] is not None) if p in resolved else None
 
-        try:
-            check = validate_params(
-                store(), op_type, pars, owner=path, exists=exists
-            )
+        # A node the bridge cannot type is left to the write, which names
+        # the missing operator in TouchDesigner's own words. A type the
+        # bridge reports exists by definition, so one the index lacks means
+        # an index from another build, not a caller's mistake, and is not
+        # refused as "unknown operator type".
+        kind = op_type or resolved.get(path) or ""
+        if kind and not op_type and not db.parameters(kind):
+            kind = ""
+        if kind:
+            check = validate_params(db, kind, pars, owner=path, exists=exists)
             if not check.ok:
                 return f"{check.render()}\n\n{hint('params_refused')}"
-        except RuntimeError:
-            pass
     client = bridge()
     try:
         result = client.call("par_set", path=path, pars=pars, owner=owner)

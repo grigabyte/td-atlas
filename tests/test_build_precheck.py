@@ -270,6 +270,86 @@ def test_td_build_counts_what_the_batch_itself_creates(store, monkeypatch):
     assert text.startswith("applied 2"), text
 
 
+class _Writable(_Project):
+    """A project that answers `op_types` and records any `par_set` sent."""
+
+    def __init__(self, paths):
+        super().__init__(paths)
+        self.asked = []
+
+    def call(self, method, **params):
+        if method == "par_set":
+            self.sent.append(params)
+            return {"path": params["path"], "applied": dict(params["pars"])}
+        self.asked.append(sorted(params["paths"]))
+        return super().call(method, **params)
+
+
+def test_td_set_params_checks_a_reference_without_being_told_the_type(
+    store, monkeypatch
+):
+    """'../mat1' on /project1/geo1 read back as None, with no op_type passed.
+
+    The type is asked of the bridge in the same `op_types` call that resolves
+    the reference, so the check costs no round trip it did not already make.
+    """
+    project = _Writable({"/project1", "/project1/geo1", "/project1/mat1"})
+    monkeypatch.setattr(server, "store", lambda: store)
+    monkeypatch.setattr(server, "bridge", lambda: project)
+    monkeypatch.setattr(server, "_warn", lambda _c: "")
+    text = server.td_set_params("/project1/geo1", {"material": "../mat1"})
+    assert "'/project1/mat1' (which exists)" in text, text
+    assert project.sent == []
+    assert len(project.asked) == 1 and "/project1/geo1" in project.asked[0]
+
+
+def test_td_set_params_without_a_type_still_writes_what_checks_out(
+    store, monkeypatch
+):
+    project = _Writable({"/project1", "/project1/geo1", "/project1/mat1"})
+    monkeypatch.setattr(server, "store", lambda: store)
+    monkeypatch.setattr(server, "bridge", lambda: project)
+    monkeypatch.setattr(server, "_warn", lambda _c: "")
+    text = server.td_set_params("/project1/geo1", {"material": "mat1"})
+    assert text.startswith("/project1/geo1: material="), text
+    assert len(project.sent) == 1
+
+
+def test_a_type_the_bridge_reports_but_the_index_lacks_is_not_refused(
+    store, monkeypatch
+):
+    """The bridge's type is real; an index without it is from another build."""
+
+    class Newer(_Writable):
+        def call(self, method, **params):
+            if method == "op_types":
+                self.asked.append(sorted(params["paths"]))
+                return {p: "brandnewTOP" for p in params["paths"]}
+            return super().call(method, **params)
+
+    project = Newer(set())
+    monkeypatch.setattr(server, "store", lambda: store)
+    monkeypatch.setattr(server, "bridge", lambda: project)
+    monkeypatch.setattr(server, "_warn", lambda _c: "")
+    text = server.td_set_params("/project1/new1", {"amp": 2})
+    assert "unknown operator type" not in text, text
+    assert len(project.sent) == 1
+
+
+def test_td_set_params_without_an_index_does_not_ask_for_types(monkeypatch):
+    project = _Writable({"/project1/geo1"})
+
+    def no_index():
+        raise RuntimeError("no index")
+
+    monkeypatch.setattr(server, "store", no_index)
+    monkeypatch.setattr(server, "bridge", lambda: project)
+    monkeypatch.setattr(server, "_warn", lambda _c: "")
+    server.td_set_params("/project1/geo1", {"material": "../mat1"})
+    assert project.asked == []
+    assert len(project.sent) == 1
+
+
 def test_the_schema_prints_a_strmenu_as_suggestions(store):
     rows = {p["name"]: p for p in store.parameters("renameCHOP")}
     assert "suggestions=" in server._fmt_param(rows["renameto"])

@@ -85,8 +85,8 @@ resolving each target's type itself, so a mistake comes back as
 `t: is a parameter group, not a settable parameter (try: tx, ty, tz)`. The check
 is a convenience, not a guarantee: with no index built, and for an existing node
 whose type the bridge cannot report, the batch goes out unchecked.
-`td_set_params` does the same **only when you pass `op_type`**; without it the
-name goes straight to TouchDesigner.
+`td_set_params` does the same, asking the bridge for the node's type when you
+do not pass `op_type`.
 
 ## Building
 
