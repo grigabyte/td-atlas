@@ -1101,11 +1101,13 @@ def td_timeline_profile(
 @mcp.tool()
 @guarded
 def td_health(path: str = "/project1", interval: float = 1.0) -> str:
-    """Find what is quietly broken — the failures nothing reports.
+    """Find what is quietly broken — the failures TouchDesigner never flags.
 
-    Run this after building anything, and whenever a composition "looks fine
-    but does nothing". td_errors only covers what TouchDesigner calls an
-    error; this additionally catches:
+    Operators it does flag are only named here, a warning with one line of its
+    text; for the message attached to each error and warning, and for an
+    answer with no sampling wait, use td_errors. Run this after building
+    anything, and whenever a composition "looks fine but does nothing". It
+    catches:
 
     - operators that never cook, because a branch nothing displays or records
       is never pulled and therefore is not running at all
@@ -1325,9 +1327,13 @@ def td_glossary(term: str, limit: int = 5) -> str:
 @mcp.tool()
 @guarded
 def td_errors(path: str = "/project1") -> str:
-    """Every operator at or under `path` currently reporting an error or warning.
+    """Only what TouchDesigner itself flags as an error or warning, with its message.
 
-    Node errors are shown as colours in the TouchDesigner UI and are otherwise
+    For the failures it stays silent about — a branch that never cooks, an
+    output device switched off, a feedback loop left stale, negative floats
+    from a Level TOP — use td_health. Every operator at or under `path`
+    reporting one is listed with the text TouchDesigner attached to it. Node
+    errors are shown as colours in the TouchDesigner UI and are otherwise
     invisible to you; check this after building something.
 
     The default is the project, not `/`, and asking for `/` is usually the
@@ -1483,9 +1489,12 @@ def td_exec(code: str) -> str:
 def td_project_read(
     file: str, path: str = "", depth: int = 2, params: bool = False
 ) -> str:
-    """Read a .toe or .tox from disk, without TouchDesigner running.
+    """The operator tree of a .toe or .tox on disk, without TouchDesigner running.
 
-    Returns the operator tree with wiring. `path` narrows to a subtree such as
+    For every parameter, flag and whole DAT text at once, as JSON — and as the
+    only form td_project_write takes back — use td_project_text instead. This
+    gives names, types, wiring and the first line of each DAT, as a short
+    indented tree. `path` narrows to a subtree such as
     '/project1', `depth` is how many levels of children to show, and `params`
     adds the parameter values that differ from the defaults — which is all a
     saved project records, so it is exactly what someone chose deliberately.
@@ -1505,10 +1514,11 @@ def td_project_read(
 def td_project_text(file: str, path: str = "", max_bytes: int = 200_000) -> str:
     """Dump a whole .toe/.tox network as JSON, without TouchDesigner running.
 
-    Use this when td_project_read's tree is not enough — when the answer needs
-    every parameter, the wiring, the flags and the DAT code at once, for
-    instance before rewriting a component or explaining what an unfamiliar
-    project actually does.
+    For a look at what a file holds — the tree, types and wiring — use
+    td_project_read, which is far smaller. This gives every parameter, wire,
+    flag and DAT line, in the form td_project_write takes back; reach for it
+    before rewriting a component or explaining what an unfamiliar project
+    actually does.
 
     DAT text arrives as an array of lines rather than one escaped string, so a
     single changed line stays a single changed line; join the array with '\n'
@@ -1613,9 +1623,12 @@ def td_project_write(file: str, text: str, output: str) -> str:
 @mcp.tool()
 @guarded
 def td_variant_save(file: str, label: str, note: str = "", path: str = "") -> str:
-    """Keep the current state of a .toe/.tox so it can be returned to and compared.
+    """Keep a .toe/.tox file on disk so it can be returned to and compared.
 
-    Take one before trying a direction, another after, and td_variant_diff
+    It reads the file as last saved, with no TouchDesigner needed, not what is
+    open in the running instance: for a branch of the live network, edits not
+    yet saved included, use td_snapshot. Take one variant before trying a
+    direction, another after, and td_variant_diff
     says exactly what the direction changed. Nothing of the user's is touched:
     the variant is the network text plus a byte copy of the file, kept under
     ~/.td-atlas/variants and grouped by the project's path.
@@ -1697,10 +1710,11 @@ def td_variant_diff(
     show_moves: bool = False,
     include_text: bool = True,
 ) -> str:
-    """Compare two saved variants of the same project.
+    """Compare two td_variant_save states of one project, named by label.
 
-    The same semantic comparison td_project_diff runs, aimed at two saved
-    states instead of two files: added, removed, retyped, rewired and
+    For any two files named by path — two td_snapshot files of a live branch
+    included — use td_project_diff; it runs the same semantic comparison:
+    added, removed, retyped, rewired and
     re-parameterised operators, plus a line diff of changed DAT code. Nodes
     that only moved are counted separately so they cannot bury a real change.
     """
@@ -1745,9 +1759,11 @@ def td_project_grep(file: str, pattern: str, limit: int = 100) -> str:
 def td_project_diff(
     before: str, after: str, show_moves: bool = False, include_text: bool = True
 ) -> str:
-    """Compare two .toe/.tox files and report what actually changed.
+    """Compare any two .toe/.tox files, named by path, and report what changed.
 
-    Reports added, removed, retyped, rewired and re-parameterised operators,
+    For two states kept with td_variant_save, use td_variant_diff, which takes
+    their labels. This reports added, removed, retyped, rewired and
+    re-parameterised operators,
     plus a line diff of any changed DAT code. Nodes that were only dragged to
     a new position are counted separately so they cannot bury a real change.
 
@@ -1776,9 +1792,12 @@ def td_project_diff(
 @mcp.tool()
 @guarded
 def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
-    """Save a component to a file so it can be diffed later.
+    """Save a COMP of the running TouchDesigner to a .tox so it can be diffed later.
 
-    This is how to keep "every parameter of this branch" before changing it,
+    For a .toe/.tox file on disk — no TouchDesigner needed, restorable with
+    td_variant_restore — use td_variant_save. A snapshot captures the live
+    network, edits not yet saved included. This is how to keep "every
+    parameter of this branch" before changing it,
     instead of dumping them to text by hand. `path` is the COMP holding the
     branch. Take one snapshot before a round of edits and another of the same
     `path` after, under a different label, then pass both files to
