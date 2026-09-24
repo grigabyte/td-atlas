@@ -44,6 +44,7 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
 - `bypass-passes-through` (note) names a bypassed `levelTOP`, `mathTOP`,
   `hsvadjustTOP`, `mathCHOP` or `mathPOP`. Bypass hands the input through at
   full strength, so the layer it was dimming comes back instead of going away.
+  Such an operator is named here and not again under `bypassed`.
 - `negative-float` (warning with an Add below, note without) names a Level TOP
   in a float pixel format with a black level above 0 and no clamp. It outputs
   values below zero, and an Add TOP or a Composite set to `add` within four
@@ -51,8 +52,9 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
 - `nondeterministic` (warning) names each read of `absTime`, `time.time()` or
   an unseeded `random` in a parameter expression or a callback. The frame then
   does not reproduce between runs. When the bridge's time budget ends the
-  parameter scan early, `nondeterminism-unscanned` (note) says how many
-  operators were checked.
+  scan early, `nondeterminism-unscanned` (note) says how many operators'
+  parameters were checked, and how many scripts when not all were. Scripts
+  are read first, under the same budget.
 
 `td_health` also tells a genuinely dead network from a paused timeline or a
 backgrounded window. In those the frame clock is frozen and there is no evidence

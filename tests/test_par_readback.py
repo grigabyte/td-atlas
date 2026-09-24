@@ -176,3 +176,50 @@ def test_a_missing_parameter_still_says_so_plainly():
     with pytest.raises(AttributeError) as caught:
         handler._apply_pars(target, {"contrsat": 1.0})
     assert "no parameter 'contrsat'" in str(caught.value)
+
+
+# -- what the write replaced -------------------------------------------------
+#
+# The journal keeps an old value only when the bridge sends one, and par_set
+# sent none: "put it back the way it was" meant finding the earlier line that
+# set the parameter, which does not exist for a value set by hand. The bridge
+# now reads what each parameter holds, in the request that overwrites it.
+
+def _par_set(monkeypatch, target, pars):
+    monkeypatch.setattr(handler, "_guard_scopes", lambda *_a: None)
+    monkeypatch.setattr(handler, "_resolve", lambda _p: target)
+    return handler.m_par_set({"path": target.path, "pars": pars})
+
+
+def test_par_set_returns_what_each_parameter_held_before_the_write(monkeypatch):
+    tx = FakePar("tx")
+    tx.val, tx.mode = 0.2, "ParMode.CONSTANT"
+    ty = FakePar("ty")
+    ty.expr, ty.mode = "absTime.seconds", "ParMode.EXPRESSION"
+    target = FakeOP("/project1/geo1", "geometryCOMP", tx=tx, ty=ty)
+    reply = _par_set(monkeypatch, target, {"tx": 0.5, "ty": 1.0})
+    assert reply.get("before") == {
+        "tx": {"value": 0.2, "mode": "CONSTANT"},
+        "ty": {"expr": "absTime.seconds", "mode": "EXPRESSION"},
+    }
+    assert reply["applied"] == {"tx": 0.5, "ty": 1.0}
+
+
+def test_a_pulse_replaces_nothing_and_has_no_before(monkeypatch):
+    target = FakeOP("/x", "moviefileinTOP", cuepulse=FakePar("cuepulse"))
+    target.par.cuepulse.pulse = lambda: None
+    reply = _par_set(monkeypatch, target, {"cuepulse": {"pulse": True}})
+    assert reply.get("before") == {}
+
+
+def test_an_unreadable_old_value_does_not_cost_the_write(monkeypatch):
+    class Stubborn(FakePar):
+        def __getattribute__(self, name):
+            if name == "mode":
+                raise RuntimeError("no mode here")
+            return object.__getattribute__(self, name)
+
+    target = FakeOP("/x", "levelTOP", opacity=Stubborn("opacity"))
+    reply = _par_set(monkeypatch, target, {"opacity": 0.5})
+    assert reply["applied"] == {"opacity": 0.5}
+    assert reply.get("before") == {}

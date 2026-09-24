@@ -75,13 +75,18 @@ def wait_frames(client, frames: int, budget: float | None = None) -> Settled:
     the one asked for, not the one achieved, and a heavy network or a
     background window draws fewer frames than it — exactly the case where the
     edit would still be missing from the image.
+
+    The polls are left out of the call journal: they are this wait's
+    bookkeeping, one a frame, and a stalled application turned ten seconds of
+    them into six hundred lines between the calls a reader came for. The call
+    the settle came before is journaled as usual.
     """
     budget = DEFAULT_BUDGET if budget is None else budget
     clock, sleep = time.monotonic, time.sleep
     started = clock()
     if frames <= 0:
         return Settled(frames, 0, 0.0)
-    first = client.ping()
+    first = client.ping(journaled=False)
     # One key for the whole wait: `tick` where the bridge sends it, else the
     # older `frame` (absTime.frame, which stands still on a paused timeline).
     key = "tick" if isinstance(first.get("tick"), (int, float)) else "frame"
@@ -94,7 +99,7 @@ def wait_frames(client, frames: int, budget: float | None = None) -> Settled:
     advanced = 0
     while True:
         sleep(step)
-        now = client.ping().get(key)
+        now = client.ping(journaled=False).get(key)
         if isinstance(now, (int, float)):
             advanced = int(now - origin)
         if advanced >= frames or clock() - started >= budget:

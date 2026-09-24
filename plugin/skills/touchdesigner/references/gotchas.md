@@ -325,7 +325,7 @@ only way to see it is `par.eval()`, which returns `None`; `par.val` happily
 returns the string you wrote. When `td_op_info` shows an OP parameter, check
 that its value is an operator and not just text you typed.
 
-`td_build` and `td_set_params` (given `op_type`) catch the common case. A `../`
+`td_build` and `td_set_params` catch the common case. A `../`
 reference that resolves, from the parent, to nothing is refused with the
 sibling and absolute spellings. Re-measured on 2026-09-24: `material='mat1'`
 beside `mat1` resolves, `'../mat1'` gives `None`, and `'./x'` reaches a child
@@ -416,9 +416,9 @@ them and reports `output-off`.
 The shipped help documents `t` (Translate), `r` (Rotate) and `s` (Scale), which
 are *groups*. The settable parameters are `tx`, `ty`, `tz`. `td_operator_schema`
 returns the members and marks the groups; `td_build` rejects a group name with
-the members as a suggestion. `td_set_params` only does the same when you pass
-`op_type`; otherwise the name reaches TouchDesigner and comes back as an
-`AttributeError`.
+the members as a suggestion. `td_set_params` does the same, asking the bridge
+for the operator's type when you do not pass `op_type`; only with no index
+built does the name reach TouchDesigner and come back as an `AttributeError`.
 
 Not every operator has the transform parameters you expect. `circleTOP` has no
 `tx`, it has `centerx`/`centery`.
@@ -535,7 +535,8 @@ Bypass is not off, either. A bypassed Level TOP still passes its input down
 the chain, unlevelled, so bypassing a layer does not take it out of a
 composite. Disconnect it, or set its own opacity or brightness to zero.
 
-`td_health` reports it as `bypassed` and lists every path. It reads the flag and
+`td_health` reports it as `bypassed` and lists every path, except a gain
+operator's, which goes under the note below instead. It reads the flag and
 nothing else, and cannot tell an intentional bypass from a forgotten one, so it
 names them all. Bypass is a flag, not a parameter. It is in `NODE_FLAGS`, so
 `td_flags` reads it and `td_set_flags` clears it, and it does not appear in
@@ -544,9 +545,9 @@ names them all. Bypass is a flag, not a parameter. It is in `NODE_FLAGS`, so
 Bypass on an operator whose job is to scale a signal reads as "switched off",
 and does the opposite. A bypassed Level TOP hands its input through at full
 strength, so the layer it was dimming comes back. An agent bypassed a glow's
-Level TOP to rule the glow out, and the glow stayed. `td_health` adds the note
-`bypass-passes-through` for a bypassed `levelTOP`, `mathTOP`, `hsvadjustTOP`,
-`mathCHOP` or `mathPOP`. To take a layer out, bring its level to zero. In that
+Level TOP to rule the glow out, and the glow stayed. `td_health` names a
+bypassed `levelTOP`, `mathTOP`, `hsvadjustTOP`, `mathCHOP` or `mathPOP` under
+the note `bypass-passes-through`, once, and not under `bypassed` as well. To take a layer out, bring its level to zero. In that
 case `brightness1 = 0` on the Level TOP did it. Disconnecting it works too.
 
 ## A Level TOP in a float format can output negative values
@@ -585,8 +586,8 @@ and every Execute-family DAT or Script operator's callbacks, that reads
 `absTime.*`, `time.time()` or draws from `random` (NumPy's included) without a
 `random.seed(` in the same text. A parameter holds no seed, so a draw there is
 always named. `tdu.rand(seed)` is a hash of its argument and is not flagged.
-The parameter half of the scan stops at the bridge's time budget, and says so
-as `nondeterminism-unscanned`.
+The scan stops at the bridge's time budget, script text first and parameters
+after it, and says so as `nondeterminism-unscanned`.
 
 **Fix.** For a render that has to come out the same twice, read the timeline:
 `me.time.seconds` or `me.time.frame`. Seed any generator.
@@ -615,8 +616,9 @@ Three of `td_health`'s findings are about the report, not about the project:
   reduced. The host sleeps through that gap and answers nothing else meanwhile,
   so the interval is bounded.
 - `nondeterminism-unscanned` means the check for clock reads ran out of its
-  time budget. It names how many operators' parameters it got through. Script
-  DATs are read in full before that budget starts.
+  time budget. It names how many operators' parameters it got through, and
+  how many scripts when it stopped before reading them all. Scripts are read
+  first, under the same budget.
 
 ## Stale errors
 

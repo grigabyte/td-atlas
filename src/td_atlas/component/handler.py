@@ -2711,10 +2711,54 @@ def _apply_pars(target, values):
     return applied
 
 
+def _pars_before(target, values):
+    """What each parameter about to be written holds now, for the journal.
+
+    The host's journal can only keep an old value the bridge sends, and until
+    this read existed "put it back the way it was" meant finding the earlier
+    line that set the parameter — which is no answer for a value the artist
+    set by hand. The read is one attribute per parameter inside the request
+    that is writing it anyway.
+
+    What is kept is what the write replaces: the expression text in
+    expression mode, the bind expression in bind mode, and the constant
+    (`par.val`, not `eval()`) otherwise, each beside the mode it was in. A
+    pulse replaces nothing and is skipped; so is a name the operator lacks,
+    which `_apply_pars` refuses in its own words. Nothing read here may cost
+    the write: a value that will not read is left out, not raised.
+    """
+    before = {}
+    for name, value in values.items():
+        if isinstance(value, dict) and value.get("pulse"):
+            continue
+        par = getattr(target.par, name, None)
+        if par is None:
+            continue
+        try:
+            mode = str(par.mode).rsplit(".", 1)[-1]
+            if mode == "EXPRESSION":
+                entry = {"expr": _jsonable(par.expr)}
+            elif mode == "BIND":
+                entry = {"bind": _jsonable(par.bindExpr)}
+            else:
+                entry = {"value": _jsonable(par.val)}
+            entry["mode"] = mode
+        except Exception:
+            continue
+        before[name] = entry
+    return before
+
+
 def m_par_set(params):
     _guard_scopes(params, params.get("path"))
     target = _resolve(params.get("path"))
-    return {"path": target.path, "applied": _apply_pars(target, params["pars"])}
+    # Read before the write, necessarily: afterwards the old value is gone.
+    before = _pars_before(target, params["pars"])
+    return {
+        "path": target.path,
+        "applied": _apply_pars(target, params["pars"]),
+        "before": before,
+    }
 
 
 def m_render(params):
@@ -3735,10 +3779,10 @@ _SCRIPT_DATS = (
 # Script operators keep their code in the DAT their `callbacks` names.
 _SCRIPT_OPS = ("scriptCHOP", "scriptTOP", "scriptSOP", "scriptDAT")
 
-# The parameter half of the clock scan reads every parameter of every walked
-# operator — the one per-parameter pass in this sample — so it stops at a
-# budget and reports how far it got, as the walk does at its node ceiling.
-# Chosen, not measured: a little under one 60 fps frame (16.7 ms), on top of
+# The clock scan reads the text of every script and every parameter of every
+# walked operator — the one per-parameter pass in this sample — so both halves
+# stop at one deadline and report how far each got, as the walk does at its
+# node ceiling. Chosen, not measured: a little under one 60 fps frame (16.7 ms), on top of
 # the walk's own cost. Its real cost per operator has not been timed inside
 # TouchDesigner.
 _CLOCK_SCAN_BUDGET_S = 0.015
@@ -3839,10 +3883,17 @@ def _clock_calls(text):
 def _clock_reads(ops, budget):
     """Where a frame depends on something other than the timeline.
 
-    Returns (reads, scanned, total). Script text first — few DATs, and the
-    likelier home of such a call — then every expression-mode parameter until
-    `budget` seconds have passed. A parameter is judged by its mode: an
-    expression left behind on a constant parameter is not evaluated.
+    Returns (reads, scanned, total, scripts_scanned, scripts_total). Script
+    text first — few DATs, and the likelier home of such a call — then every
+    expression-mode parameter, the two under one deadline `budget` seconds
+    away. A parameter is judged by its mode: an expression left behind on a
+    constant parameter is not evaluated.
+
+    The script half was read whole until 2026-09-24, with no clock on it. Its
+    cost grows with the code in the project as the parameter half grows with
+    the operators, and both run on the main thread, so one deadline covers
+    both and each half says how far it got. One deadline rather than two of
+    the same size, because the budget is sized against one frame.
     """
     reads = []
 
@@ -3850,12 +3901,21 @@ def _clock_reads(ops, budget):
         for call in _clock_calls(text):
             reads.append({"path": path, "where": where, "call": call})
 
-    for target in ops:
+    deadline = time.perf_counter() + budget
+    scripts = [
+        target for target in ops
+        if getattr(target, "OPType", "") in _SCRIPT_DATS + _SCRIPT_OPS
+    ]
+    scripts_scanned = 0
+    for target in scripts:
+        if time.perf_counter() >= deadline:
+            break
+        scripts_scanned += 1
         kind = getattr(target, "OPType", "")
         try:
             if kind in _SCRIPT_DATS:
                 note(target.path, "text", str(target.text or ""))
-            elif kind in _SCRIPT_OPS:
+            else:
                 dat = _par_value(target, "callbacks")
                 text = getattr(dat, "text", None)
                 if text:
@@ -3863,7 +3923,6 @@ def _clock_reads(ops, budget):
         except Exception:
             continue
 
-    deadline = time.perf_counter() + budget
     scanned = 0
     for target in ops:
         if time.perf_counter() >= deadline:
@@ -3880,7 +3939,7 @@ def _clock_reads(ops, budget):
                 note(target.path, par.name, str(par.expr or ""))
             except Exception:
                 continue
-    return reads, scanned, len(ops)
+    return reads, scanned, len(ops), scripts_scanned, len(scripts)
 
 
 def m_health_sample(params):
@@ -4029,7 +4088,8 @@ def m_health_sample(params):
 
     # The root's own parameters count: a custom parameter on the component is
     # where a camera driver or a global clock often lives.
-    clock_reads, clock_scanned, clock_total = _clock_reads(
+    (clock_reads, clock_scanned, clock_total,
+     scripts_scanned, scripts_total) = _clock_reads(
         [target] + list(scanned), _CLOCK_SCAN_BUDGET_S
     )
 
@@ -4060,7 +4120,11 @@ def m_health_sample(params):
         "scanned": len(scanned) + 1,
         "clockReads": clock_reads[:_MAX_CLOCK_READS],
         "clockReadsCount": len(clock_reads),
-        "clockScan": {"scanned": clock_scanned, "of": clock_total},
+        "clockScan": {
+            "scanned": clock_scanned,
+            "of": clock_total,
+            "scripts": {"scanned": scripts_scanned, "of": scripts_total},
+        },
     }
     if unvisited:
         # A health verdict over part of a network must not read as a verdict

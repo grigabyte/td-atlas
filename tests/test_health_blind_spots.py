@@ -178,8 +178,24 @@ def test_a_bypassed_level_is_said_to_pass_its_input_through():
     assert through is not None and through.severity == "note"
     assert through.paths == ["/p/glow_lev (levelTOP)"]
     assert "does not switch" in through.message
-    # The flag itself is still reported for every bypassed operator.
-    assert finding(result, "bypassed").paths == ["/p/glow_lev", "/p/blur1"]
+    # Each bypassed operator is named once: a gain operator under the note
+    # that says what its bypass does, every other one under the warning.
+    assert finding(result, "bypassed").paths == ["/p/blur1"]
+
+
+def test_gain_operators_alone_leave_no_empty_bypass_warning():
+    nodes = [node("/p/glow_lev", 10, type="levelTOP", bypass=True)]
+    result = check(sample(0, nodes), sample(60, [dict(nodes[0], cooks=70)]))
+    assert finding(result, "bypassed") is None
+    assert finding(result, "bypass-passes-through").paths == [
+        "/p/glow_lev (levelTOP)"]
+
+
+def test_the_bypass_warning_counts_the_gain_operators_it_leaves_to_the_note():
+    nodes = [node("/p/glow_lev", 10, type="levelTOP", bypass=True),
+             node("/p/blur1", 10, type="blurTOP", bypass=True)]
+    result = check(sample(0, nodes), sample(60, [dict(n, cooks=70) for n in nodes]))
+    assert "bypass-passes-through" in finding(result, "bypassed").message
 
 
 # -- B4: negative values out of a Level TOP in a float format ---------------
@@ -429,6 +445,56 @@ def test_the_clock_scan_stops_at_its_budget_and_says_so(monkeypatch, td_globals)
         Par("tx", 0.0, "absTime.seconds", "ParMode.EXPRESSION")])
     reply = sampled(monkeypatch, film, Op("/project1/b"), Op("/project1/c"))
     assert reply["clockScan"]["scanned"] < reply["clockScan"]["of"]
+
+
+def test_the_script_half_of_the_clock_scan_stops_at_the_budget_too(
+    monkeypatch, td_globals
+):
+    """Script text was read whole, however many DATs, with no clock on it.
+
+    Its cost grows with the code in the project as the parameter half grows
+    with the operators, and both run on TouchDesigner's main thread.
+    """
+    monkeypatch.setattr(handler, "_CLOCK_SCAN_BUDGET_S", 0.0)
+    scripts = [Op("/project1/cb%d" % i, "executeDAT", "DAT",
+                  text="t = absTime.seconds\n") for i in range(3)]
+    reply = sampled(monkeypatch, *scripts)
+    part = reply["clockScan"].get("scripts") or {}
+    assert part.get("of") == 3
+    assert part.get("scanned", 3) < 3
+
+
+def test_every_script_is_read_when_there_is_time(monkeypatch, td_globals):
+    scripts = [Op("/project1/cb%d" % i, "executeDAT", "DAT",
+                  text="t = absTime.seconds\n") for i in range(3)]
+    reply = sampled(monkeypatch, *scripts)
+    assert reply["clockScan"].get("scripts") == {"scanned": 3, "of": 3}
+    assert len(reply["clockReads"]) == 3
+
+
+def test_a_scan_that_left_scripts_unread_says_how_many():
+    nodes = [node("/p/a", 10)]
+    result = check(sample(0, nodes),
+                   sample(60, [node("/p/a", 70)], clockReads=[],
+                          clockReadsCount=0,
+                          clockScan={"scanned": 0, "of": 900,
+                                     "scripts": {"scanned": 4, "of": 40}}))
+    partial = finding(result, "nondeterminism-unscanned")
+    assert partial is not None
+    assert "4 of 40 script" in partial.message
+    assert "0 of 900" in partial.message
+    assert "were all read" not in partial.message
+
+
+def test_a_scan_short_only_on_scripts_still_says_so():
+    nodes = [node("/p/a", 10)]
+    result = check(sample(0, nodes),
+                   sample(60, [node("/p/a", 70)], clockReads=[],
+                          clockReadsCount=0,
+                          clockScan={"scanned": 900, "of": 900,
+                                     "scripts": {"scanned": 4, "of": 40}}))
+    partial = finding(result, "nondeterminism-unscanned")
+    assert partial is not None and "4 of 40 script" in partial.message
 
 
 def test_a_paused_timeline_does_not_split_cook_times_into_now_and_long_ago():
