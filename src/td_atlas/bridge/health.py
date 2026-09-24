@@ -46,6 +46,18 @@ _OUTPUT_TYPES = {
 
 _SEVERITY_ORDER = {"error": 0, "warning": 1, "note": 2}
 
+# A cook this many frames before the first sample still counts as current:
+# the sample may be answered in a frame before the operator's own cook in it.
+# One frame, chosen rather than measured — the sampling order inside a frame
+# was not observed.
+_CURRENT_ALLOWANCE = 1
+
+# Operators whose job is to scale a signal. Bypass on any operator hands its
+# input through, but on these it reads as "switched off" and does the
+# opposite: a bypassed Level TOP leaves its layer at full strength. An agent
+# lost part of an hour to exactly that (report of 2026-09-20).
+_GAIN_TYPES = ("levelTOP", "mathTOP", "hsvadjustTOP", "mathCHOP", "mathPOP")
+
 # How much of a compiler log or a traceback is worth putting beside a path.
 _EXCERPT = 110
 
@@ -184,6 +196,43 @@ class Health:
         return head + "\n" + "\n".join(f.render() for f in ordered)
 
 
+def _file_cook_time(node: dict, first_frame: float, now: float,
+                    current: list[str], stale: list[str]) -> None:
+    """Put an expensive operator in the list its cook time belongs to.
+
+    `cookTime` is the duration of the last cook, whenever that was. Read
+    without its frame it passes for the cost of the frame being drawn now,
+    and a Movie File In last cooked 374,144 frames earlier was reported as a
+    44 ms culprit that way (agent report, 2026-09-20). A bridge older than
+    `cookAbsFrame` sends no frame, and its line stays what it was.
+    """
+    cost = f"{node['path']} ({node['cookTime']:.0f} ms"
+    last = node.get("cookAbsFrame")
+    if not isinstance(last, (int, float)):
+        current.append(cost + ")")
+        return
+    if last >= first_frame - _CURRENT_ALLOWANCE:
+        current.append(f"{cost}, cooked {now - last:.0f} frame(s) ago, during "
+                       f"this check, at absolute frame {last:.0f})")
+        return
+    timeline = node.get("cookFrame")
+    where = (f", timeline frame {timeline:.0f}"
+             if isinstance(timeline, (int, float)) else "")
+    stale.append(
+        f"{cost}, last cooked {now - last:.0f} frames ago at absolute frame "
+        f"{last:.0f}{where})"
+    )
+
+
+def _clock_read_line(read: dict) -> str:
+    where = read.get("where") or ""
+    if where == "text":
+        return f"{read.get('path')} uses {read.get('call')} (script text)"
+    if where.startswith("callbacks of "):
+        return f"{read.get('path')} uses {read.get('call')} ({where})"
+    return f"{read.get('path')} {where} = {read.get('call')}"
+
+
 def _publish(client: BridgeClient, health: Health) -> None:
     """Put the verdict on the bridge's own status panel. Best effort.
 
@@ -272,6 +321,12 @@ def check(
 
     dormant: list[str] = []
     slow: list[str] = []
+    stale: list[str] = []
+    loops: list[str] = []
+    through: list[str] = []
+    negative_add: list[str] = []
+    negative_only: list[str] = []
+    negative_depth = 0
     errored: list[str] = []
     warned: list[str] = []
     bypassed: list[str] = []
@@ -307,7 +362,23 @@ def check(
             health.cooking += 1
 
         if node["cookTime"] >= _SLOW_COOK_MS:
-            slow.append(f"{node['path']} ({node['cookTime']:.0f} ms)")
+            _file_cook_time(node, first["frame"], second["frame"], slow, stale)
+        feedback = node.get("feedback")
+        if isinstance(feedback, dict) and not feedback.get("reset"):
+            target = feedback.get("target") or "no target parameter"
+            loops.append(f"{node['path']} (target {target})")
+        if node["bypass"] and node["type"] in _GAIN_TYPES:
+            through.append(f"{node['path']} ({node['type']})")
+        risk = node.get("negativeFloat")
+        if isinstance(risk, dict):
+            negative_depth = max(negative_depth, int(risk.get("depth") or 0))
+            head = (f"{node['path']} ({risk.get('format')}, black level "
+                    f"{risk.get('blacklevel')}")
+            adds = risk.get("adds") or []
+            if adds:
+                negative_add.append(f"{head}, added in {', '.join(adds)})")
+            else:
+                negative_only.append(head + ")")
         if node["errors"]:
             errored.append(node["path"])
         if node["warnings"]:
@@ -447,10 +518,105 @@ def check(
                 slow,
             )
         )
+    if stale:
+        health.findings.append(
+            Finding(
+                "note", "expensive-stale",
+                f"{len(stale)} operator(s) show a cook time over "
+                f"{_SLOW_COOK_MS:.0f} ms from a cook that happened before this "
+                f"check began — they did not cook while it ran and are not "
+                f"part of the current frame, so they are not what holds the "
+                f"frame rate down",
+                stale,
+            )
+        )
     if bypassed:
         health.findings.append(
             Finding("warning", "bypassed",
                     f"{len(bypassed)} operator(s) bypassed", bypassed))
+    if through:
+        health.findings.append(
+            Finding(
+                "note", "bypass-passes-through",
+                f"{len(through)} gain operator(s) bypassed. Bypass hands the "
+                f"input through unchanged — it does not switch the layer off, "
+                f"and a bypassed Level TOP leaves it at full strength. To take "
+                f"a layer out, bring its level to zero (brightness1 0 on a "
+                f"Level TOP did it in the case this note comes from) or "
+                f"disconnect it",
+                through,
+            )
+        )
+    if loops:
+        health.findings.append(
+            Finding(
+                "note", "feedback-loops",
+                f"the network has {len(loops)} feedback loop(s). "
+                f"cook(force=True) does not advance them: they keep what the "
+                f"last real timeline frame left, so a frame produced by "
+                f"forced cooks carries a stale trail (observed on a Feedback "
+                f"TOP; the CHOP and POP hold state between frames the same "
+                f"way). To get the right frame, play the timeline rather than "
+                f"forcing cooks",
+                loops,
+            )
+        )
+    if negative_add:
+        health.findings.append(
+            Finding(
+                "warning", "negative-float",
+                f"{len(negative_add)} Level TOP(s) can output negative values "
+                f"— a float format, a black level above 0 and no clamp — and "
+                f"an Add below takes them away from what it adds to, which "
+                f"darkens it. Turn on the Post page clamp with clamplow2 0. "
+                f"Checked: Level TOPs only, and an Add TOP or a Composite set "
+                f"to add within {negative_depth} operators downstream",
+                negative_add,
+            )
+        )
+    if negative_only:
+        health.findings.append(
+            Finding(
+                "note", "negative-float",
+                f"{len(negative_only)} Level TOP(s) can output negative "
+                f"values — a float format, a black level above 0 and no "
+                f"clamp. No Add TOP or Composite set to add was found within "
+                f"{negative_depth} operators downstream; anything else that "
+                f"sums (a GLSL, a Math) is not checked. The Post page clamp "
+                f"with clamplow2 0 removes them",
+                negative_only,
+            )
+        )
+    reads = second.get("clockReads") or []
+    if reads:
+        count = second.get("clockReadsCount", len(reads))
+        more = (f" ({count - len(reads)} more not listed)"
+                if count > len(reads) else "")
+        health.findings.append(
+            Finding(
+                "warning", "nondeterministic",
+                f"{count} read(s) of a clock or a random generator that is "
+                f"not the timeline{more} — the frame does not reproduce "
+                f"between runs, and two recordings of the same timeline "
+                f"differ. absTime is the application's clock and keeps "
+                f"counting while the timeline stands still; for a "
+                f"deterministic render read me.time.seconds or "
+                f"me.time.frame, and seed any generator",
+                [_clock_read_line(read) for read in reads],
+            )
+        )
+    scan = second.get("clockScan") or {}
+    if scan.get("scanned", 0) < scan.get("of", 0):
+        health.findings.append(
+            Finding(
+                "note", "nondeterminism-unscanned",
+                f"the parameters of {scan['scanned']} of {scan['of']} "
+                f"operator(s) were checked for clock reads before the "
+                f"bridge's time budget ran out; the rest were not looked at, "
+                f"and script DATs were all read. Run this on a subtree to "
+                f"cover them",
+            )
+        )
     if warned:
         health.findings.append(
             Finding("note", "node-warnings",
