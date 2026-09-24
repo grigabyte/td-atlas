@@ -115,11 +115,50 @@ for _t in _types:
                 _pageorder[_pg.name] = _i
         except Exception:
             pass
+        _seen = set()
         for _p in _node.pars():
+            _seen.add(_p.name)
             try:
                 _entry['params'].append(_describe(_p, _pageorder))
             except Exception as _pe:
                 _entry['params'].append({'name': _p.name, 'error': str(_pe)})
+        # Tuples a size menu grows. pars() lists only the members the current
+        # size shows, and a fresh node sits at the smallest: noisePOP's amp is
+        # amp0 at parsize '1' and amp0..amp3 at '4' (measured, see
+        # tests/test_param_tuples.py). A size menu is a Menu whose entries are
+        # all digits; each is stepped through its values, what each step adds
+        # is recorded with the first value that shows it, and the menu is put
+        # back before the next one so their effects are not mixed.
+        for _mp in [_p for _p in _node.pars()]:
+            _names = _safe(lambda: [str(_n) for _n in (_mp.menuNames or [])], [])
+            if (_safe(lambda: _mp.style) != 'Menu' or not _names
+                    or len(_names) > 8 or not all(_n.isdigit() for _n in _names)):
+                continue
+            _orig = _safe(lambda: _mp.val)
+            try:
+                for _v in _names:
+                    _mp.val = _v
+                    for _p in _node.pars():
+                        if _p.name in _seen:
+                            continue
+                        _seen.add(_p.name)
+                        try:
+                            _d = _describe(_p, _pageorder)
+                        except Exception as _pe:
+                            _d = {'name': _p.name, 'error': str(_pe)}
+                        _d['appears_when'] = '%%s=%%s' %% (_mp.name, _v)
+                        _entry['params'].append(_d)
+            except Exception as _se:
+                # Recorded, not swallowed: a size menu that could not be
+                # stepped leaves its tuples short in the index, and the probe
+                # report has to say which.
+                _entry.setdefault('size_menu_errors', []).append(
+                    '%%s: %%s: %%s' %% (_mp.name, type(_se).__name__, _se))
+            finally:
+                try:
+                    _mp.val = _orig
+                except Exception:
+                    pass
         _out[_t] = _entry
     except Exception as _e:
         _out[_t] = {'type': _t, 'error': '%%s: %%s' %% (type(_e).__name__, _e)}
@@ -146,6 +185,9 @@ class ProbeStats:
         self.params_merged = 0
         self.failures: dict[str, str] = {}
         self.new_types: list[str] = []
+        # Size menus that could not be stepped, so the tuples they grow are
+        # short in the index: {op_type: [reason, ...]}.
+        self.size_menu_errors: dict[str, list[str]] = {}
 
     def summary(self) -> str:
         text = (
@@ -156,6 +198,12 @@ class ProbeStats:
             text += f", {len(self.new_types)} type(s) absent from the help file"
         if self.failures:
             text += f", {len(self.failures)} type(s) could not be instantiated"
+        if self.size_menu_errors:
+            text += (
+                f", {len(self.size_menu_errors)} type(s) with a size menu that "
+                f"could not be stepped (their tuples may be short: "
+                f"{', '.join(sorted(self.size_menu_errors)[:5])})"
+            )
         return text
 
 
@@ -303,6 +351,8 @@ def run(
             )
             usable = [p for p in entry.get("params", []) if not p.get("error")]
             stats.params_merged += store.merge_runtime_params(op_type, usable)
+            if entry.get("size_menu_errors"):
+                stats.size_menu_errors[op_type] = entry["size_menu_errors"]
             stats.types_probed += 1
 
         store.conn.commit()

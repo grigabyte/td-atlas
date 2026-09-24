@@ -72,7 +72,9 @@ names, `compTOP` for `compositeTOP`, that the index expands.
 Stages `bootstrap.py` and `handler.py` into `~/.td-atlas`, mints a token, and
 prints two lines to paste. One is the `exec(open(...).read())` line for
 TouchDesigner's textport, the other the `claude mcp add` line for an MCP
-client. Re-running it upgrades the staged sources in place, and re-pasting the
+client — once for the current directory only, which is Claude Code's default
+scope, and once with `-s user` for every directory. It runs neither.
+Re-running it upgrades the staged sources in place, and re-pasting the
 bootstrap line upgrades the bridge inside a project in place.
 
 | Flag | |
@@ -196,6 +198,7 @@ Saves a TOP's image to a file.
 | --- | --- |
 | `-o, --output PATH` | where to write (default `render.png`) |
 | `--width N`, `--height N` | resize; omitted, the TOP's own resolution is used |
+| `--settle-frames N` | wait N of TouchDesigner's own frames first, so an edit made just before is in the image; says so if TouchDesigner stopped drawing |
 
 ### `td-atlas log`
 

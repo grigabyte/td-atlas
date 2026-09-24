@@ -218,6 +218,55 @@ def test_the_cache_line_survives_a_broken_link(
     assert "--clear-cache" in text
 
 
+def test_a_backlog_over_the_ceiling_drains_by_a_share_per_expansion(
+    monkeypatch, tmp_path
+):
+    """The owner's cache read 1246 while `doctor` said "200 kept".
+
+    The ceiling does hold, only not at once: the backlog is from before it
+    existed (2209 entries on 2026-09-06), and each new expansion trims at most
+    `_MAX_EVICTIONS_PER_CALL` of it. Scaled down 10x here: 124 entries over a
+    ceiling of 20, trimmed 3 at a time, are gone after ceil(104/3) = 35 trims.
+    """
+    monkeypatch.setattr(expand_mod, "_MAX_CACHED_EXPANSIONS", 20)
+    monkeypatch.setattr(expand_mod, "_MAX_EVICTIONS_PER_CALL", 3)
+    cache = expand_mod.cache_dir()
+    cache.mkdir(parents=True, exist_ok=True)
+    for index in range(124):
+        (cache / f"old{index:03d}-0000000000000000").mkdir()
+
+    calls = 0
+    while expand_mod.evict():
+        calls += 1
+    assert calls == 35
+    assert len(expand_mod.cached_expansions()) == 20
+
+
+def test_doctor_says_a_cache_over_its_ceiling_is_still_draining(
+    monkeypatch, tmp_path, capsys
+):
+    """"1246 cached, 200 kept" read as a ceiling that does not work."""
+    monkeypatch.setattr(expand_mod, "_MAX_CACHED_EXPANSIONS", 2)
+    cache = expand_mod.cache_dir()
+    cache.mkdir(parents=True, exist_ok=True)
+    for index in range(5):
+        (cache / f"old{index}-0000000000000000").mkdir()
+    monkeypatch.setattr(
+        cli, "doctor_checks",
+        lambda args, run=None: [cli.Check("bridge", cli.ABSENT, "not running")],
+    )
+    args = argparse.Namespace(
+        db=None, install_path=None, port=None, project=None, clear_cache=False
+    )
+
+    cli.cmd_doctor(args)
+    text = capsys.readouterr().out
+
+    assert "5 expansion(s) cached" in text
+    assert "3 over the ceiling" in text
+    assert "--clear-cache" in text
+
+
 def test_the_doctor_parser_accepts_the_flag():
     parser = cli.build_parser()
     args = parser.parse_args(["doctor", "--clear-cache"])

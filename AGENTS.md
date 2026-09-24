@@ -56,7 +56,7 @@ excluded as the declared gap above.
 | `search` | `td_search_operators` | |
 | `op` | `td_operator_schema` | `type`→`op_type` |
 | `exec` | `td_exec` | |
-| `render` | `td_render` | |
+| `render` | `td_render` | `output`→`save_to` |
 | `log` | `td_log` | `number`→`limit` |
 | `project read` | `td_project_read` | |
 | `project text` | `td_project_text` | |
@@ -107,7 +107,7 @@ listed here fails the test.
 | Pair | Divergence | Why |
 | --- | --- | --- |
 | `op` / `td_operator_schema` | `--groups` is CLI only | The tool returns parameter *members* (`tx`, `ty`) and never the documented *groups* (`t`), because an agent that sets `t` gets a refusal it cannot read. The flag exists for a person cross-reading Derivative's own docs, which name the groups. |
-| `render` / `td_render` | `-o/--output` is CLI only; `width` defaults to 512 in the tool and to the TOP's own resolution in the CLI | The tool hands the image back inline, so it has nowhere to write and every pixel costs context; the CLI writes a file, where the artist's own resolution is the right answer. |
+| `render` / `td_render` | `save_to` is optional in the tool, where the CLI always writes a file (render.png unless told otherwise); `width` defaults to 512 in the tool and to the TOP's own resolution in the CLI | The tool's default answer is the image inline, where every pixel costs context, so it writes a file only when asked; the CLI writes a file, where the artist's own resolution is the right answer. |
 | `project read` / `td_project_read` | `--refresh` is CLI only | The expansion cache is keyed on the file's path, size and mtime, so a changed project is re-expanded without asking. The flag is a repair for a cache damaged by something outside this program — a person's problem, diagnosed at a terminal. |
 | `project text` / `td_project_text` | `--refresh` and `-o/--output` are CLI only; `max_bytes` is MCP only | `--refresh` as above. The tool must fit its answer in a context window, so it refuses a network over `max_bytes`; the CLI writes to a file or a pipe, where there is no such ceiling and `-o` is the whole point. |
 | `project grep` / `td_project_grep` | `--fixed` is CLI only | An agent composing a pattern can escape it; a person typing `v1.2.3` at a prompt cannot be asked to. |

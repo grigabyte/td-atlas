@@ -25,6 +25,7 @@ from .bridge.client import (
     BridgeError,
     BridgeUnavailable,
 )
+from .bridge.settle import wait_frames
 from .install import InstallNotFound, TDInstall, discover
 
 COMPONENT_DIR = Path(__file__).parent / "component"
@@ -65,8 +66,17 @@ def mcp_command() -> list[str]:
     return [sys.executable, "-m", "td_atlas.cli", "mcp"]
 
 
-def mcp_connection_line(server_name: str = "td-atlas") -> str:
-    return "claude mcp add " + server_name + " -- " + " ".join(mcp_command())
+def mcp_connection_line(server_name: str = "td-atlas", scope: str = "") -> str:
+    """The `claude mcp add` line; `scope="user"` registers it for every directory.
+
+    Without a scope Claude Code registers the server as `local`: this
+    directory only (its `--help`, 2026-09-24). The owner opened a session in
+    an empty directory to record it and had no tools there.
+    """
+    flag = f"-s {scope} " if scope else ""
+    return (
+        "claude mcp add " + flag + server_name + " -- " + " ".join(mcp_command())
+    )
 
 
 def write_mcp_json(directory: Path, server_name: str = "td-atlas") -> Path:
@@ -287,10 +297,19 @@ def cmd_install(args: argparse.Namespace) -> int:
         except (subprocess.SubprocessError, OSError):
             pass
 
+    # Printed, never run: registering a server for every directory changes the
+    # person's Claude Code setup beyond this project, so it is their choice.
+    # The directory line comes first because install.sh takes the first
+    # `claude mcp add` line it finds as the default.
     print()
-    print("To use td-atlas as an MCP server, run:")
+    print("To use td-atlas as an MCP server, run one of these.")
+    print("In the directory you work in, for that directory only:")
     print()
     print("    " + mcp_connection_line())
+    print()
+    print("Or once, for every directory you open Claude Code in:")
+    print()
+    print("    " + mcp_connection_line(scope="user"))
     print()
 
     if args.write_mcp_json:
@@ -1014,9 +1033,18 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     # with a grown cache very often also has a broken link — an early return
     # on the broken branch withheld the number exactly when it was asked for.
     cached, kept, where = cache_summary()
+    # Over the ceiling is a backlog, not a broken ceiling: each new expansion
+    # trims at most _MAX_EVICTIONS_PER_CALL of it. "1246 cached, 200 kept"
+    # with nothing more was read as a limit that does not work.
+    draining = (
+        f" {cached - kept} over the ceiling, trimmed a few at a time as new "
+        f"projects are read."
+        if cached > kept else ""
+    )
     print(
         f"reading a .toe or .tox unpacks it into {where}: {cached} expansion(s) "
-        f"cached, {kept} kept. Empty it with 'td-atlas doctor --clear-cache'."
+        f"cached, {kept} kept.{draining} Empty it with "
+        f"'td-atlas doctor --clear-cache'."
     )
     return 1 if broken else 0
 
@@ -1079,7 +1107,8 @@ def cmd_op(args: argparse.Namespace) -> int:
         if par["menu_names"]:
             names = par["menu_names"]
             shown = ", ".join(names[:6]) + ("..." if len(names) > 6 else "")
-            bits.append(f"menu=[{shown}]")
+            key = "suggests" if par["style"] == "StrMenu" else "menu"
+            bits.append(f"{key}=[{shown}]")
         elif par["is_number"]:
             lo, hi = par["norm_min"], par["norm_max"]
             if lo is not None and hi is not None:
@@ -1089,6 +1118,9 @@ def cmd_op(args: argparse.Namespace) -> int:
                     f"clamp={par['min_value'] if par['clamp_min'] else ''}"
                     f"..{par['max_value'] if par['clamp_max'] else ''}"
                 )
+        if par.get("appears_when"):
+            governor, _, value = par["appears_when"].partition("=")
+            bits.append(f"only-when {governor}>='{value}'")
         print(f"  {par['name']:<20} {par['label'] or '':<26} {' '.join(bits)}")
 
     if groups and args.groups:
@@ -1139,6 +1171,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     if client is None:
         return 1
     try:
+        settled = wait_frames(client, args.settle_frames)
         data, meta = client.render(
             args.path, width=args.width, height=args.height
         )
@@ -1148,6 +1181,8 @@ def cmd_render(args: argparse.Namespace) -> int:
     out = Path(args.output)
     out.write_bytes(data)
     print(f"{meta['width']}x{meta['height']} -> {out} ({len(data)} bytes)")
+    if settled.note():
+        _say(settled.note())
     return 0
 
 
@@ -1514,6 +1549,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", default="render.png")
     p.add_argument("--width", type=int)
     p.add_argument("--height", type=int)
+    p.add_argument(
+        "--settle-frames",
+        type=int,
+        default=0,
+        help="wait this many TouchDesigner frames first, so a just-made edit "
+        "is in the image",
+    )
     p.set_defaults(func=cmd_render, uses_selector=True)
 
     p = sub.add_parser(

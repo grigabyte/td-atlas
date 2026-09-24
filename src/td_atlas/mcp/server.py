@@ -20,9 +20,14 @@ from mcp.server.fastmcp import FastMCP, Image
 from .. import config as cfg
 from .. import journal
 from ..atoms.store import AtomStore
-from ..atoms.validate import validate_params
+from ..atoms.validate import (
+    op_reference_lookups,
+    step_key_problems,
+    validate_params,
+)
 from ..bridge import timeline, timeline_status
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
+from ..bridge.settle import wait_frames
 from ..component.handler import NODE_FLAGS
 from .hints import IndexMissing, failure, from_record, guarded, hint
 
@@ -133,8 +138,12 @@ def _fmt_param(row: dict[str, Any]) -> str:
     if row.get("default") is not None:
         bits.append(f"default={row['default']!r}")
     if row.get("menu_names"):
+        # A StrMenu's entries are suggestions over free text, and printing them
+        # as `options=` read as a closed list (the validator made the same
+        # mistake with `renameto`).
+        key = "suggestions=" if row.get("style") == "StrMenu" else "options="
         bits.append(
-            "options=" + _menu_options(
+            key + _menu_options(
                 row["menu_names"], row.get("menu_labels")
             )
         )
@@ -144,6 +153,11 @@ def _fmt_param(row: dict[str, Any]) -> str:
             bits.append(f"slider={lo:g}..{hi:g}")
     if row.get("read_only"):
         bits.append("READ-ONLY")
+    if row.get("appears_when"):
+        # A member a size menu adds. Below this size TouchDesigner refuses a
+        # write to it with "Index out of range" (measured, amp2 at parsize 1).
+        governor, _, value = row["appears_when"].partition("=")
+        bits.append(f"only-when {governor}>='{value}'")
     line = f"  {row['name']} — {row['label'] or ''} [{' '.join(bits)}]"
     if row.get("summary"):
         line += f"\n      {row['summary'][:300]}"
@@ -576,6 +590,9 @@ def td_network(path: str = "/project1", depth: int = 1) -> str:
                 "  <- " + ", ".join(node["inputs"]) if node["inputs"] else ""
             )
             flag = ""
+            # False, not falsy: a bridge from before the field sends none.
+            if node.get("viewer") is False:
+                wiring += "  [viewer off]"
             if node.get("errors"):
                 flag = f"  ERROR: {node['errors']}"
             elif node.get("warnings"):
@@ -693,6 +710,17 @@ def td_build(
     Pass the same `owner` you claimed the area with — it carries into every
     step, and without it your own claim refuses the batch.
     """
+    # Keys first: they need neither the index nor the bridge, and a key the
+    # bridge would ignore turns into its default without a word.
+    stray = step_key_problems(operations)
+    if stray:
+        return (
+            "Refusing to apply — the bridge would ignore these keys and use "
+            "its defaults instead:\n\n"
+            + "\n".join(stray)
+            + f"\n\n{hint('params_refused')}"
+        )
+
     db = None
     try:
         db = store()
@@ -700,36 +728,55 @@ def td_build(
         pass  # validation is a convenience; proceed without an index
 
     if db is not None:
-        # par_set targets an existing node, so its type has to be looked up.
-        # One call resolves every such path at once, which is worth it: a bad
-        # name caught here costs nothing, while one caught by TouchDesigner
-        # costs the whole batch.
-        unknown = [
-            (step.get("params") or {}).get("path")
-            for step in operations
-            if step.get("method") == "par_set"
-            and (step.get("params") or {}).get("pars")
-            and not (step.get("params") or {}).get("type")
-        ]
-        resolved: dict[str, str | None] = {}
-        if [p for p in unknown if p]:
-            try:
-                resolved = bridge().call(
-                    "op_types", paths=[p for p in unknown if p]
+        # Whose parameters each step writes. par_set names an existing node,
+        # so its type has to be looked up; op_create names its own.
+        targets: list[tuple[int, dict, str, str, bool]] = []
+        created: set[str] = set()
+        for i, step in enumerate(operations):
+            params = step.get("params") or {}
+            if step.get("method") == "op_create":
+                parent = str(params.get("parent") or "/").rstrip("/")
+                name = params.get("name")
+                path = f"{parent}/{name}" if name else ""
+                if path:
+                    created.add(path)
+                if params.get("pars") and params.get("type"):
+                    targets.append((i, params["pars"], params["type"], path, True))
+            elif step.get("method") == "par_set" and params.get("pars"):
+                targets.append(
+                    (i, params["pars"], params.get("type") or "",
+                     str(params.get("path") or ""), False)
                 )
+
+        # One call resolves every path the checks need, which is worth it: a
+        # bad name caught here costs nothing, while one caught by
+        # TouchDesigner costs the whole batch. The '../' references are asked
+        # about as TouchDesigner will resolve them (see validate.py).
+        wanted = {path for _, _, op_type, path, _ in targets if path and not op_type}
+        for _, pars, _, path, _ in targets:
+            wanted |= op_reference_lookups(pars, path)
+        resolved: dict[str, str | None] = {}
+        if wanted - created:
+            try:
+                resolved = bridge().call("op_types", paths=sorted(wanted - created))
             except (BridgeUnavailable, BridgeError):
                 resolved = {}
 
+        def exists(path: str) -> bool | None:
+            if path in created:
+                return True
+            if path not in resolved:
+                return None
+            return resolved[path] is not None
+
         problems: list[str] = []
-        for i, step in enumerate(operations):
-            params = step.get("params") or {}
-            pars = params.get("pars")
-            if not pars:
-                continue
-            op_type = params.get("type") or resolved.get(params.get("path", ""))
+        for i, pars, op_type, path, fresh in targets:
+            op_type = op_type or resolved.get(path) or ""
             if not op_type:
                 continue
-            check = validate_params(db, op_type, pars)
+            check = validate_params(
+                db, op_type, pars, owner=path, exists=exists, fresh=fresh
+            )
             if not check.ok:
                 problems.append(f"step {i} ({op_type}):\n" + check.render())
         if problems:
@@ -773,8 +820,22 @@ def td_set_params(
     or your own claim refuses this write.
     """
     if op_type:
+        # The same '../' check td_build makes, asked of the same bridge.
+        wanted = op_reference_lookups(pars, path)
+        resolved: dict[str, str | None] = {}
+        if wanted:
+            try:
+                resolved = bridge().call("op_types", paths=sorted(wanted))
+            except (BridgeUnavailable, BridgeError):
+                resolved = {}
+
+        def exists(p: str) -> bool | None:
+            return (resolved[p] is not None) if p in resolved else None
+
         try:
-            check = validate_params(store(), op_type, pars)
+            check = validate_params(
+                store(), op_type, pars, owner=path, exists=exists
+            )
             if not check.ok:
                 return f"{check.render()}\n\n{hint('params_refused')}"
         except RuntimeError:
@@ -790,23 +851,55 @@ def td_set_params(
 
 @mcp.tool()
 @guarded
-def td_render(path: str, width: int = 512, height: int = 0):
+def td_render(
+    path: str,
+    width: int = 512,
+    height: int = 0,
+    save_to: str = "",
+    settle_frames: int = 0,
+):
     """Render a TOP and return the image, so you can see what you built.
 
     TouchDesigner is a visual tool: check your work with this rather than
     inferring it from parameter values. `height` defaults to preserving the
-    TOP's aspect ratio.
+    TOP's aspect ratio; `width=0` keeps the TOP's own resolution.
+
+    `save_to` writes the PNG to that path on this machine and answers in text
+    instead of returning the image — for comparing two states pixel by pixel,
+    or keeping a frame, without spending context on it.
+
+    `settle_frames` waits that many of TouchDesigner's own frames before
+    rendering. A render right after td_set_params or td_build can return the
+    frame from before the edit; 2–3 frames is enough for a parameter change.
+    The answer says so if TouchDesigner stopped drawing during the wait.
     """
     # Deliberately unannotated: this returns an Image on success and an error
     # string otherwise, and a union of the two cannot be expressed in the
     # output schema FastMCP derives from the annotation.
+    client = bridge()
     try:
-        data, _meta = bridge().render(
+        settled = wait_frames(client, settle_frames)
+        data, meta = client.render(
             path, fmt=".png", width=width or None, height=height or None
         )
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
-    return Image(data=data, format="png")
+    note = settled.note()
+    if not save_to:
+        if note:
+            return [note, Image(data=data, format="png")]
+        return Image(data=data, format="png")
+    target = Path(save_to).expanduser().resolve()
+    try:
+        target.write_bytes(data)
+    except OSError as exc:
+        return f"rendered {path}, but could not write {target}: {exc}"
+    return _warn(client) + "\n".join(
+        line for line in (
+            f"{meta['width']}x{meta['height']} -> {target} ({len(data)} bytes)",
+            note,
+        ) if line
+    )
 
 
 @mcp.tool()
