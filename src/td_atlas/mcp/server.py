@@ -572,6 +572,9 @@ def td_network(path: str = "/project1", depth: int = 1) -> str:
                 "  <- " + ", ".join(node["inputs"]) if node["inputs"] else ""
             )
             flag = ""
+            # False, not falsy: a bridge from before the field sends none.
+            if node.get("viewer") is False:
+                wiring += "  [viewer off]"
             if node.get("errors"):
                 flag = f"  ERROR: {node['errors']}"
             elif node.get("warnings"):

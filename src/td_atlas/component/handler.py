@@ -2258,6 +2258,14 @@ def _op_summary(target, include_pars=False):
             len(target.children) if hasattr(target, "children") else 0
         ),
     }
+    # A TOP with its viewer flag off shows an empty tile, which reads as a
+    # broken scene (second agent report). Only TOPs: theirs is the tile that
+    # is supposed to show the image.
+    if target.family == "TOP":
+        try:
+            out["viewer"] = bool(target.viewer)
+        except Exception:
+            pass
     try:
         out["errors"] = target.errors(recurse=False) or None
         out["warnings"] = target.warnings(recurse=False) or None
