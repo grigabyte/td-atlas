@@ -19,8 +19,8 @@ Two blind spots, stated rather than papered over:
 - **Response shape.** A method that starts returning a differently shaped
   reply is a protocol change this cannot see, because the shape is built up
   across a function body rather than declared. What holds that half is the
-  rule in `AGENTS.md`, the `CHANGELOG.md` obligation on every protocol change
-  (decision 51) and review.
+  rule in `AGENTS.md`, the `CHANGELOG.md` entry `CONTRIBUTING.md` makes
+  obligatory for every protocol change, and review.
 - **Parameter names read through a variable.** They are recorded as
   `<dynamic>` unless the variable is a loop target over a module-level literal
   table, which is the one such pattern in the handler today.
@@ -34,8 +34,9 @@ Two blind spots, stated rather than papered over:
   new read through an alias is what review is for.
 
 The version keys the table below are labels for recorded listings, not a
-second copy of the constant: the current one is imported (decision 8) and used
-to look a listing up.
+second copy of the constant: the current one is imported from
+`component/handler.py`, never copied into the host where it could drift, and
+used to look a listing up.
 """
 
 from __future__ import annotations
@@ -285,7 +286,11 @@ def test_the_method_table_matches_the_listing_recorded_for_this_version():
 
 
 def test_the_minimum_follows_the_expected_version():
-    """No version back is supported (decision 41), so the two move together."""
+    """Host and bridge ship in one bundle, so no older protocol is supported.
+
+    An older bridge is refused at connect and told to re-stage, rather than
+    allowed to fail on the first method it lacks, so the two move together.
+    """
     assert MIN_PROTOCOL_VERSION == EXPECTED_PROTOCOL_VERSION
 
 
