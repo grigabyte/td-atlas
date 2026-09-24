@@ -191,7 +191,9 @@ dump them to text by hand:
 5. To roll back, use `td_undo` while the edits are still on its stack.
    Otherwise take the old values from `td_project_text(<before.tox>)` into
    `td_set_params`. The diff shows an expression's text without saying it is
-   one, and the text keeps it as `{"expr": ...}`.
+   one, and the text keeps it as `{"expr": ...}`. Paths in a snapshot start
+   at the COMP's own name, so `/branch/blur1` in the file is
+   `/project1/branch/blur1` live. Put the COMP's parent path in front.
 
 **Never save the artist's project.** `project.save()` is Save As in disguise and
 moves the file they have open. Nothing here needs it; TouchDesigner writes the

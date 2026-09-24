@@ -1660,7 +1660,9 @@ def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     gives each parameter in the form td_set_params takes, with {"expr": ...}
     where the diff shows only the expression's text. The diff does not mark
     which values are expressions, so put values back from the text, not from
-    the diff. td_undo is shorter while the edits are still on the undo stack.
+    the diff. Paths in the file start at the COMP's own name, so a snapshot of
+    /project1/branch holds /branch/blur1, which is /project1/branch/blur1 live.
+    td_undo is shorter while the edits are still on the undo stack.
 
     A component is written rather than the whole session because saving the
     session is a Save As: it repoints TouchDesigner at the snapshot file and
