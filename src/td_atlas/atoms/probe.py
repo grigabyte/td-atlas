@@ -148,8 +148,12 @@ for _t in _types:
                             _d = {'name': _p.name, 'error': str(_pe)}
                         _d['appears_when'] = '%%s=%%s' %% (_mp.name, _v)
                         _entry['params'].append(_d)
-            except Exception:
-                pass
+            except Exception as _se:
+                # Recorded, not swallowed: a size menu that could not be
+                # stepped leaves its tuples short in the index, and the probe
+                # report has to say which.
+                _entry.setdefault('size_menu_errors', []).append(
+                    '%%s: %%s: %%s' %% (_mp.name, type(_se).__name__, _se))
             finally:
                 try:
                     _mp.val = _orig
@@ -181,6 +185,9 @@ class ProbeStats:
         self.params_merged = 0
         self.failures: dict[str, str] = {}
         self.new_types: list[str] = []
+        # Size menus that could not be stepped, so the tuples they grow are
+        # short in the index: {op_type: [reason, ...]}.
+        self.size_menu_errors: dict[str, list[str]] = {}
 
     def summary(self) -> str:
         text = (
@@ -191,6 +198,12 @@ class ProbeStats:
             text += f", {len(self.new_types)} type(s) absent from the help file"
         if self.failures:
             text += f", {len(self.failures)} type(s) could not be instantiated"
+        if self.size_menu_errors:
+            text += (
+                f", {len(self.size_menu_errors)} type(s) with a size menu that "
+                f"could not be stepped (their tuples may be short: "
+                f"{', '.join(sorted(self.size_menu_errors)[:5])})"
+            )
         return text
 
 
@@ -338,6 +351,8 @@ def run(
             )
             usable = [p for p in entry.get("params", []) if not p.get("error")]
             stats.params_merged += store.merge_runtime_params(op_type, usable)
+            if entry.get("size_menu_errors"):
+                stats.size_menu_errors[op_type] = entry["size_menu_errors"]
             stats.types_probed += 1
 
         store.conn.commit()

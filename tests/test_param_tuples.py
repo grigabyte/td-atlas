@@ -174,6 +174,22 @@ def test_each_added_member_carries_the_setting_that_shows_it(probed):
     assert by_name["amp2"]["vec_index"] == 2
 
 
+def test_a_size_menu_that_cannot_be_stepped_is_reported_not_swallowed(monkeypatch):
+    real = FakePar.val.fset
+
+    def refuse_three(self, value):
+        if self.name == "parsize" and value == "3":
+            raise RuntimeError("refused")
+        real(self, value)
+
+    monkeypatch.setattr(FakePar, "val", FakePar.val.setter(refuse_three))
+    result, _ = _run_probe_chunk(["noisePOP"])
+    entry = result["noisePOP"]
+    assert entry["size_menu_errors"] == ["parsize: RuntimeError: refused"]
+    # What the steps before the failure found is still kept.
+    assert "amp1" in [p["name"] for p in entry["params"]]
+
+
 def test_the_probe_puts_the_menu_back(probed):
     _, sandbox = probed
     node = sandbox.made[0]
