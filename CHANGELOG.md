@@ -14,6 +14,97 @@ either from the code they are running:
   `td-atlas reload`.
 - **Anything that changes what the connector may touch in the user's project.**
 
+## [Unreleased]
+
+### Changed
+
+- **The bridge speaks protocol 8, and protocol 8 is now also the minimum the
+  host accepts.** Run `td-atlas reload` once in every project that holds the
+  bridge. A bridge laid down by an earlier build is refused at connect with
+  that fix in the message. Three methods joined the table (`timeline_run`,
+  `timeline_status`, `timeline_cancel`), and five replies gained fields an
+  older bridge does not send: `ping` (`absFrame` and a `timeline` block),
+  the error reply of `exec` (`stdout`, `stderr`, `result`), `health_sample`
+  (`cookAbsFrame`, `cookFrame`, `feedback`, `negativeFloat`, `clockReads`,
+  `clockReadsCount`, `clockScan`), and `network` and `op_info` (`viewer` on a
+  TOP).
+- **The call journal records what a changing call changed, not only that it
+  ran.** Parameter writes, builds, creations, deletions, wiring, flags,
+  palette loads, extensions, annotations, saved components and the code
+  `td_exec` ran now leave their values on the journal line in
+  `~/.td-atlas`, so "put it back the way it was yesterday" can be answered
+  from the log. The old value of a parameter is not recorded. Every line is
+  clipped (code and DAT text at 4 KB, 32 KB a line), the token is scrubbed as
+  before, and the file cap rises from 1 MiB to 16 MiB. `td_log` and
+  `td-atlas log` print the change under each call. Calls that only read are
+  logged as before.
+- `td_status` and `td-atlas status` name the timeline's own frame, whether it
+  is playing, its start and end, its playback range and rate, apart from the
+  application clock. The status used to print the application's frame under
+  the word "frame". A playback range narrower than the timeline is marked,
+  since a recording stops at `rangeEnd` without a word.
+- A bridge timeout reads the TouchDesigner process before blaming a script.
+  One that sits idle, asleep, minimised or behind a dialog is reported as
+  such, with the advice to bring it to the front. Every timeout used to say a
+  long script was blocking the main thread. On Windows the old message
+  stands.
+- A script that raises in `td_exec` still returns what it printed, and its
+  `result`, ahead of the error. `td-atlas exec` writes them where they would
+  have gone. The reply is still a failure.
+- `td_health` finds five more quiet failures. A cook time is named by the
+  frame it was measured on, so one left from long before the check is no
+  longer blamed for the current frame rate. Feedback loops, which
+  `cook(force=True)` does not advance, are listed. So are bypassed gain
+  operators (Level, Math, HSV Adjust), which pass their layer through at full
+  strength rather than switching it off, and Level TOPs that can put
+  negative floats into an Add. Reads of `absTime` or an unseeded random
+  generator, which keep a render from reproducing, are named with where they
+  are.
+- `td_network` marks a TOP whose viewer flag is off, so an empty tile is not
+  taken for a broken scene.
+- `td-atlas install` prints the MCP line for every directory (`-s user`)
+  beside the one for the current directory. It runs neither.
+- `td-atlas doctor` says how far over its ceiling the expansion cache is and
+  that it is draining, instead of printing the count beside the limit as if
+  the limit did not hold.
+
+### Added
+
+- **Timeline jobs: `td_timeline_run`, `td_timeline_status` and
+  `td_timeline_cancel`.** A job walks the timeline frame by frame inside
+  TouchDesigner and saves a TOP's frames, for anything that depends on
+  history (live audio, Feedback TOPs, trails), where a `td_exec` loop hits
+  the 30 s limit. It returns a job id at once. Without an output it only
+  advances the timeline and holds it paused where it stopped. What it
+  touches in the project: it pauses the timeline and gives the play mode
+  back, and with `tiles` it crops the named Render TOPs and puts the crop back
+  to 0..1 however the job ends. The files it writes stay. MCP only, declared
+  in `AGENTS.md`.
+- `td_render` takes `save_to`, which writes the PNG to that path and answers
+  in text, and `settle_frames` (`--settle-frames` on the CLI), which waits
+  that many TouchDesigner frames first. A render right after an edit could
+  show the frame before it.
+- The index records the tuple members a size menu adds (`amp2` on a
+  noisePOP, with the menu value that shows it), after `td-atlas probe`. The
+  validator refuses a member the size in force does not show, and a size
+  menu the probe cannot step is reported.
+- The skill notes sequence parameters, the Execute DAT's callbacks,
+  one-shot Movie File Out, deferred runs on a paused timeline, bypassed
+  Level TOPs and the undoable route through `td_exec` for an edit `td_build`
+  cannot express, next to the traps the new `td_health` findings describe.
+
+### Fixed
+
+- `td_build` refuses a step whose keys the bridge would ignore, and names
+  the right one. `op_connect` with `input_index` used to wire input 0.
+- A StrMenu takes free text; its entries are suggestions. A plain Menu stays
+  closed.
+- An operator-reference parameter written as `../name` is refused only when
+  the path TouchDesigner will look it up at is missing, and the refusal
+  gives the sibling and absolute spellings.
+- The test suite stays out of the real `~/.td-atlas`. It had been appending
+  a journal line there.
+
 ## [0.1.0] - 2026-09-15
 
 The first release. Everything below is what it contains.
@@ -154,4 +245,5 @@ in CI; TouchDesigner on Windows is unverified. See `docs/compatibility.md`.
   The cache holding it never expired, so a token rotated by `td-atlas install`
   went into the log in clear while the previous one was removed.
 
+[Unreleased]: https://github.com/grigabyte/td-atlas/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/grigabyte/td-atlas/releases/tag/v0.1.0

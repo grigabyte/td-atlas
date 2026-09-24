@@ -26,10 +26,13 @@ from contextlib import redirect_stderr, redirect_stdout
 # one version naming two different method sets; it left 6 because `errors`
 # gained a `path` parameter, and a bridge laid down before that ignores the
 # argument in silence — it answers about the whole root while reporting the
-# same number, which no reader can tell from a correct answer.
+# same number, which no reader can tell from a correct answer. It left 7
+# because `timeline_run`, `timeline_status` and `timeline_cancel` joined the
+# table, and `ping`, `exec`'s error, `health_sample`, `network` and `op_info`
+# gained fields a bridge laid down before them does not send.
 # `tests/test_protocol_fingerprint.py` reddens when the table moves without
 # this number; the rule is written down in `AGENTS.md`.
-PROTOCOL_VERSION = 7
+PROTOCOL_VERSION = 8
 
 # The shared secret, read from ~/.td-atlas/config.json when the server starts —
 # see _load_token(). It is not baked into this text: a released .tox is one file

@@ -1031,8 +1031,20 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
       list. A Script operator's onCook raising during a cook Python asked for
       is not covered — that traceback goes back to the caller instead
     - operators costing more than half a frame to cook, and the resulting
-      frame rate collapse
+      frame rate collapse. A cook time is named by the frame it was measured
+      on, so one left over from a cook long before this check is set apart as
+      stale rather than blamed for the current frame rate
     - bypassed operators, and the current licence
+    - feedback loops (Feedback TOP, and the CHOP and POP that hold state
+      between frames), which cook(force=True) does not advance: frames made by
+      forced cooks carry a stale trail
+    - bypassed gain operators (Level, Math, HSV Adjust), which pass their
+      input through at full strength instead of switching the layer off
+    - Level TOPs that can output negative floats (float format, black level
+      above 0, no clamp), and whether an Add below them takes those values
+      away from what it adds to
+    - reads of the application clock (absTime) or an unseeded random
+      generator, which keep a render from reproducing between runs
 
     `interval` is the gap between the two samples, in seconds, and is capped:
     this process sleeps through it and answers nothing else meanwhile.
