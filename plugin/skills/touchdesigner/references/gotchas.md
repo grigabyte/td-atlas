@@ -41,6 +41,10 @@ whatever must stay live. `nullTOP` has no such parameter. `cacheTOP`,
 
 Adding that turns the same network into `3/3 operators cooking`.
 
+A Trail CHOP is the case that costs the most time. Hung off the end of a
+branch to watch a signal, it is terminal, so it never cooks, and every value
+read from it is a constant. Calibrating against that measures nothing.
+
 A recorder must be *inside* what the keep-alive pulls. Wire
 `out → rec → keepalive`, not `out → keepalive` with `rec` hanging off `out`.
 
@@ -286,6 +290,12 @@ only way to see it is `par.eval()`, which returns `None`; `par.val` happily
 returns the string you wrote. When `td_op_info` shows an OP parameter, check
 that its value is an operator and not just text you typed.
 
+`td_build` and `td_set_params` (given `op_type`) catch the common case. A `../`
+reference that resolves, from the parent, to nothing is refused with the
+sibling and absolute spellings. Re-measured on 2026-09-24: `material='mat1'`
+beside `mat1` resolves, `'../mat1'` gives `None`, and `'./x'` reaches a child
+of the COMP itself.
+
 ## A fresh Geometry COMP already has geometry in it
 
 **Measured on the live instance (2026-08-30, build 2025.32460).** A newly
@@ -341,6 +351,12 @@ not change* below.
 - Realtime recording drops frames under load; the docs suggest turning Realtime
   off for a clean capture, and TouchDesigner repeats video frames to hold A/V
   sync when it cannot keep up.
+- One node, one recording. An agent session (2025.32460) found that after
+  `record = 0`, setting `record = 1` again wrote no file, with a new path or
+  the same one, and that changing the codec on a live node broke recording for
+  good. Both were cured the same way: destroy the node and create a fresh one
+  for each pass, then wire it and set `file` and `videocodec` before `record`.
+  Not re-measured here, so check `total_frames_written` either way.
 
 ## Output devices switched off
 
@@ -372,6 +388,39 @@ the members as a suggestion. `td_set_params` only does the same when you pass
 Not every operator has the transform parameters you expect. `circleTOP` has no
 `tx`, it has `centerx`/`centery`.
 
+Some tuples are sized by another parameter. A POP's `amp`, `exp`, `offset` and
+the like have one member per `parsize` step: `amp0` at `parsize '1'`, up to
+`amp3` at `'4'`. Below its size, a write to `amp2` fails with "Index out of
+range". `td_operator_schema` marks such members `only-when parsize>='3'`, and
+`td_build` refuses one written before its size is set. Set `parsize` first, in
+the same `pars`.
+
+## Sequence parameters are read by their flat names
+
+Parameters in sequential blocks (a GLSL TOP's `vec` uniforms, a POP's `map`)
+have flat names: `vec0name`, `vec0valuex`, `vec1name`. The block object does
+not answer them as attributes. Measured on a GLSL TOP (2025.32460):
+
+```python
+g.seq.vec[0].par.vecname      # tdAttributeError
+g.seq.vec[0].par.vec0name     # tdAttributeError too
+g.par['vec0name']             # works
+g.par.vec.numBlocks = 2       # AttributeError
+g.seq.vec.numBlocks = 3       # works: vec1*, vec2* now exist
+```
+
+So the block count is set through `seq`, and the values through `par` by flat
+name, in `td_build` as `{"vec0name": "uTime"}`. Blocks past the first exist only
+after `numBlocks` is raised, which `td_build` cannot do. Raise it in `td_exec`
+first.
+
+## An Execute DAT has no `callbacks` parameter
+
+Its code is the DAT's own text. There is no parameter pointing at another DAT
+(`hasattr(x.par, 'callbacks')` is `False`, measured), so write the callbacks
+with `op_create`'s `text` key and turn on the events you need (`framestart`,
+`start`, `create`, …), which are toggles on the DAT itself.
+
 ## Saved files use contracted type names
 
 A `.toe` on disk records `geoCOMP`, `evalDAT` and `parexecDAT`, where the full
@@ -396,6 +445,15 @@ different hashes on frames 51209, 51210, 51211. A loop with `sleep` in it does
 not sample a range; it samples one frame forty times. Take a strip with repeated
 calls. The host-side `contact_sheet()` helper in `references/tools.md` does
 that, one bridge call per frame with TouchDesigner left to run in between.
+
+Deferring the work with `run(..., delayFrames=N)` has a trap of its own. The
+delay counts timeline frames by default, and a paused timeline never reaches
+them. There is no error; the call waits in `runs` and fires later, when
+something moves the frame, possibly alongside a newer chain you started.
+Count against the application instead with `delayRef=op.TDResources`, and give
+each chain a generation number in storage so a stale one sees it is not current
+and stops. For a single frame after an edit, `td_render(settle_frames=3)` is
+simpler.
 
 ## Identical numbers are usually a picture that did not change
 
@@ -437,6 +495,10 @@ The bypass flag makes an operator pass its input through without applying
 itself. Downstream still gets a picture, the one it would have had if the
 operator were not there, and nothing reports an error. A bypass left on from an
 afternoon of debugging is the quietest way to lose an effect.
+
+Bypass is not off, either. A bypassed Level TOP still passes its input down
+the chain, unlevelled, so bypassing a layer does not take it out of a
+composite. Disconnect it, or set its own opacity or brightness to zero.
 
 `td_health` reports it as `bypassed` and lists every path. It reads the flag and
 nothing else, and cannot tell an intentional bypass from a forgotten one, so it
