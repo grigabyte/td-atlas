@@ -60,11 +60,15 @@ def describe(info: dict) -> str:
     so instead of printing the application clock under the timeline's name.
     """
     line = info.get("timeline")
-    if not isinstance(line, dict) or "frame" not in line:
+    if not isinstance(line, dict):
         return (
             "timeline: not reported by this bridge (run 'td-atlas reload' to "
             "update it)"
         )
+    if "frame" not in line:
+        # A current bridge that could not read the root's Time COMP. Reload
+        # would change nothing, so it is not offered.
+        return "timeline: the bridge could not read the root Time COMP's frame"
     parts = []
     head = f"frame {_num(line['frame'])}"
     if "play" in line:

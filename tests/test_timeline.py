@@ -48,7 +48,6 @@ def td_globals(monkeypatch):
                         raising=False)
     monkeypatch.setattr(handler, "absTime", type("T", (), {"frame": 1284807})(),
                         raising=False)
-    monkeypatch.setattr(handler, "root", _Root(_Time()), raising=False)
     monkeypatch.setattr(handler, "op", lambda path: _Root(_Time()),
                         raising=False)
 
@@ -72,7 +71,6 @@ def test_ping_survives_a_timeline_field_that_will_not_read(td_globals, monkeypat
         def rangeEnd(self):
             raise RuntimeError("no such member")
 
-    monkeypatch.setattr(handler, "root", _Root(Half()), raising=False)
     monkeypatch.setattr(handler, "op", lambda path: _Root(Half()), raising=False)
     reply = handler.m_ping({})
     assert reply["protocol"] == handler.PROTOCOL_VERSION
@@ -120,6 +118,20 @@ def test_an_older_bridge_that_sends_no_timeline_is_named_not_guessed():
     text = _describe({"frame": 1284807})
     assert text.startswith("timeline: not reported")
     assert "851" not in text
+
+
+def test_a_current_bridge_that_cannot_read_the_time_is_not_told_to_reload(
+    td_globals, monkeypatch
+):
+    def broken(path):
+        raise RuntimeError("no root")
+
+    monkeypatch.setattr(handler, "op", broken, raising=False)
+    reply = handler.m_ping({})
+    assert reply["timeline"] == {}
+    text = _describe(reply)
+    assert "could not read" in text
+    assert "reload" not in text
 
 
 def test_td_status_shows_the_line(monkeypatch):
