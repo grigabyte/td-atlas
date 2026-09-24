@@ -41,7 +41,7 @@ pulled out of the parameters by name — the `path` that was aimed at, the
 A call that *changes* the project also keeps what it changed, under `change`:
 the parameter values and expressions a `par_set` wrote, the flags a
 `flags_set` set, what an `op_create` made and where, every step of a `batch`,
-and the code an `exec` ran. Until 2026-09-24 the rule was the opposite —
+the code an `exec` ran, and the walk a `timeline_run` was sent. Until 2026-09-24 the rule was the opposite —
 names, never payloads — and it cost exactly what it was meant to save: six
 thousand lines of an agent's session held not one parameter value, so "put it
 back the way it was yesterday" was answered by matching stills from a rendered
@@ -216,11 +216,14 @@ def _clip(text: str, limit: int) -> str:
 # it), and so leave their change behind. Everything else reads, and keeps only
 # the scalars. `undo`/`redo` take no parameters, so their name is the record;
 # `claim_scope`'s path and owner are already scalars; `status_note` is this
-# package reporting to its own panel, not an edit.
+# package reporting to its own panel, not an edit. `timeline_run` pauses the
+# timeline, crops the Render TOPs it is given and writes files that outlive
+# it, and `timeline_cancel` puts the crop and the play mode back, so both keep
+# what they were sent; `timeline_status` only reads.
 CHANGES = frozenset({
     "par_set", "batch", "op_create", "op_delete", "op_connect",
     "op_disconnect", "flags_set", "exec", "palette_load", "extension_add",
-    "annotate", "save_tox",
+    "annotate", "save_tox", "timeline_run", "timeline_cancel",
 })
 
 # Strings that are code or DAT content and get `MAX_CODE_CHARS`.

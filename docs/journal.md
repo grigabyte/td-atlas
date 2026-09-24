@@ -43,7 +43,9 @@ yesterday at 19:00" is `td-atlas log --method par_set -n 500`, or `batch`, or
 `exec`, read rather than reconstructed. An old parameter value is the earlier
 line that set it: `par_set` returns only what the parameter reads after the
 write, and the journal records no value the bridge did not send. Flags are the
-exception, since `flags_set` reads each one before writing it.
+exception, since `flags_set` reads each one before writing it. A timeline job
+keeps the walk it was sent: the frames, the ones saved, the output template,
+the tiles and the Render TOPs it crops; a cancel keeps which job it stopped.
 
 Calls that only read keep their path and nothing else, so a whole network
 never lands in the file. Code and DAT text are clipped at 4 KB and other

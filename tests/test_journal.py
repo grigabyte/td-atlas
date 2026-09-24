@@ -185,6 +185,40 @@ def test_a_failed_change_still_records_what_was_attempted():
     assert call.change["pars"] == {"nosuchpar": 1}
 
 
+def test_a_timeline_job_records_the_walk_it_was_sent():
+    """`timeline_run` pauses the timeline, crops Render TOPs and writes files.
+
+    It is a change to the project for as long as it runs, and the files stay,
+    so its line keeps what it was asked to do: which TOP, which frames, which
+    of them saved and where, how many tiles over which Render TOPs.
+    """
+    client = _Answering(port=9977)
+    client.answer = {"job": "j1", "state": "running"}
+    client.call("timeline_run", path="/project1/out1", start=1, end=994,
+                output="/renders/f{frame:04d}_{tile}.png", tiles=2,
+                from_start=True, settle=2, save=[[92, 217], [459, 541]],
+                render=["/project1/render1"])
+    (call,) = journal.read()
+    assert call.path == "/project1/out1"
+    assert call.change == {
+        "start": 1, "end": 994, "output": "/renders/f{frame:04d}_{tile}.png",
+        "tiles": 2, "from_start": True, "settle": 2,
+        "save": [[92, 217], [459, 541]], "render": ["/project1/render1"],
+    }
+    text = journal.format_calls([call])
+    assert "output: " in text and "/renders/f{frame:04d}_{tile}.png" in text
+    assert "render: " in text and "/project1/render1" in text
+
+
+def test_cancelling_a_timeline_job_records_which_job():
+    """A cancel puts the crop and the play mode back: a change of its own."""
+    client = _Answering(port=9977)
+    client.answer = {"job": "j1", "state": "cancelled"}
+    client.call("timeline_cancel", job="j1")
+    (call,) = journal.read()
+    assert call.change == {"job": "j1"}
+
+
 def test_a_call_that_only_reads_records_its_path_and_nothing_else():
     """What stays out: a whole network, a render's bytes, a read's arguments."""
     journal.record(

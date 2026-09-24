@@ -30,8 +30,9 @@ either from the code they are running:
   TOP).
 - **The call journal records what a changing call changed, not only that it
   ran.** Parameter writes, builds, creations, deletions, wiring, flags,
-  palette loads, extensions, annotations, saved components and the code
-  `td_exec` ran now leave their values on the journal line in
+  palette loads, extensions, annotations, saved components, the code
+  `td_exec` ran and the walk a timeline job was sent now leave their values
+  on the journal line in
   `~/.td-atlas`, so "put it back the way it was yesterday" can be answered
   from the log. The old value of a parameter is not recorded. Every line is
   clipped (code and DAT text at 4 KB, 32 KB a line), the token is scrubbed as
