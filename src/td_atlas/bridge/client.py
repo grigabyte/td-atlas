@@ -125,6 +125,11 @@ class BridgeError(RuntimeError):
         self.type = error.get("type", "Error")
         self.message = error.get("message", "")
         self.traceback = error.get("traceback")
+        # What an `exec` script printed, and had put in `result`, before it
+        # raised. A bridge older than this sends none of the three.
+        self.stdout = error.get("stdout") or ""
+        self.stderr = error.get("stderr") or ""
+        self.result = error.get("result")
         self.method = method
         super().__init__(f"{self.type} in {method}: {self.message}")
 

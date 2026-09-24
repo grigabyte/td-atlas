@@ -3,7 +3,7 @@
 Every `td_` name here is an MCP tool the agent calls on the artist's behalf.
 A person at a terminal has a separate surface, `td-atlas`, with its own page.
 
-41 MCP tools in three groups. `tests/test_skill_reference.py` compares every
+44 MCP tools in three groups. `tests/test_skill_reference.py` compares every
 name, every parameter list and that count against the server.
 
 ## Index — offline, no running TouchDesigner
@@ -40,6 +40,9 @@ name, every parameter list and that count against the server.
 | `td_flags(path)` | The flags that decide whether a node runs and what is visible: `display`, `render`, `bypass`, `lock`, `expose`, `viewer`, `activeViewer`, `cloneImmune`, `allowCooking`, `selected`, `pickable`, and which of them this operator does not have. Cooking is `allowCooking`; there is no flag named `cooking`. Check it when a correct-looking network produces nothing. |
 | `td_set_flags(path, flags, owner)` | Turn those flags on or off. Every write is read back, so a flag the family will not take comes back as a refusal. |
 | `td_render(path, width, height)` | A TOP's image, returned to you. |
+| `td_timeline_run(path, frames, output, save, tiles, from_start, settle, render, hold)` | Walk the timeline frame by frame and save a TOP's frames, as a job that returns its id at once — for anything with history (live audio, Feedback TOPs, trails), where a `td_exec` loop hits the 30 s limit. `frames="1..994"` is the walk, `save="92..217,459..541"` the frames written (default: all), `output="/renders/f{frame:04d}.png"` the template. It pauses the timeline and gives the play mode back, walks every frame consecutively (from the start of `frames` when `from_start`, else from the first frame to save), and waits `settle` application frames per step; 2 was measured repeatable for live audio. Without `output` it only advances — warm history up to frame N, then the timeline is held paused at N for `td_render`. `tiles=2` renders 2x2 quarters past the 1280 cap by cropping the Render TOP(s) in `render`: put `{tile}` in `output` (0 top left, 1 top right, 2 bottom left, 3 bottom right); each quarter is a whole walk of its own, since a Feedback TOP builds a quarter's history only under its crop. Nothing resets a Feedback TOP between passes, so a quarter's first frames carry the previous quarter's tail: a decaying trail forgets it within the walk, an accumulator does not — reset it yourself or start the walk early enough. The crop goes back to 0..1 however the job ends. |
+| `td_timeline_status(job)` | Progress of that job: frame, pass, saved N of M, errors, and `stalled` when no step has run for seconds. Without `job`, the latest. |
+| `td_timeline_cancel(job)` | Stop the walk now; the crop and play mode go back, written files stay. |
 | `td_errors(path)` | Operators reporting an error or warning, at and under `path` — the project by default. Do not ask for `/`: the walk is breadth-first and bounded, and TouchDesigner's own `/ui` and `/sys` are thousands of operators wide near the top, so the budget runs out before anything of yours is reached (measured: 5000 nodes from `/` covered 3,979 of `/ui` and 954 of `/sys`, and missed a warning planted inside the project). The reply names the subtree it walked and says when the walk stopped early; see *When a reply is cut short* below. |
 | `td_exec(code)` | Arbitrary Python inside TouchDesigner. Last resort. |
 | `td_undo(redo)` | Undo or redo, including whole `td_build` batches. Cannot be a step inside `td_build` — that is refused, because two of them in a row reach past the batch into the artist's own history. |
@@ -118,7 +121,9 @@ it is then the whole answer, and something has to change before the retry.
 ## Not exposed over MCP
 
 A contact sheet needs repeated sampling over wall-clock time, which one tool call
-cannot do. Use the Python helper:
+cannot do. It shows what the composition does while it plays; frames that must
+be the same on every run come from `td_timeline_run`, which walks timeline
+frames. Use the Python helper:
 
 ```python
 from td_atlas.bridge.client import BridgeClient
