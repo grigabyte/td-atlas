@@ -117,8 +117,10 @@ save_tox: file path
 scopes: -
 status_note: health
 timeline_cancel: job
+timeline_profile: end limit path settle start
 timeline_run: end from_start hold output path render save settle start tiles
 timeline_status: job
+trace: depth path
 undo: -""",
 }
 

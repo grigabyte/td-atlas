@@ -92,7 +92,7 @@ function instrumenty() {
     tek.ryady.push({ imya: m[1], argi: m[2], zachem: c[1] })
   }
   const vsego = gruppy.reduce((s, g) => s + g.ryady.length, 0)
-  if (vsego !== 44) throw new Error('инструментов ' + vsego + ', ожидалось 44')
+  if (vsego !== 46) throw new Error('инструментов ' + vsego + ', ожидалось 46')
   return gruppy
 }
 

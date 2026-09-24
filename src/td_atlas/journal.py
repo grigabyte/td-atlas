@@ -266,11 +266,14 @@ def _clip(text: str, limit: int) -> str:
 # package reporting to its own panel, not an edit. `timeline_run` pauses the
 # timeline, crops the Render TOPs it is given and writes files that outlive
 # it, and `timeline_cancel` puts the crop and the play mode back, so both keep
-# what they were sent; `timeline_status` only reads.
+# what they were sent; `timeline_profile` pauses the timeline and moves its
+# frame the same way, and forces every operator it measures to cook, so it
+# keeps its walk too; `timeline_status` only reads.
 CHANGES = frozenset({
     "par_set", "batch", "op_create", "op_delete", "op_connect",
     "op_disconnect", "flags_set", "exec", "palette_load", "extension_add",
     "annotate", "save_tox", "timeline_run", "timeline_cancel",
+    "timeline_profile",
 })
 
 # Strings that are code or DAT content and get `MAX_CODE_CHARS`.

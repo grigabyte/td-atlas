@@ -3009,6 +3009,10 @@ class _LiveTimelineEnv:
     def now(self):
         return time.time()
 
+    def perf(self):
+        # Milliseconds on a monotonic clock, for a profile's per-node times.
+        return time.perf_counter() * 1000.0
+
 
 def _timeline_env():
     return _LiveTimelineEnv()
@@ -3265,7 +3269,9 @@ def _timeline_advance(job, env):
             "the timeline is at frame %d where the walk set %d: TouchDesigner did "
             "not take the frame, or something else moved it" % (actual, frame)
         )
-    if _in_ranges(frame, job["save"]):
+    if job["mode"] == "profile":
+        _profile_measure(job, env)
+    elif _in_ranges(frame, job["save"]):
         name = job["output"].format(frame=frame, tile=job["pass"])
         target.save(name, createFolders=True)
         job["saved"] += 1
@@ -3350,6 +3356,8 @@ def _timeline_view(job, env):
     view["stalled"] = (
         job["state"] == "running" and now - job["stepped"] > _TIMELINE_STALL
     )
+    if job["mode"] == "profile":
+        view["profile"] = _profile_table(job)
     return view
 
 
@@ -3360,6 +3368,11 @@ def m_timeline_run(params):
     """
     env = _timeline_env()
     state = env.registry()
+    _timeline_refuse_second(state)
+    return _timeline_start(_timeline_plan(params, env), env, state)
+
+
+def _timeline_refuse_second(state):
     running = state.get("job")
     if running and running.get("state") == "running":
         raise RuntimeError(
@@ -3367,7 +3380,10 @@ def m_timeline_run(params):
             "first, since two walks would move one timeline"
             % (running["job"], running["frame"], running["first"], running["last"])
         )
-    job = _timeline_plan(params, env)
+
+
+def _timeline_start(job, env, state):
+    """Register a planned job, pause the timeline and take the first frame."""
     gen = int(state.get("gen", 0)) + 1
     state["gen"] = gen
     job["gen"] = gen
@@ -3412,6 +3428,334 @@ def m_timeline_cancel(params):
     if job["state"] == "running":
         _timeline_finish(job, env, "cancelled")
     return _timeline_view(job, env)
+
+
+# -- frame profile ------------------------------------------------------------
+#
+# A profile is a timeline job whose step measures instead of saving: at each
+# frame of the walk it forces every TOP/CHOP/SOP/POP under a path to cook,
+# times it, and keeps a mean and a maximum per operator. It rides the job
+# machinery above unchanged — the pause and the play mode given back, the
+# delay counted on op.TDResources, generations, one job at a time, state kept
+# only in the process registry — because it has the same reason to exist: the
+# numbers are only true on real timeline frames, and N of them outlast a call.
+#
+# What an agent measuring this by hand met (agent report 3, point 3), and what
+# the code below answers:
+#
+# - `cook(force=True)` of a TOP queues its work on the GPU and returns; the
+#   first hand-written pass read 0.7 ms for a chain that cost 81. The time is
+#   paid when something waits for the texture, so a TOP is timed through a
+#   one-pixel `sample()` and a POP through `numPoints()`, which the reference
+#   says stalls for the GPU unless `delayed` is passed. The one-pixel readback
+#   is inside the number;
+# - `cookTime` is the last cook, whenever that was: health showed 44 ms for an
+#   operator that last cooked 374,144 frames earlier. A forced cook always
+#   happens, so the table also says whether each operator cooked *on its own*
+#   on the frames walked, read from `totalCooks` between steps. One that did
+#   not is still measured — it is what it would cost — and is marked;
+# - forcing an operator whose input has not cooked this frame cooks the input
+#   inside the operator's time. Operators are forced upstream first along the
+#   wires, CHOPs before SOPs before POPs before TOPs where no wire orders them.
+#   A dependency the wires do not show (a Render TOP's geometry, a parameter
+#   reference) can still be cooked inside an earlier operator's measurement,
+#   and `totalCooks` rising before an operator's own turn marks it as `pulled`.
+#
+# Which families: a DAT's cost is Python and text, a MAT's is paid inside the
+# Render TOP that draws it, and a COMP's is its children, which are walked.
+
+_PROFILE_FAMILIES = ("CHOP", "SOP", "POP", "TOP")
+# A step forces every operator in it and a TOP waits for the GPU each time, so
+# a step's length is the whole network's cost plus one stall per TOP. 100
+# covers the 87-operator composition of report 3; the ceiling keeps one step
+# from holding the main thread for an unbounded time. Both are estimates, not
+# measurements.
+_PROFILE_LIMIT = 100
+_PROFILE_CEILING = 1000
+
+
+def _total_cooks(node):
+    try:
+        return int(node.totalCooks)
+    except Exception:
+        return None
+
+
+def _profile_nodes(target, limit):
+    """The operators to measure, breadth-first, and how many were left unwalked.
+
+    Two ceilings can stop the walk: `limit` operators found to measure, or
+    `_MAX_WALK_NODES` looked at, which operators of other families (DATs,
+    COMPs) fill first. The third value says which one did.
+    """
+    found = []
+    if target.family in _PROFILE_FAMILIES:
+        found.append(target)
+    queue = list(getattr(target, "children", None) or [])
+    walked = 0
+    while queue and len(found) < limit and walked < _MAX_WALK_NODES:
+        node = queue.pop(0)
+        walked += 1
+        if node.family in _PROFILE_FAMILIES:
+            found.append(node)
+        children = getattr(node, "children", None)
+        if children:
+            queue.extend(children)
+    return found, len(queue), len(found) < limit
+
+
+def _profile_order(nodes):
+    """Upstream first along the wires; family rank, then walk order, breaks ties.
+
+    A feedback loop has no upstream end, so whatever is left in a cycle is
+    appended in walk order rather than dropped.
+    """
+    rank = {family: index for index, family in enumerate(_PROFILE_FAMILIES)}
+    index = {node.path: position for position, node in enumerate(nodes)}
+    family = {node.path: node.family for node in nodes}
+    feeds = {node.path: [] for node in nodes}
+    waiting = {}
+    for node in nodes:
+        inputs = set()
+        for source in getattr(node, "inputs", None) or []:
+            path = getattr(source, "path", None)
+            if path in index and path != node.path:
+                inputs.add(path)
+        waiting[node.path] = len(inputs)
+        for path in inputs:
+            feeds[path].append(node.path)
+
+    def key(path):
+        return (rank[family[path]], index[path])
+
+    ready = sorted((path for path, count in waiting.items() if count == 0), key=key)
+    ordered = []
+    while ready:
+        path = ready.pop(0)
+        ordered.append(path)
+        for child in feeds[path]:
+            waiting[child] -= 1
+            if waiting[child] == 0:
+                ready.append(child)
+                ready.sort(key=key)
+    placed = set(ordered)
+    ordered.extend(node.path for node in nodes if node.path not in placed)
+    return ordered
+
+
+def _profile_plan(params, env):
+    """Validate a profile and lay it out as a timeline job, touching nothing.
+
+    The job has every key the walk, the finish and the view read, so the
+    machinery above runs it as it runs a walk that saves nothing.
+    """
+    target = env.op(params.get("path"))
+    if target is None:
+        raise LookupError("no operator at path '%s'" % params.get("path"))
+    if target.path == "/":
+        raise ValueError(
+            "profiling / would force TouchDesigner's own interface to cook; "
+            "name the project component, e.g. /project1"
+        )
+    start, end = int(params["start"]), int(params["end"])
+    if end < start:
+        raise ValueError("the walk %d..%d runs backwards" % (start, end))
+    settle = params.get("settle")
+    settle = _TIMELINE_SETTLE if settle is None else int(settle)
+    if settle < 1:
+        raise ValueError("settle is at least one application frame, got %d" % settle)
+    limit = params.get("limit")
+    limit = _PROFILE_LIMIT if limit is None else int(limit)
+    if not 1 <= limit <= _PROFILE_CEILING:
+        raise ValueError(
+            "limit is 1..%d operators, got %d" % (_PROFILE_CEILING, limit)
+        )
+    timeline = env.time_of(target)
+    if start < timeline.start or end > timeline.end:
+        raise ValueError(
+            "the walk %d..%d leaves the timeline's range %d..%d, and TouchDesigner "
+            "does not go to a frame outside it"
+            % (start, end, int(timeline.start), int(timeline.end))
+        )
+    nodes, unvisited, walk_full = _profile_nodes(target, limit)
+    if not nodes:
+        raise ValueError(
+            "nothing to profile: no %s at or under %s"
+            % ("/".join(_PROFILE_FAMILIES), target.path)
+        )
+
+    notes = []
+    if unvisited and walk_full:
+        notes.append(
+            "the walk stopped at its ceiling of %d operators looked at, having "
+            "found %d to measure, with %d more left unwalked; profile a "
+            "narrower path" % (_MAX_WALK_NODES, len(nodes), unvisited)
+        )
+    elif unvisited:
+        notes.append(
+            "stopped at the limit of %d operators, with %d more left unwalked; "
+            "raise `limit` or profile a narrower path" % (limit, unvisited)
+        )
+    range_start = getattr(timeline, "rangeStart", timeline.start)
+    range_end = getattr(timeline, "rangeEnd", timeline.end)
+    if range_start > start or range_end < end:
+        notes.append(
+            "the playback range is %d..%d, narrower than the walk %d..%d; a "
+            "frame TouchDesigner will not go to fails the job there, by name"
+            % (int(range_start), int(range_end), start, end)
+        )
+    stats = {}
+    for node in nodes:
+        stats[node.path] = {
+            "type": node.OPType, "family": node.family,
+            "n": 0, "sum": 0.0, "max": 0.0, "cooked": 0, "pulled": 0,
+            "refused": 0, "errors": 0, "error": None,
+            "cpu": 0.0, "cpuN": 0, "gpu": 0.0, "gpuN": 0,
+            "base": _total_cooks(node),
+        }
+    now = env.now()
+    return {
+        "path": target.path,
+        "timeline": getattr(timeline, "path", ""),
+        "mode": "profile",
+        "start": start,
+        "end": end,
+        "first": start,
+        "last": end,
+        "save": [],
+        "output": "",
+        "passes": 1,
+        "pass": 0,
+        "frame": None,
+        "settle": settle,
+        "render": [],
+        # A profile is a measurement, not a warm-up: the play mode goes back.
+        "hold": False,
+        "saved": 0,
+        "toSave": 0,
+        "lastFile": None,
+        "state": "running",
+        "error": None,
+        "errors": [],
+        "notes": notes,
+        "restored": None,
+        "wasPlaying": None,
+        "started": now,
+        "stepped": now,
+        "finished": None,
+        "gen": 0,
+        "seq": 0,
+        "nodes": _profile_order(nodes),
+        "stats": stats,
+        "limit": limit,
+        "unvisited": unvisited,
+        "measured": 0,
+    }
+
+
+def _profile_wait(node):
+    """Block until the GPU has finished `node`; the name of the call, or None."""
+    if node.family == "TOP":
+        node.sample(x=0, y=0)
+        return "sample"
+    if node.family == "POP":
+        node.numPoints()
+        return "numPoints"
+    return None
+
+
+def _profile_measure(job, env):
+    """One frame: who cooked on their own, then each operator forced and timed."""
+    stats = job["stats"]
+    present = []
+    for path in job["nodes"]:
+        node = env.op(path)
+        entry = stats[path]
+        if node is None:
+            entry["errors"] += 1
+            entry["error"] = "the operator is gone"
+            continue
+        count = _total_cooks(node)
+        if count is not None and entry["base"] is not None and count > entry["base"]:
+            entry["cooked"] += 1
+        present.append((path, node, count))
+    for path, node, seen in present:
+        entry = stats[path]
+        before = _total_cooks(node)
+        if before is not None and seen is not None and before > seen:
+            entry["pulled"] += 1
+        began = env.perf()
+        try:
+            node.cook(force=True)
+            _profile_wait(node)
+        except Exception as exc:
+            # An unsynchronised time would be the 0 ms trap again, so a failed
+            # wait is an error, not a measurement.
+            entry["errors"] += 1
+            entry["error"] = "%s: %s" % (type(exc).__name__, exc)
+            continue
+        spent = env.perf() - began
+        after = _total_cooks(node)
+        if after is not None and before is not None and after <= before:
+            entry["refused"] += 1
+        entry["n"] += 1
+        entry["sum"] += spent
+        entry["max"] = max(entry["max"], spent)
+        for key, member in (("cpu", "cpuCookTime"), ("gpu", "gpuCookTime")):
+            try:
+                value = float(getattr(node, member))
+            except Exception:
+                continue
+            entry[key] += value
+            entry[key + "N"] += 1
+    for path, node, _seen in present:
+        stats[path]["base"] = _total_cooks(node)
+    job["measured"] += 1
+
+
+def _profile_table(job):
+    """Every operator's row, costliest mean first, unmeasured ones last."""
+    rows = []
+    for path in job["nodes"]:
+        entry = job["stats"][path]
+        count = entry["n"]
+        rows.append({
+            "path": path,
+            "type": entry["type"],
+            "family": entry["family"],
+            "frames": count,
+            "mean": round(entry["sum"] / count, 3) if count else None,
+            "max": round(entry["max"], 3) if count else None,
+            "cooked": entry["cooked"],
+            "pulled": entry["pulled"],
+            "refused": entry["refused"],
+            "errors": entry["errors"],
+            "error": entry["error"],
+            "cpu": round(entry["cpu"] / entry["cpuN"], 3) if entry["cpuN"] else None,
+            "gpu": round(entry["gpu"] / entry["gpuN"], 3) if entry["gpuN"] else None,
+            "sync": {"TOP": "sample", "POP": "numPoints"}.get(entry["family"]),
+        })
+    rows.sort(key=lambda row: (row["mean"] is None, -(row["mean"] or 0.0), row["path"]))
+    return {
+        "rows": rows,
+        "measured": job["measured"],
+        "nodes": len(rows),
+        "limit": job["limit"],
+        "truncated": job["unvisited"],
+    }
+
+
+def m_timeline_profile(params):
+    """Walk the timeline and time every TOP/CHOP/SOP/POP under `path` per frame.
+
+    Returns at once with the job; `timeline_status` carries the table, sorted
+    by mean cost, and `timeline_cancel` stops it. One job at a time with
+    `timeline_run`, since both move one timeline.
+    """
+    env = _timeline_env()
+    state = env.registry()
+    _timeline_refuse_second(state)
+    return _timeline_start(_profile_plan(params, env), env, state)
 
 
 def m_errors(params):
@@ -5272,6 +5616,7 @@ METHODS = {
     "timeline_run": m_timeline_run,
     "timeline_status": m_timeline_status,
     "timeline_cancel": m_timeline_cancel,
+    "timeline_profile": m_timeline_profile,
     "batch": m_batch,
     "undo": m_undo,
     "redo": m_redo,

@@ -47,7 +47,8 @@ each flag the same way. A bridge from before that read sends no old value, and
 then the journal records none: the old value is the earlier line that set it.
 A timeline job
 keeps the walk it was sent: the frames, the ones saved, the output template,
-the tiles and the Render TOPs it crops; a cancel keeps which job it stopped.
+the tiles and the Render TOPs it crops; a profile keeps its frames, its
+limit and its settle; a cancel keeps which job it stopped.
 
 Calls that only read keep their path and nothing else, so a whole network
 never lands in the file. The `ping`s a settle (`settle_frames`) polls with, one

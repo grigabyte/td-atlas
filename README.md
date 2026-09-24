@@ -212,7 +212,7 @@ on it:
 | *"What did you change since we started?"* | `td_snapshot` before and after, then `td_project_diff` on the two — components in `~/.td-atlas`, never your own file |
 | *"Undo that."* | `td_undo` — a whole `td_build` batch is one step |
 
-44 tools in three groups. **9 index** tools work offline, **26 live** tools act
+46 tools in three groups. **9 index** tools work offline, **28 live** tools act
 on a running instance, and **9 project-file** tools read and write
 `.toe`/`.tox` from disk. Each one, with its arguments and what it is for, is in
 [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md),
@@ -235,7 +235,7 @@ sending, so the usual mistakes come back as corrections:
 | --- | --- |
 | [`plugin/skills/touchdesigner/SKILL.md`](plugin/skills/touchdesigner/SKILL.md) | Agents *using* the connector |
 | [`plugin/skills/touchdesigner/references/gotchas.md`](plugin/skills/touchdesigner/references/gotchas.md) | Every trap that produced no error |
-| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | All 44 MCP tools |
+| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | All 46 MCP tools |
 | [`AGENTS.md`](AGENTS.md) | Agents *contributing to* this repository |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to run the tests and the linter before a pull request |
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed per version, and every protocol change without fail |

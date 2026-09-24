@@ -168,7 +168,7 @@ claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 | *「从我们开始到现在你改了什么？」* | 前后各一次 `td_snapshot`，然后对这两份做 `td_project_diff` —— 组件落在 `~/.td-atlas`，绝不动你自己的文件 |
 | *「撤销。」* | `td_undo` —— 一整个 `td_build` 批次是一步 |
 
-44 个工具分三组。**9 个索引**工具离线可用，**26 个实时**工具作用于运行中的
+46 个工具分三组。**9 个索引**工具离线可用，**28 个实时**工具作用于运行中的
 实例，**9 个工程文件**工具从磁盘读写 `.toe`/`.tox`。每一个工具、它的参数和
 它的用途，都在
 [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md)
@@ -191,7 +191,7 @@ claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 | --- | --- |
 | [`plugin/skills/touchdesigner/SKILL.md`](plugin/skills/touchdesigner/SKILL.md) | *使用*这个连接器的智能体 |
 | [`plugin/skills/touchdesigner/references/gotchas.md`](plugin/skills/touchdesigner/references/gotchas.md) | 每一个不曾报出错误的陷阱 |
-| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | 全部 44 个 MCP 工具 |
+| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | 全部 46 个 MCP 工具 |
 | [`AGENTS.md`](AGENTS.md) | 向本仓库*提交改动*的智能体 |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | 提 pull request 之前怎么跑测试和 linter |
 | [`CHANGELOG.md`](CHANGELOG.md) | 每个版本改了什么，以及每一次协议变更，一次都不落下 |

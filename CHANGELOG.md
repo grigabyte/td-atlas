@@ -26,28 +26,31 @@ either from the code they are running:
   started before the upgrade refuses the reloaded bridge as newer than it
   expects, and the new server refuses every bridge that was not reloaded. A bridge
   laid down by an earlier build is refused at connect with that fix in the
-  message. Three methods joined the table (`timeline_run`,
-  `timeline_status`, `timeline_cancel`), and five replies gained fields an
-  older bridge does not send: `ping` (`absFrame`, `tick` and a `timeline`
-  block),
-  the error reply of `exec` (`stdout`, `stderr`, `result`), `health_sample`
+  message. Five methods joined the table (`timeline_run`,
+  `timeline_status`, `timeline_cancel`, `timeline_profile`, `trace`), and six
+  replies gained fields an older bridge does not send: `ping` (`absFrame`,
+  `tick` and a `timeline` block), the error reply of `exec` (`stdout`,
+  `stderr`, `result`), `par_set` (`before`), `health_sample`
   (`cookAbsFrame`, `cookFrame`, `feedback`, `negativeFloat`, `clockReads`,
-  `clockReadsCount`, `clockScan`), and `network` and `op_info` (`viewer` on a
-  TOP).
+  `clockReadsCount`, `clockScan` with its `scripts` count), and `network` and
+  `op_info` (`viewer` on a TOP).
 - **The call journal records what a changing call changed, not only that it
   ran.** Parameter writes, builds, creations, deletions, wiring, flags,
   palette loads, extensions, annotations, saved components, the code
   `td_exec` ran and the walk a timeline job was sent now leave their values
   on the journal line in
   `~/.td-atlas`, so "put it back the way it was yesterday" can be answered
-  from the log. The old value of a parameter is not recorded. Every line is
+  from the log. A parameter write keeps the value it replaced, which the
+  bridge reads in the same request before writing, and `td_log` prints it
+  as `tx = 0.5 (was 0.2)`. Every line is
   clipped (code and DAT text at 4 KB, 32 KB a line), the token is scrubbed as
   before, and other secrets are hidden by pattern: a quoted value given to a
   name such as `password`, `secret`, `token` or `api_key`, and keys that
   announce themselves (`sk-…`, `ghp_…`, `xoxb-…`, `AKIA…`), become
   `[redacted]`. The file cap rises from 1 MiB to 16 MiB. `td_log` and
   `td-atlas log` print the change under each call. Calls that only read are
-  logged as before.
+  logged as before, and the frame polls `settle_frames` makes are not
+  logged at all.
 - `td_status` and `td-atlas status` name the timeline's own frame, whether it
   is playing, its start and end, its playback range and rate, apart from the
   application clock. The status used to print the application's frame under
@@ -69,7 +72,10 @@ either from the code they are running:
   strength rather than switching it off, and Level TOPs that can put
   negative floats into an Add. Reads of `absTime` or an unseeded random
   generator, which keep a render from reproducing, are named with where they
-  are.
+  are; script text and parameter expressions share one time budget, and the
+  finding says how much of each it read. A bypassed gain operator is listed
+  once, under its own note, and no longer also among the plain bypassed
+  operators.
 - `td_network` marks a TOP whose viewer flag is off, so an empty tile is not
   taken for a broken scene.
 - `td-atlas install` prints the MCP line for every directory (`-s user`)
@@ -96,11 +102,31 @@ either from the code they are running:
   show the frame before it. The frames are counted on
   `op.TDResources.time.frame`, which keeps counting while the timeline is
   paused; `absTime.frame` stands still then, and a wait on it reported a
-  drawing TouchDesigner as stalled.
+  drawing TouchDesigner as stalled. `save_to` refuses a file that already
+  exists unless `overwrite=True`, like every other write td-atlas makes;
+  `render -o` on the CLI overwrites as a shell redirect does.
 - The index records the tuple members a size menu adds (`amp2` on a
   noisePOP, with the menu value that shows it), after `td-atlas probe`. The
   validator refuses a member the size in force does not show, and a size
   menu the probe cannot step is reported.
+- **`td_trace`: why the output is black.** It walks up a TOP's inputs,
+  reads each image's minimum, mean and maximum without forcing a cook, and
+  marks where the picture dropped, went negative, lost its alpha or turned
+  NaN, with the cause the parameters show (bypass, opacity 0, an empty
+  input, a Level TOP in float with a black level and no clamp). It stops at
+  40 operators and half a second of reading. MCP only.
+- **`td_timeline_profile`: who spends the frame.** A job in the same slot as
+  `td_timeline_run` walks real timeline frames and, on each, cooks every
+  TOP, CHOP, SOP and POP under a path upstream first and times it with the
+  GPU waited for — a `td_exec` loop of `cook(force=True)` shows about 0 ms
+  for a TOP that costs 80, since the cook only queues GPU work.
+  `td_timeline_status` shows mean and maximum per operator, costliest first,
+  and marks the ones that did not cook on their own. Forced cooks run side
+  effects (scripts, file and network outputs) once more; the tool says so.
+- `td_snapshot` ends its reply with the next step of a before-and-after
+  comparison of a branch, and says when a label it reused replaced an
+  earlier snapshot. The skill gives the whole recipe: two snapshots of the
+  branch, `td_project_diff` between them, and the roll-back.
 - The skill notes sequence parameters, the Execute DAT's callbacks,
   one-shot Movie File Out, deferred runs on a paused timeline, bypassed
   Level TOPs and the undoable route through `td_exec` for an edit `td_build`
@@ -115,6 +141,9 @@ either from the code they are running:
 - An operator-reference parameter written as `../name` is refused only when
   the path TouchDesigner will look it up at is missing, and the refusal
   gives the sibling and absolute spellings.
+- `td_set_params` checks names and `../` operator references even without
+  `op_type`: it asks the bridge for the node's type in the same call it
+  already makes for references.
 - The test suite stays out of the real `~/.td-atlas`. It had been appending
   a journal line there.
 

@@ -178,7 +178,7 @@ claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 | *«Что ты изменил с тех пор, как мы начали?»* | `td_snapshot` до и после, потом `td_project_diff` по этим двум; компоненты ложатся в `~/.td-atlas`, ваш собственный файл никто не трогает |
 | *«Отмени это.»* | `td_undo`, целая пачка `td_build` идёт одним шагом |
 
-44 инструмента в трёх группах. **9 по индексу** работают офлайн, **26 живых**
+46 инструментов в трёх группах. **9 по индексу** работают офлайн, **28 живых**
 действуют в запущенной программе, **9 по файлам проекта** читают и пишут
 `.toe`/`.tox` с диска. Каждый, с аргументами и с тем, зачем он нужен, лежит в
 [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md),
@@ -201,7 +201,7 @@ claude mcp add td-atlas -- /path/to/python -m td_atlas.cli mcp
 | --- | --- |
 | [`plugin/skills/touchdesigner/SKILL.md`](plugin/skills/touchdesigner/SKILL.md) | агентам, которые *пользуются* коннектором |
 | [`plugin/skills/touchdesigner/references/gotchas.md`](plugin/skills/touchdesigner/references/gotchas.md) | каждая ловушка, которая не дала ни одной ошибки |
-| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | все 44 инструмента MCP |
+| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | все 46 инструментов MCP |
 | [`AGENTS.md`](AGENTS.md) | агентам, которые *вносят правки* в этот репозиторий |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | как прогнать тесты и линтер перед пул-реквестом |
 | [`CHANGELOG.md`](CHANGELOG.md) | что изменилось в каждой версии, и каждая смена протокола обязательно |
