@@ -1,7 +1,7 @@
 ---
 istochnik: README.md
 kommit: cf0fc32
-hesh: 67fe294553414fecbae23584a709bf1f2bdc6380e7b90b14b7df089cd37f43bf
+hesh: f08230651e8fca1b61efe7a4cc6a66632a8f2fa79defdc68bc3e0f9124c010b1
 ---
 
 td-atlas даёт агенту три вещи. Точные имена операторов и параметров из
