@@ -1,7 +1,7 @@
 ---
 istochnik: docs/health.md
 kommit: f767122
-hesh: 4cf0dcd586730d9bd5594c9eb4f730ef4a314ce205a22d24bae6320545b1708f
+hesh: 0a41b8c364541eb6fbb6d6f7ca9378bf613b925b60fb34eba3a08edde845da5e
 ---
 
 # О чём TouchDesigner молчит
@@ -35,7 +35,8 @@ hesh: 4cf0dcd586730d9bd5594c9eb4f730ef4a314ce205a22d24bae6320545b1708f
 - `bypass-passes-through` (заметка) называет `levelTOP`, `mathTOP`,
   `hsvadjustTOP`, `mathCHOP` или `mathPOP` в обходе. Bypass отдаёт вход
   на полной силе, поэтому слой, который он приглушал, возвращается, а
-  не пропадает.
+  не пропадает. Такой оператор назван здесь и второй раз под `bypassed`
+  не повторяется.
 - `negative-float` (предупреждение, если ниже стоит Add, иначе заметка)
   называет Level TOP во float-формате пикселей с black level выше 0 и без
   clamp. Он отдаёт значения ниже нуля, и Add TOP или Composite в режиме `add`

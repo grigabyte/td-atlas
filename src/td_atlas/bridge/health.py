@@ -384,8 +384,13 @@ def check(
         if isinstance(feedback, dict) and not feedback.get("reset"):
             target = feedback.get("target") or "no target parameter"
             loops.append(f"{node['path']} (target {target})")
+        # A bypassed gain operator is named once, under the note that says
+        # what its bypass does; listed in the warning as well, it was the same
+        # node twice in one report.
         if node["bypass"] and node["type"] in _GAIN_TYPES:
             through.append(f"{node['path']} ({node['type']})")
+        elif node["bypass"]:
+            bypassed.append(node["path"])
         risk = node.get("negativeFloat")
         if isinstance(risk, dict):
             negative_depth = max(negative_depth, int(risk.get("depth") or 0))
@@ -405,8 +410,6 @@ def check(
             # Measured: the bridge hands the whole string over, this is only
             # where it was being dropped.
             warned.append(f"{node['path']} ({_warning_excerpt(node['warnings'])})")
-        if node["bypass"]:
-            bypassed.append(node["path"])
         if node["type"] in _OUTPUT_TYPES and node.get("active") is False:
             inactive.append(f"{node['path']} ({_OUTPUT_TYPES[node['type']]})")
 
@@ -552,9 +555,11 @@ def check(
             )
         )
     if bypassed:
+        also = (f"; {len(through)} gain operator(s) bypassed as well are "
+                f"under bypass-passes-through" if through else "")
         health.findings.append(
             Finding("warning", "bypassed",
-                    f"{len(bypassed)} operator(s) bypassed", bypassed))
+                    f"{len(bypassed)} operator(s) bypassed{also}", bypassed))
     if through:
         health.findings.append(
             Finding(

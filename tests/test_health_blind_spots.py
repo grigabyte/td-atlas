@@ -178,8 +178,24 @@ def test_a_bypassed_level_is_said_to_pass_its_input_through():
     assert through is not None and through.severity == "note"
     assert through.paths == ["/p/glow_lev (levelTOP)"]
     assert "does not switch" in through.message
-    # The flag itself is still reported for every bypassed operator.
-    assert finding(result, "bypassed").paths == ["/p/glow_lev", "/p/blur1"]
+    # Each bypassed operator is named once: a gain operator under the note
+    # that says what its bypass does, every other one under the warning.
+    assert finding(result, "bypassed").paths == ["/p/blur1"]
+
+
+def test_gain_operators_alone_leave_no_empty_bypass_warning():
+    nodes = [node("/p/glow_lev", 10, type="levelTOP", bypass=True)]
+    result = check(sample(0, nodes), sample(60, [dict(nodes[0], cooks=70)]))
+    assert finding(result, "bypassed") is None
+    assert finding(result, "bypass-passes-through").paths == [
+        "/p/glow_lev (levelTOP)"]
+
+
+def test_the_bypass_warning_counts_the_gain_operators_it_leaves_to_the_note():
+    nodes = [node("/p/glow_lev", 10, type="levelTOP", bypass=True),
+             node("/p/blur1", 10, type="blurTOP", bypass=True)]
+    result = check(sample(0, nodes), sample(60, [dict(n, cooks=70) for n in nodes]))
+    assert "bypass-passes-through" in finding(result, "bypassed").message
 
 
 # -- B4: negative values out of a Level TOP in a float format ---------------

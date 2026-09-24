@@ -535,7 +535,8 @@ Bypass is not off, either. A bypassed Level TOP still passes its input down
 the chain, unlevelled, so bypassing a layer does not take it out of a
 composite. Disconnect it, or set its own opacity or brightness to zero.
 
-`td_health` reports it as `bypassed` and lists every path. It reads the flag and
+`td_health` reports it as `bypassed` and lists every path, except a gain
+operator's, which goes under the note below instead. It reads the flag and
 nothing else, and cannot tell an intentional bypass from a forgotten one, so it
 names them all. Bypass is a flag, not a parameter. It is in `NODE_FLAGS`, so
 `td_flags` reads it and `td_set_flags` clears it, and it does not appear in
@@ -544,9 +545,9 @@ names them all. Bypass is a flag, not a parameter. It is in `NODE_FLAGS`, so
 Bypass on an operator whose job is to scale a signal reads as "switched off",
 and does the opposite. A bypassed Level TOP hands its input through at full
 strength, so the layer it was dimming comes back. An agent bypassed a glow's
-Level TOP to rule the glow out, and the glow stayed. `td_health` adds the note
-`bypass-passes-through` for a bypassed `levelTOP`, `mathTOP`, `hsvadjustTOP`,
-`mathCHOP` or `mathPOP`. To take a layer out, bring its level to zero. In that
+Level TOP to rule the glow out, and the glow stayed. `td_health` names a
+bypassed `levelTOP`, `mathTOP`, `hsvadjustTOP`, `mathCHOP` or `mathPOP` under
+the note `bypass-passes-through`, once, and not under `bypassed` as well. To take a layer out, bring its level to zero. In that
 case `brightness1 = 0` on the Level TOP did it. Disconnecting it works too.
 
 ## A Level TOP in a float format can output negative values
