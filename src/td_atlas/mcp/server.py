@@ -1043,7 +1043,9 @@ def td_timeline_profile(
 
     The timeline is paused for the walk and its play mode given back; each
     step forces the whole list, so a heavy network makes each step as long as
-    its frame. Profile a component, not `/`.
+    its frame. Every operator cooks once more per frame than it would, so a
+    Script operator or a network/file out runs its side effect again — profile
+    a branch without those, or accept it. Profile a component, not `/`.
     """
     try:
         walk = timeline.parse_frames(frames)
