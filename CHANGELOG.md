@@ -14,7 +14,10 @@ either from the code they are running:
   `td-atlas reload`.
 - **Anything that changes what the connector may touch in the user's project.**
 
-## [Unreleased]
+## [0.2.0] - 2026-09-24
+
+Measured against TouchDesigner 2025.32460 on macOS. The Windows code paths run
+in CI; TouchDesigner on Windows is unverified. See `docs/compatibility.md`.
 
 ### Changed
 
@@ -292,5 +295,5 @@ in CI; TouchDesigner on Windows is unverified. See `docs/compatibility.md`.
   The cache holding it never expired, so a token rotated by `td-atlas install`
   went into the log in clear while the previous one was removed.
 
-[Unreleased]: https://github.com/grigabyte/td-atlas/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/grigabyte/td-atlas/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/grigabyte/td-atlas/releases/tag/v0.1.0

@@ -1,7 +1,7 @@
 ---
 istochnik: CHANGELOG.md
 kommit: cda2d9b
-hesh: 87a4085711038dd3d05fb06e3aa136faafbd5f242b02522274505ec3d6634e6e
+hesh: ceda6535a12c62e2ca7365fab9e504b04e0ac02559601f471517d5f88e8dd237
 ---
 
 # Журнал изменений
@@ -22,7 +22,10 @@ hesh: 87a4085711038dd3d05fb06e3aa136faafbd5f242b02522274505ec3d6634e6e
 - **Всё, что меняет список того, к чему коннектор может притронуться в проекте
   пользователя.**
 
-## [Unreleased]
+## [0.2.0] - 2026-09-24
+
+Замерено на TouchDesigner 2025.32460 под macOS. Ветки кода для Windows
+прогоняет CI; TouchDesigner под Windows не проверен. См. `docs/compatibility.md`.
 
 ### Изменено
 
@@ -308,5 +311,5 @@ hesh: 87a4085711038dd3d05fb06e3aa136faafbd5f242b02522274505ec3d6634e6e
   его держал, никогда не протухал, поэтому токен, обновлённый через
   `td-atlas install`, попадал в лог открытым текстом, а вычищался предыдущий.
 
-[Unreleased]: https://github.com/grigabyte/td-atlas/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/grigabyte/td-atlas/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/grigabyte/td-atlas/releases/tag/v0.1.0
