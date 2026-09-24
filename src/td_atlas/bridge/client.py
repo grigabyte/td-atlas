@@ -314,7 +314,11 @@ class BridgeClient:
         self.version_warning = message
 
     def call(
-        self, method: str, timeout: float | None = None, **params: Any
+        self,
+        method: str,
+        timeout: float | None = None,
+        journaled: bool = True,
+        **params: Any,
     ) -> Any:
         """Invoke a bridge method, raising on transport or handler failure.
 
@@ -323,6 +327,13 @@ class BridgeClient:
         duration it records is the one the caller actually waited, transport
         included. See `td_atlas/journal.py` for why the record lives on the
         host rather than inside TouchDesigner.
+
+        `journaled=False` is for a poll, not a call anyone asked for: a
+        settle pings once a frame until the clock moves, and each poll was a
+        line of its own — ten seconds of a stalled TouchDesigner put six
+        hundred `ping` lines between the two calls a reader came for. Only
+        the successes go unrecorded: a poll that fails is the failure the
+        reader of the journal is looking for.
         """
         started = time.perf_counter()
         try:
@@ -336,7 +347,8 @@ class BridgeClient:
                           error_type="BridgeUnavailable",
                           reason=exc.reason, message=str(exc))
             raise
-        self._journal(method, params, started, None, result=result)
+        if journaled:
+            self._journal(method, params, started, None, result=result)
         return result
 
     def _journal(
@@ -471,8 +483,8 @@ class BridgeClient:
 
     # -- convenience -------------------------------------------------------
 
-    def ping(self) -> dict:
-        return self.call("ping")
+    def ping(self, journaled: bool = True) -> dict:
+        return self.call("ping", journaled=journaled)
 
     def exec(self, code: str, timeout: float | None = None) -> dict:
         return self.call("exec", code=code, timeout=timeout)

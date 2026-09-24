@@ -30,7 +30,7 @@ class FakeClient:
         self.step = step
         self.calls = []
 
-    def ping(self):
+    def ping(self, journaled=True):
         self.calls.append("ping")
         self.frame += self.step
         return {"frame": self.frame, "fps": 600.0}
@@ -126,8 +126,8 @@ class PausedClient(FakeClient):
         super().__init__(step=0)
         self.tick = 516
 
-    def ping(self):
-        reply = super().ping()
+    def ping(self, journaled=True):
+        reply = super().ping(journaled)
         self.tick += 1
         reply["tick"] = self.tick
         return reply

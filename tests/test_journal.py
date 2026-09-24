@@ -140,6 +140,47 @@ def test_a_batch_step_keeps_the_old_value_of_its_par_set():
     assert "amp = 3.0 (was 1.0)" in journal.format_calls([call])
 
 
+def test_a_settle_leaves_no_line_per_poll():
+    """A settle polls `ping` until the clock moves; each poll was a line.
+
+    Ten seconds of a stalled TouchDesigner at one poll a frame is six hundred
+    lines of `ping` between two calls anyone asked for.
+    """
+    from td_atlas.bridge import settle
+
+    class Ticking(BridgeClient):
+        tick = 100
+
+        def _call(self, method, timeout=None, **params):
+            self.tick += 1
+            return {"frame": 5, "tick": self.tick, "fps": 600.0}
+
+    settled = settle.wait_frames(Ticking(port=9977), 3)
+    assert settled.complete
+    assert [call.method for call in journal.read()] == []
+
+
+def test_a_settle_poll_that_fails_is_still_recorded():
+    from td_atlas.bridge import settle
+
+    class Gone(BridgeClient):
+        def _call(self, method, timeout=None, **params):
+            raise BridgeUnavailable("Cannot reach TouchDesigner",
+                                    reason="bridge_unreachable")
+
+    with pytest.raises(BridgeUnavailable):
+        settle.wait_frames(Gone(port=9977), 3)
+    (call,) = journal.read()
+    assert call.method == "ping" and not call.ok
+
+
+def test_a_ping_asked_for_on_its_own_is_still_recorded():
+    client = _Answering(port=9977)
+    client.answer = {"frame": 1}
+    client.ping()
+    assert [call.method for call in journal.read()] == ["ping"]
+
+
 def test_flags_set_records_the_old_values_the_bridge_already_returns():
     client = _Answering(port=9977)
     client.answer = {"path": "/project1/look", "type": "renderTOP",

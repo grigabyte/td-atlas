@@ -50,7 +50,9 @@ keeps the walk it was sent: the frames, the ones saved, the output template,
 the tiles and the Render TOPs it crops; a cancel keeps which job it stopped.
 
 Calls that only read keep their path and nothing else, so a whole network
-never lands in the file. Code and DAT text are clipped at 4 KB and other
+never lands in the file. The `ping`s a settle (`settle_frames`) polls with, one
+a frame until TouchDesigner has drawn, are not written at all; a poll that
+fails is. Code and DAT text are clipped at 4 KB and other
 values at 1,000 characters, with the full length noted; a batch keeps its
 first 64 steps and counts the rest; one line never passes 32 KB. The file is
 bounded at 16 MiB and the oldest lines are dropped first. The bridge token is
