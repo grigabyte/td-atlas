@@ -1,7 +1,7 @@
 ---
 istochnik: docs/compatibility.md
 kommit: f767122
-hesh: b2bcb0984c210fb3bda95a98f7da302829526cc349d0cb4ef322fed6cc5ee445
+hesh: 865af797bad39f44c8944f2b62e42677297eba97db31f3c38c9c53a8203792a9
 ---
 
 # Совместимость
@@ -80,7 +80,7 @@ TouchDesigner, держится на 3.11 и без сторонних импо�
   `~/.td-atlas/cache`. Запись (`td_project_write`, `td_variant_restore`)
   отказывает, когда выходной путь уже занят.
 - **На хосте** td-atlas пишет только под `~/.td-atlas`. Это индекс,
-  разложенный мост, журнал вызовов `calls.jsonl` (предел 1 MiB), снимки,
+  разложенный мост, журнал вызовов `calls.jsonl` (предел 16 MiB), снимки,
   варианты и кеш распаковок. Кеш ограничен по числу и вытесняет самые давние
   распаковки. `td-atlas doctor` говорит, сколько распаковок в нём лежит,
   а `td-atlas doctor --clear-cache` его чистит.

@@ -14,7 +14,8 @@ not `ok` comes with the command that repairs it, and a broken link makes
 | a call comes back `UnknownMethod` | the same thing from the other side. The bridge was staged from an older package, so it has no such method | `td-atlas reload`, then repeat the call |
 | *"the bridge rejected the token this host sent"* | the bridge's token and `~/.td-atlas/config.json` disagree | `td-atlas doctor` compares them; `td-atlas install` re-stages against the current one |
 | *"something answered on that port but not with a bridge reply"* | another program holds the port, or the Web Server DAT is misconfigured | `td-atlas doctor`, then `td-atlas install` |
-| a call times out | every request runs on TouchDesigner's main thread during a cook, so a long script blocks it | wait, then retry in smaller pieces, a short `td_exec` at a time |
+| a call times out and the message says TouchDesigner is busy | every request runs on TouchDesigner's main thread during a cook, so a long script blocks it | wait, then retry in smaller pieces, a short `td_exec` at a time |
+| a call times out and the message says TouchDesigner *looks asleep* | on a timeout the host reads the process with `ps` (macOS). Near 0% CPU means no script is holding it: macOS put it to sleep, it is minimised, or a modal dialog is open | bring TouchDesigner to the front and close any dialog, then repeat the same call. On Windows the process is not read and the busy wording stands |
 | *"this host has no atom index yet"* | nothing was built | `td-atlas build`, then `td-atlas probe` with TouchDesigner open |
 | *"the index names a file that is not on disk"* | TouchDesigner was moved, updated or reinstalled since the index was built | `td-atlas build`, then `td-atlas probe` |
 | `doctor` says `index build` disagrees | the index was built from a different TouchDesigner than the one installed now, and the tools answer with that other build's values | `td-atlas build` |

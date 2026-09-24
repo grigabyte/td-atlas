@@ -21,6 +21,7 @@ from .. import config as cfg
 from .. import journal
 from ..atoms.store import AtomStore
 from ..atoms.validate import validate_params
+from ..bridge import timeline
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
 from ..component.handler import NODE_FLAGS
 from .hints import IndexMissing, failure, from_record, guarded, hint
@@ -377,7 +378,15 @@ def td_expression_help(query: str, limit: int = 10) -> str:
 @mcp.tool()
 @guarded
 def td_status() -> str:
-    """Whether TouchDesigner is reachable, and what project it has open."""
+    """Whether TouchDesigner is reachable, what project it has open, and
+    whether its timeline is playing.
+
+    Read the `timeline:` line before trusting a live CHOP between two of your
+    own calls: `(playing)` means frames keep cooking in between. `abs` is the
+    application clock, not the project's frame. A `(!)` on the range means
+    playback stops short of `end` — usually a range left over from a test, and
+    a recording stops there without an error.
+    """
     db_note = "index: missing"
     try:
         stats = store().stats()
@@ -397,7 +406,8 @@ def td_status() -> str:
     return (
         f"{_warn(client)}{db_note}\nbridge: connected to {info['product']} "
         f"{info['build']}, project '{info['project']}' in "
-        f"{info['projectFolder']}, {info['fps']} fps, frame {info['frame']}"
+        f"{info['projectFolder']}, {info['fps']} fps\n"
+        f"{timeline.describe(info)}"
     )
 
 
@@ -417,6 +427,14 @@ def td_log(
     the next one overwrites it; this is the whole session, and it survives
     TouchDesigner being closed and reopened, so it also answers "what happened
     yesterday".
+
+    Every call that changed the project is listed with what it changed:
+    `tx = 0.5` and `ty = expr ...` under a td_set_params, each step of a
+    td_build, flags with the value they had before, and the first lines of
+    the code a td_exec ran. To put back what was set earlier, read it here
+    with `method="par_set"`, `"batch"` or `"exec"` and a large `limit`,
+    rather than reconstructing it from a render. An old parameter value is
+    the earlier line that set it; the journal does not record one otherwise.
 
     Also reach for it before repeating a call that failed. `failures=True`
     gives the refusals alone, each with the text it refused with, and the

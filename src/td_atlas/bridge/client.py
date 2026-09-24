@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import base64
 import json
+import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -52,6 +54,69 @@ _UPGRADE_BRIDGE = (
 )
 _UPGRADE_HOST = "Update the td-atlas package on this host to match."
 
+# -- reading the process on a timeout ----------------------------------------
+#
+# `ps` answers in one spawn on macOS, where TouchDesigner runs and where the
+# asleep case was met. Windows has no equally cheap reading (`tasklist` gives
+# memory, not CPU; a CPU figure needs two WMI samples a second apart), so
+# there the old message stands, as the owner asked, rather than a guess.
+_CAN_INSPECT_PROCESS = sys.platform != "win32"
+
+# Thresholds on `ps`'s %CPU. Estimates, not measurements of this decision:
+# the one asleep reading on record is 0.0% in state S (ПРОЧТИ-БОЛИ-АГЕНТА-2,
+# 2026-09-24), and one awake, answering TouchDesigner on this machine read
+# 115.3% and, minutes later, 52.7% the same day. A script holding the main
+# thread keeps one core busy, so it reads near 100% or more. Between the two
+# bounds nothing is concluded.
+_IDLE_CPU = 5.0
+_BUSY_CPU = 50.0
+
+
+def _ps(args: list[str]) -> str:
+    """`ps` with these arguments, its stdout, or "" on any failure.
+
+    A seam for the tests as much as a helper: they replace it so no process
+    is spawned. Bounded at two seconds, since it runs after a timeout the
+    caller has already waited out.
+    """
+    try:
+        done = subprocess.run(
+            ["ps", *args], capture_output=True, text=True, timeout=2.0,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return done.stdout if done.returncode == 0 else ""
+
+
+def _touchdesigner_processes(pid: int = 0) -> list[tuple[int, float, str]]:
+    """(pid, %CPU, state) for the bridge's own process, or every TouchDesigner.
+
+    The registered pid is preferred because it is the bridge's; without one,
+    processes are matched by the executable's name, and more than one match is
+    returned as such for the caller to refuse to pick from.
+    """
+    # The name is checked on the registered pid too: a registry record can
+    # outlive its process, and a recycled pid would otherwise be read as
+    # TouchDesigner's.
+    if pid:
+        listing = _ps(["-o", "pid=,pcpu=,stat=,comm=", "-p", str(pid)])
+    else:
+        listing = _ps(["-axo", "pid=,pcpu=,stat=,comm="])
+    found: list[tuple[int, float, str]] = []
+    for line in listing.splitlines():
+        fields = line.split(None, 3)
+        if len(fields) < 4:
+            continue
+        name = fields[3].strip().rsplit("/", 1)[-1]
+        if not name.lower().startswith("touchdesigner"):
+            continue
+        try:
+            found.append((int(fields[0]), float(fields[1]), fields[2]))
+        except ValueError:
+            continue
+    return found
+
 
 class BridgeError(RuntimeError):
     """A call reached TouchDesigner but the handler reported a failure."""
@@ -71,7 +136,7 @@ class BridgeUnavailable(RuntimeError):
     from the caller's point of view a bridge speaking an incompatible
     protocol is exactly as unusable as one that never answered.
 
-    `reason` separates the four ways this happens, because they need four
+    `reason` separates the five ways this happens, because they need five
     different repairs and the message text is the wrong thing to recognise
     them by — a reworded message would silently change which advice a caller
     gives. The values are the keys of the recovery table in
@@ -266,7 +331,7 @@ class BridgeClient:
                           error_type="BridgeUnavailable",
                           reason=exc.reason, message=str(exc))
             raise
-        self._journal(method, params, started, None)
+        self._journal(method, params, started, None, result=result)
         return result
 
     def _journal(
@@ -278,9 +343,14 @@ class BridgeClient:
         error_type: str = "",
         reason: str = "",
         message: str = "",
+        result: Any = None,
     ) -> None:
+        # The reply goes along because it is the only source of an old value
+        # the journal may record: `flags_set` reads each flag before writing
+        # it and says so. The journal takes what it names and nothing else.
         journal.record(
             method,
+            result=result,
             ok=exc is None,
             seconds=time.perf_counter() - started,
             params=params,
@@ -330,16 +400,69 @@ class BridgeClient:
                 reason="bridge_unreachable",
             ) from exc
         except TimeoutError as exc:
-            raise BridgeUnavailable(
-                f"TouchDesigner did not respond within "
-                f"{timeout or self.timeout}s. A long-running script blocks "
-                f"TouchDesigner's main thread.",
-                reason="bridge_timeout",
-            ) from exc
+            message, reason = self._diagnose_timeout(timeout or self.timeout)
+            raise BridgeUnavailable(message, reason=reason) from exc
 
         if not payload.get("ok"):
             raise BridgeError(payload.get("error") or {}, method)
         return payload.get("result")
+
+    def _diagnose_timeout(self, waited: float) -> tuple[str, str]:
+        """The timeout's message and reason, after one look at the process.
+
+        A timeout used to say, every time, that a long script was blocking the
+        main thread, and to retry in smaller pieces. On 2026-09-24 no script
+        was running: the process sat at 0% CPU in state S, put to sleep by
+        macOS overnight, and the advice sent the agent the wrong way. So the
+        process is read once, here and only here, and what the reading can
+        support is all that is said. Where it cannot be read, the old message
+        stands unchanged.
+        """
+        head = f"TouchDesigner did not respond within {waited}s."
+        old = f"{head} A long-running script blocks TouchDesigner's main thread."
+        if not _CAN_INSPECT_PROCESS:
+            return old, "bridge_timeout"
+        pid = self.instance.pid if self.instance is not None else 0
+        found = _touchdesigner_processes(pid)
+        if not found:
+            where = f" (pid {pid} is gone)" if pid else ""
+            return (
+                f"{head} Found no TouchDesigner process on this host{where}, "
+                f"so nothing can be said about why it did not answer.",
+                "bridge_timeout",
+            )
+        if len(found) > 1:
+            listed = ", ".join(
+                f"pid {p} at {cpu:.1f}% CPU, state {stat}" for p, cpu, stat in found
+            )
+            return (
+                f"{head} Several TouchDesigner processes are running ({listed}) "
+                f"and none is known to be this bridge's, so which one is "
+                f"stuck cannot be told.",
+                "bridge_timeout",
+            )
+        (p, cpu, stat), = found
+        seen = f"pid {p} at {cpu:.1f}% CPU, state {stat}"
+        if cpu < _IDLE_CPU:
+            return (
+                f"{head} TouchDesigner ({seen}) is doing almost nothing, so no "
+                f"script is holding it: it looks asleep (macOS App Nap or "
+                f"display sleep), minimised, or waiting on a modal dialog. "
+                f"Bring it to the front and close any open dialog.",
+                "bridge_asleep",
+            )
+        if cpu >= _BUSY_CPU:
+            return (
+                f"{head} TouchDesigner ({seen}) is busy: a long-running script "
+                f"or a heavy cook holds its main thread. Wait for it.",
+                "bridge_timeout",
+            )
+        return (
+            f"{head} TouchDesigner ({seen}) is neither clearly working nor "
+            f"clearly idle, and this reading cannot tell a stuck script from "
+            f"a stalled window.",
+            "bridge_timeout",
+        )
 
     # -- convenience -------------------------------------------------------
 

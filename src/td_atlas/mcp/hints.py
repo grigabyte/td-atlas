@@ -96,6 +96,24 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_status",),
     ),
+    # Split from bridge_timeout on 2026-09-24. The client reads the process on
+    # a timeout, and a TouchDesigner at ~0% CPU is not running anybody's
+    # script — telling an agent to cut its work into smaller pieces there is
+    # advice for a different failure.
+    "bridge_asleep": Recovery(
+        cause=(
+            "the bridge took the call but did not answer, and TouchDesigner's "
+            "process is using almost no CPU — no script is holding it; it looks "
+            "asleep (macOS App Nap or display sleep), minimised, or stopped at "
+            "a modal dialog"
+        ),
+        action=(
+            "ask the artist to bring TouchDesigner to the front and close any "
+            "open dialog, then retry the same call; splitting the work will "
+            "not help"
+        ),
+        resume=("td_status",),
+    ),
     "bridge_http": Recovery(
         cause=(
             "something answered on that port but not with a bridge reply — "
@@ -540,7 +558,7 @@ def from_record(error_type: str = "", reason: str = "") -> Recovery:
     saw one, so it keeps the two fields the table is actually keyed on — the
     exception's type, and for a transport failure its `reason` — and this is
     the same lookup performed on those instead. Keeping them apart matters:
-    every `BridgeUnavailable` has the same type and four different repairs.
+    every `BridgeUnavailable` has the same type and five different repairs.
     """
     if reason:
         return HINTS.get(reason, HINTS["bridge_unreachable"])

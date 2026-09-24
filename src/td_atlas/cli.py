@@ -18,6 +18,7 @@ from . import journal
 from .atoms import probe as probe_mod
 from .atoms.extract_static import extract
 from .atoms.store import AtomStore
+from .bridge import timeline
 from .bridge.client import (
     EXPECTED_PROTOCOL_VERSION,
     BridgeClient,
@@ -523,6 +524,12 @@ def cmd_status(args: argparse.Namespace) -> int:
             f"bridge        : connected on port {client.port} "
             f"(project '{info['project']}', {info['fps']} fps, "
             f"build {info['build']})"
+        )
+        # The same words as td_status, moved into this command's columns.
+        print(
+            timeline.describe(info)
+            .replace("timeline: ", "timeline      : ", 1)
+            .replace("\n  (!)", "\n                (!)")
         )
         if client.version_warning:
             _say(f"warning: {client.version_warning}")

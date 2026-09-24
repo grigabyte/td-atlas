@@ -1,7 +1,7 @@
 ---
 istochnik: docs/troubleshooting.md
 kommit: f767122
-hesh: bb11fad8415afa1cc2ad0a6ce150130de2344911b49629d61a281654cc18251e
+hesh: 33f8305a5f3c6cdea609c26b982d2579d14a332792883989b4e4e418141a0e3b
 ---
 
 # Починка
@@ -19,7 +19,8 @@ hesh: bb11fad8415afa1cc2ad0a6ce150130de2344911b49629d61a281654cc18251e
 | вызов возвращается с `UnknownMethod` | то же самое с другой стороны. Мост разложили из старого пакета, поэтому такого метода у него нет | `td-atlas reload`, потом повторите вызов |
 | *«the bridge rejected the token this host sent»* | токен моста и `~/.td-atlas/config.json` расходятся | `td-atlas doctor` их сравнивает; `td-atlas install` раскладывает мост заново под текущий токен |
 | *«something answered on that port but not with a bridge reply»* | порт держит другая программа либо Web Server DAT настроен неверно | `td-atlas doctor`, потом `td-atlas install` |
-| вызов не дожидается ответа | каждый запрос идёт в главном потоке TouchDesigner во время готовки, поэтому длинный скрипт его затыкает | подождите и повторите мелкими кусками, по одному короткому `td_exec` |
+| вызов не дожидается ответа, и сообщение говорит, что TouchDesigner занят | каждый запрос идёт в главном потоке TouchDesigner во время готовки, поэтому длинный скрипт его затыкает | подождите и повторите мелкими кусками, по одному короткому `td_exec` |
+| вызов не дожидается ответа, и сообщение говорит, что TouchDesigner *похоже, спит* | на таймауте хост смотрит процесс через `ps` (macOS). Около 0% CPU — никакой скрипт его не держит: macOS его усыпил, он свёрнут или открыто модальное окно | выведите TouchDesigner на передний план, закройте окно и повторите тот же вызов. На Windows процесс не читается, и остаётся прежнее сообщение про занятость |
 | *«this host has no atom index yet»* | ничего ещё не собирали | `td-atlas build`, потом `td-atlas probe` с открытым TouchDesigner |
 | *«the index names a file that is not on disk»* | TouchDesigner переставили, обновили или переустановили после сборки индекса | `td-atlas build`, потом `td-atlas probe` |
 | `doctor` говорит, что `index build` расходится | индекс собран с другого TouchDesigner, и инструменты отвечают значениями той, другой сборки | `td-atlas build` |

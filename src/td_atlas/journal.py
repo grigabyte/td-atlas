@@ -34,21 +34,42 @@ never dials the bridge). Both are named gaps, not silent ones.
 
 What is written, and what is deliberately not
 ---------------------------------------------
-Bridge parameters carry whole DAT texts and whole networks. None of that is
-recorded: the journal keeps the method, the outcome, the duration, and three
-scalars pulled out of the parameters by name — the `path` that was aimed at,
-the `owner` that claimed it, and for `batch` the number of steps. A payload
-in a log is a payload nobody reads and a copy of the artist's work in a place
-they did not put it.
+Every line keeps the method, the outcome, the duration, and three scalars
+pulled out of the parameters by name — the `path` that was aimed at, the
+`owner` that claimed it, and for `batch` the number of steps.
+
+A call that *changes* the project also keeps what it changed, under `change`:
+the parameter values and expressions a `par_set` wrote, the flags a
+`flags_set` set, what an `op_create` made and where, every step of a `batch`,
+and the code an `exec` ran. Until 2026-09-24 the rule was the opposite —
+names, never payloads — and it cost exactly what it was meant to save: six
+thousand lines of an agent's session held not one parameter value, so "put it
+back the way it was yesterday" was answered by matching stills from a rendered
+video for forty minutes. The owner reversed the rule after that session.
+
+An old value is kept only where the bridge already returns one (`flags_set`
+reads each flag before writing it). `par_set` returns the value read back
+after the write, never the one before, and asking the bridge for it would be
+a second call on every write; so the previous value of a parameter is the
+previous line that set it, and nothing here pretends otherwise.
+
+Calls that only read — `network`, `op_info`, `render` and the rest — still
+keep their path and nothing else: a whole network in a log is a copy of the
+artist's work nobody asked for. Every string in a change is clipped
+(`MAX_CODE_CHARS` for code and DAT text, `MAX_VALUE_CHARS` for the rest), a
+batch keeps its first `MAX_STEPS` steps, and a line that still comes out over
+`MAX_LINE_BYTES` is re-clipped harder and at last reduced to a note of its
+size, so one call can never eat the file.
 
 The refusal text *is* kept whole, because that is the one thing the reader
 came for, clipped only at `MAX_ERROR_CHARS` with a visible marker so a
 runaway message cannot eat the file.
 
 Every line is scrubbed of the bridge token before it is written — see
-`_scrub`. The token does not travel in parameters today, so nothing currently
-puts it there; the scrub exists because "currently" is not a guarantee and a
-credential leaked into a log file is not recoverable by deleting the line.
+`_scrub`. The token does not travel in parameters by design, but `exec` code
+is whatever an agent typed, and a credential leaked into a log file is not
+recoverable by deleting the line. The scrub runs on the finished line, so the
+recorded change passes through it like every other field.
 """
 
 from __future__ import annotations
@@ -58,27 +79,32 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from .config import ensure_home, home, load_config
 
 # The growth limit is in bytes, not records, and deliberately so: records are
-# not uniform. A `par_set` is 196 bytes and a refusal quoting a long path and a
-# long message is several times that, so a count-based cap would bound the
-# number of lines while leaving the file free to reach any size at all.
+# not uniform. A `par_set` without its values was 196 bytes, and an `exec`
+# carrying its code can be twenty times that, so a count-based cap would bound
+# the number of lines while leaving the file free to reach any size at all.
 #
-# One megabyte, measured on this machine: a record is 196 bytes at the median
-# (n=4,000, a mix of successes and refusals), so the cap holds roughly 5,300
-# calls — far more than a working session (6,000 recorded calls came to 497 KB
-# and never reached it), and small enough to read, grep and back up without
-# thinking about it.
+# Sixteen megabytes since 2026-09-24, when lines began to carry what a call
+# changed. The old cap was one megabyte, sized for 196-byte lines. The journal
+# on the owner's machine that day held 6,436 calls from 31 August on in 960 KB,
+# 1,907 of them `exec` and 440 `op_create`. Give each `exec` its code — about
+# 1 KB is an estimate, not a measurement, since no journal held code before —
+# and the same span is roughly three times the old cap, so the oldest weeks
+# would already be gone and a heavy day could push out the day before. At
+# 16 MiB the span fits several times over, still bounded, and each line is
+# bounded on its own by `MAX_LINE_BYTES`. Measured on this machine at 16 MiB
+# of 1 KB lines: trimming 12.8 ms, reading the last 20 calls 67 ms (n=5 each).
 #
 # When the file passes the cap, the oldest lines are dropped until it is under
 # `TRIM_TO_BYTES`. Trimming to 75% rather than to the cap is what keeps the
-# rewrite amortised: measured at 1.6 ms for a full file, paid once per 256 KiB
-# appended — about one call in 1,300 — instead of on every call after the
-# first overflow.
-MAX_BYTES = 1024 * 1024
-TRIM_TO_BYTES = 768 * 1024
+# rewrite amortised: paid once per 4 MiB appended instead of on every call
+# after the first overflow.
+MAX_BYTES = 16 * 1024 * 1024
+TRIM_TO_BYTES = 12 * 1024 * 1024
 
 # A refusal longer than this is clipped. What is stored is `BridgeError`'s
 # `message` — the handler's own text, not its traceback, which the client
@@ -94,6 +120,25 @@ _CLIP_MARKER = " ...[clipped]"
 # Names, not payloads: see the module docstring.
 MAX_PATH_CHARS = 240
 MAX_OWNER_CHARS = 80
+
+# How much of a change a line may carry. Code and DAT text get 4 KB, which the
+# contract that introduced them named and which keeps a short script whole;
+# every other string — a value, an expression, a file path — gets 1,000
+# characters, far past any parameter expression but short of a pasted shader.
+# A clipped string ends in the visible marker and its full length is recorded
+# beside it as `<key>_chars`, so the reader knows how much is missing.
+MAX_CODE_CHARS = 4096
+MAX_VALUE_CHARS = 1000
+# Steps of a batch recorded one by one; the rest are counted, not dropped
+# silently. Entries kept per mapping or list inside a change, for the same
+# reason: a `pars` of a thousand names is a bug somewhere, not a record.
+MAX_STEPS = 64
+MAX_ITEMS = 128
+# The ceiling on one written line. A 64-step batch of DATs with 4 KB of text
+# each would be a quarter of a megabyte; past this bound the change is
+# re-clipped harder, and past that it is replaced by a note of its size. The
+# refusal text keeps its own cap (`MAX_ERROR_CHARS`) and is not cut here.
+MAX_LINE_BYTES = 32 * 1024
 
 
 def journal_path() -> Path:
@@ -167,8 +212,114 @@ def _clip(text: str, limit: int) -> str:
     return text[: limit - len(_CLIP_MARKER)] + _CLIP_MARKER
 
 
+# Bridge methods that change the project (or, for `save_tox`, write a file of
+# it), and so leave their change behind. Everything else reads, and keeps only
+# the scalars. `undo`/`redo` take no parameters, so their name is the record;
+# `claim_scope`'s path and owner are already scalars; `status_note` is this
+# package reporting to its own panel, not an edit.
+CHANGES = frozenset({
+    "par_set", "batch", "op_create", "op_delete", "op_connect",
+    "op_disconnect", "flags_set", "exec", "palette_load", "extension_add",
+    "annotate", "save_tox",
+})
+
+# Strings that are code or DAT content and get `MAX_CODE_CHARS`.
+_LONG_KEYS = frozenset({"code", "text"})
+# Parameter keys the scalars already carry, or that the batch walk replaces.
+_NOT_A_CHANGE = frozenset({"path", "owner", "ops"})
+# What of a reply is worth keeping, per method: only what the bridge already
+# sends. `before` is the one old value any method returns; `applied` is what a
+# parameter read back as after the write, which for an expression is the only
+# place its evaluated value appears.
+_FROM_RESULT = {"flags_set": ("before",), "par_set": ("applied",)}
+
+
+def _bounded(value: Any, limit: int, long_limit: int, key: str = "",
+             depth: int = 0) -> Any:
+    """`value` with every string clipped and every container shortened."""
+    if isinstance(value, str):
+        return _clip(value, long_limit if key in _LONG_KEYS else limit)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if depth >= 6:
+        return "..."
+    if isinstance(value, dict):
+        out = {}
+        for index, (name, item) in enumerate(value.items()):
+            if index >= MAX_ITEMS:
+                out["..."] = "%d more" % (len(value) - MAX_ITEMS)
+                break
+            out[str(name)] = _bounded(item, limit, long_limit, str(name), depth + 1)
+        return out
+    if isinstance(value, (list, tuple)):
+        kept = [_bounded(item, limit, long_limit, key, depth + 1)
+                for item in list(value)[:MAX_ITEMS]]
+        if len(value) > MAX_ITEMS:
+            kept.append("... %d more" % (len(value) - MAX_ITEMS))
+        return kept
+    return _clip(str(value), limit)
+
+
+def _one_change(method: str, params: dict, result: Any, limit: int,
+                long_limit: int) -> dict:
+    out: dict = {}
+    for key, value in params.items():
+        if key in _NOT_A_CHANGE or value is None:
+            continue
+        out[key] = _bounded(value, limit, long_limit, key)
+        if key in _LONG_KEYS and isinstance(value, str) and len(value) > long_limit:
+            out[key + "_chars"] = len(value)
+    if isinstance(result, dict):
+        for key in _FROM_RESULT.get(method, ()):
+            if key in result:
+                out[key] = _bounded(result[key], limit, long_limit, key)
+        if method == "op_create" and isinstance(result.get("path"), str):
+            out["created"] = _clip(result["path"], MAX_PATH_CHARS)
+    return out
+
+
+def _change(method: str, params: dict | None, result: Any = None,
+            limit: int = MAX_VALUE_CHARS, long_limit: int = MAX_CODE_CHARS,
+            steps: int = MAX_STEPS) -> dict | None:
+    """What a changing call changed, bounded; None for a call that only reads.
+
+    Built from the parameters the caller sent, plus the fields of the reply
+    named in `_FROM_RESULT`. On a refusal there is no reply, and the change is
+    what was attempted — which is what a reader of a failure wants to see.
+    """
+    if method not in CHANGES or not isinstance(params, dict):
+        return None
+    if method != "batch":
+        return _one_change(method, params, result, limit, long_limit) or None
+    ops = params.get("ops")
+    results = result.get("results") if isinstance(result, dict) else None
+    out: dict = {}
+    if params.get("undo_name"):
+        out["undo_name"] = _clip(str(params["undo_name"]), MAX_OWNER_CHARS)
+    recorded = []
+    for index, step in enumerate(ops if isinstance(ops, (list, tuple)) else []):
+        if index >= steps:
+            out["more"] = len(ops) - steps
+            break
+        if not isinstance(step, dict):
+            continue
+        name = str(step.get("method") or "?")
+        step_params = step.get("params") if isinstance(step.get("params"), dict) else {}
+        entry: dict = {"method": name}
+        if isinstance(step_params.get("path"), str):
+            entry["path"] = _clip(step_params["path"], MAX_PATH_CHARS)
+        step_result = (
+            results[index]
+            if isinstance(results, list) and index < len(results) else None
+        )
+        entry.update(_one_change(name, step_params, step_result, limit, long_limit))
+        recorded.append(entry)
+    out["steps"] = recorded
+    return out
+
+
 def _scalars(params: dict | None) -> dict:
-    """The three parameter fields worth keeping, by name. Never a payload."""
+    """The three parameter fields every line keeps, whatever the method."""
     out: dict = {}
     if not isinstance(params, dict):
         return out
@@ -195,9 +346,13 @@ def record(
     error_message: str = "",
     token: str = "",
     when: float | None = None,
+    result: Any = None,
 ) -> dict | None:
     """Append one call to the journal. Returns the record, or None if it could
     not be written.
+
+    `result` is the bridge's reply on success; only the fields named in
+    `_FROM_RESULT` are taken from it.
 
     Never raises. A journal that turns a working call into a failed one is
     worse than no journal: every caller of this is in the success path of
@@ -221,7 +376,7 @@ def record(
             entry["message"] = _clip(error_message, MAX_ERROR_CHARS)
     global _write_failure
     try:
-        _append(_scrub(json.dumps(entry, ensure_ascii=False), token))
+        _append(_scrub(_bounded_line(entry, method, params, result), token))
     except Exception as exc:
         # Kept rather than swallowed. The failure is invisible from the outside
         # — no caller checks this return value, and they should not: a journal
@@ -232,6 +387,43 @@ def record(
         return None
     _write_failure = ""
     return entry
+
+
+# Tighter and tighter clips for a change that will not fit in one line:
+# (value chars, code chars, batch steps). The last resort after these is a
+# note of the size alone.
+_SHRINK = (
+    (MAX_VALUE_CHARS, MAX_CODE_CHARS, MAX_STEPS),
+    (240, 512, MAX_STEPS),
+    (80, 120, 16),
+)
+
+
+def _bounded_line(entry: dict, method: str, params: dict | None,
+                  result: Any) -> str:
+    """The entry as one JSON line, its change fitted under `MAX_LINE_BYTES`.
+
+    The size is measured on the serialised line, never by cutting it: a line
+    clipped mid-string is not JSON, and `read` would skip the whole call.
+    """
+    line = json.dumps(entry, ensure_ascii=False)
+    size = 0
+    for limit, long_limit, steps in _SHRINK:
+        try:
+            change = _change(method, params, result, limit, long_limit, steps)
+        except Exception:
+            # A parameter shape nobody foresaw costs the change, not the line:
+            # the call itself is still recorded.
+            return line
+        if not change:
+            return line
+        entry["change"] = change
+        line = json.dumps(entry, ensure_ascii=False)
+        size = len(line.encode("utf-8"))
+        if size <= MAX_LINE_BYTES:
+            return line
+    entry["change"] = {"omitted": "a change of %d bytes, over the line bound" % size}
+    return json.dumps(entry, ensure_ascii=False)
 
 
 def _append(line: str) -> None:
@@ -264,15 +456,15 @@ def _trim(path: Path) -> None:
     than fixed, and larger than this comment used to claim: what is lost is
     not one line but every line appended between `read_bytes` and `os.replace`
     — those go to the old inode and disappear with it. The rewrite was
-    measured at 1.6 ms for a full file (see MAX_BYTES), so that is the width
-    of the window. Two writers crossing the cap together lose more: both trim,
-    and the second `replace` discards the first's result as well.
+    measured at 12.8 ms for a full 16 MiB file (see MAX_BYTES), so that is the
+    width of the window. Two writers crossing the cap together lose more: both
+    trim, and the second `replace` discards the first's result as well.
 
     Not fixed because both repairs cost more than the loss. `fcntl.flock` does
     not exist on Windows, which this project's CI now runs; a lock file is a
     second piece of state to leave behind when a process dies. The loss is
-    bounded to the moment the file overflows — about one append in 1,300 —
-    and what is lost is journal lines, not the calls themselves.
+    bounded to the moment the file overflows — once per 4 MiB appended — and
+    what is lost is journal lines, not the calls themselves.
     """
     try:
         raw = path.read_bytes()
@@ -364,6 +556,9 @@ class Call:
     error: str = ""
     reason: str = ""
     message: str = ""
+    # What a changing call changed; None on a read and on every line written
+    # before 2026-09-24, which carry no change at all.
+    change: dict | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "Call | None":
@@ -384,6 +579,9 @@ class Call:
                 error=str(data.get("error") or ""),
                 reason=str(data.get("reason") or ""),
                 message=str(data.get("message") or ""),
+                change=(
+                    data["change"] if isinstance(data.get("change"), dict) else None
+                ),
             )
         except (TypeError, ValueError):
             return None
@@ -495,6 +693,90 @@ def summarise(calls: list[Call]) -> Summary:
 
 # -- rendering (shared by the CLI and the MCP tool) --------------------------
 
+# Lines of recorded code shown under an `exec` in the listing. The listing is
+# what `td_log` hands an agent, twenty calls at a time by default, and twenty
+# 4 KB scripts in full would be most of a context window; the head of a script
+# says which one it was, and the whole of what was kept is in the file.
+CODE_LINES_SHOWN = 6
+# Keys `describe_change` renders in its own way; any other key is shown as
+# `key: value` so a change recorded by a newer version still reads.
+_RENDERED = frozenset({
+    "pars", "applied", "flags", "before", "code", "code_chars", "steps",
+    "more", "method", "path",
+})
+
+
+def _compact(value: Any, limit: int = 120) -> str:
+    text = json.dumps(value, ensure_ascii=False)
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _par_value(value: Any) -> str:
+    if isinstance(value, dict):
+        if "expr" in value:
+            return "expr %s" % value["expr"]
+        if "bind" in value:
+            return "bind %s" % value["bind"]
+        if value.get("pulse"):
+            return "pulse"
+    return _compact(value)
+
+
+def describe_change(change: dict) -> list[str]:
+    """A recorded change as the lines a person reads: `tx = 0.5`, not JSON.
+
+    A parameter's read-back is shown only when it differs from what was
+    sent — for an expression that is its value at the time, for a menu the
+    name TouchDesigner stored. An old value appears only where one was
+    recorded (`flags_set`); nothing is inferred.
+    """
+    lines: list[str] = []
+    pars = change.get("pars")
+    applied = change.get("applied") if isinstance(change.get("applied"), dict) else {}
+    if isinstance(pars, dict):
+        for name, value in pars.items():
+            text = "%s = %s" % (name, _par_value(value))
+            if name in applied and applied[name] != value:
+                text += "  (reads %s)" % _compact(applied[name], 60)
+            lines.append(text)
+    flags = change.get("flags")
+    before = change.get("before") if isinstance(change.get("before"), dict) else {}
+    if isinstance(flags, dict):
+        for name, value in flags.items():
+            text = "%s = %s" % (name, value)
+            if name in before:
+                text += " (was %s)" % before[name]
+            lines.append(text)
+    code = change.get("code")
+    if isinstance(code, str):
+        code_lines = code.splitlines() or [""]
+        lines.extend("| " + piece for piece in code_lines[:CODE_LINES_SHOWN])
+        hidden = len(code_lines) - CODE_LINES_SHOWN
+        if "code_chars" in change:
+            lines.append(
+                "| ... %s chars in all; the journal kept the first %d"
+                % (change["code_chars"], MAX_CODE_CHARS)
+            )
+        elif hidden > 0:
+            lines.append("| ... %d more lines in %s" % (hidden, journal_path()))
+    steps = change.get("steps")
+    if isinstance(steps, list):
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+            where = step.get("path") or step.get("created") or step.get("parent") or ""
+            lines.append(("step %d: %s %s" % (index, step.get("method", "?"), where))
+                         .rstrip())
+            lines.extend("  " + piece for piece in describe_change(step))
+        if change.get("more"):
+            lines.append("... %s more steps not recorded" % change["more"])
+    for key, value in change.items():
+        if key in _RENDERED:
+            continue
+        lines.append("%s: %s" % (key, _compact(value)))
+    return lines
+
+
 def format_calls(calls: list[Call], width: int = 100) -> str:
     """One line per call, newest last, so a terminal's tail is the present."""
     if not calls:
@@ -512,6 +794,8 @@ def format_calls(calls: list[Call], width: int = 100) -> str:
             call.when, mark, call.method, call.ms, target
         )
         lines.append(head.rstrip())
+        if call.change:
+            lines.extend("        " + piece for piece in describe_change(call.change))
         if not call.ok and (call.error or call.message):
             detail = call.error + (": " + call.message if call.message else "")
             for piece in detail.splitlines():
