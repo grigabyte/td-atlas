@@ -205,8 +205,8 @@ Saves a TOP's image to a file.
 
 The trail of bridge calls from `~/.td-atlas/calls.jsonl`, written by the host
 and outliving the session. A call that changed the project is listed with what
-it changed: parameter values and expressions, flags with the value they had
-before, every step of a batch, the first lines of the code an `exec` ran. The
+it changed: parameter values and expressions and flags, each with the value it
+had before, every step of a batch, the first lines of the code an `exec` ran. The
 bridge token is scrubbed from every line.
 
 | Flag | |

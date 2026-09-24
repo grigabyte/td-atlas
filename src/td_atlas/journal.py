@@ -47,11 +47,12 @@ thousand lines of an agent's session held not one parameter value, so "put it
 back the way it was yesterday" was answered by matching stills from a rendered
 video for forty minutes. The owner reversed the rule after that session.
 
-An old value is kept only where the bridge already returns one (`flags_set`
-reads each flag before writing it). `par_set` returns the value read back
-after the write, never the one before, and asking the bridge for it would be
-a second call on every write; so the previous value of a parameter is the
-previous line that set it, and nothing here pretends otherwise.
+An old value is kept only where the bridge returns one. `flags_set` reads
+each flag before writing it, and `par_set` reads each parameter's constant,
+expression or bind expression, with its mode, in the same request that writes
+it — one attribute per parameter, not a second call. A bridge from before
+that read sends no `before`, and then the previous value of a parameter is
+the previous line that set it; nothing here fills the gap by guessing.
 
 Calls that only read — `network`, `op_info`, `render` and the rest — still
 keep their path and nothing else: a whole network in a log is a copy of the
@@ -277,10 +278,11 @@ _LONG_KEYS = frozenset({"code", "text"})
 # Parameter keys the scalars already carry, or that the batch walk replaces.
 _NOT_A_CHANGE = frozenset({"path", "owner", "ops"})
 # What of a reply is worth keeping, per method: only what the bridge already
-# sends. `before` is the one old value any method returns; `applied` is what a
-# parameter read back as after the write, which for an expression is the only
-# place its evaluated value appears.
-_FROM_RESULT = {"flags_set": ("before",), "par_set": ("applied",)}
+# sends. `before` is the old value — flags as they were, parameters as
+# {value|expr|bind, mode}; `applied` is what a parameter read back as after
+# the write, which for an expression is the only place its evaluated value
+# appears.
+_FROM_RESULT = {"flags_set": ("before",), "par_set": ("applied", "before")}
 
 
 def _bounded(value: Any, limit: int, long_limit: int, key: str = "",
@@ -778,25 +780,39 @@ def _par_value(value: Any) -> str:
     return _compact(value)
 
 
+def _was(before: Any) -> str:
+    """A parameter's old value as `par_set` recorded it: {value|expr|bind, mode}.
+
+    Printed the way the new value beside it is, so `ty = 1.0 (was expr
+    absTime.seconds)` reads as one assignment replacing another.
+    """
+    if isinstance(before, dict) and "value" in before:
+        return _compact(before["value"], 60)
+    return _par_value(before)
+
+
 def describe_change(change: dict) -> list[str]:
     """A recorded change as the lines a person reads: `tx = 0.5`, not JSON.
 
     A parameter's read-back is shown only when it differs from what was
     sent — for an expression that is its value at the time, for a menu the
     name TouchDesigner stored. An old value appears only where one was
-    recorded (`flags_set`); nothing is inferred.
+    recorded (`flags_set`, and `par_set` from a bridge that reads it);
+    nothing is inferred.
     """
     lines: list[str] = []
     pars = change.get("pars")
     applied = change.get("applied") if isinstance(change.get("applied"), dict) else {}
+    before = change.get("before") if isinstance(change.get("before"), dict) else {}
     if isinstance(pars, dict):
         for name, value in pars.items():
             text = "%s = %s" % (name, _par_value(value))
+            if name in before:
+                text += " (was %s)" % _was(before[name])
             if name in applied and applied[name] != value:
                 text += "  (reads %s)" % _compact(applied[name], 60)
             lines.append(text)
     flags = change.get("flags")
-    before = change.get("before") if isinstance(change.get("before"), dict) else {}
     if isinstance(flags, dict):
         for name, value in flags.items():
             text = "%s = %s" % (name, value)

@@ -110,6 +110,36 @@ def test_par_set_does_not_invent_an_old_value_the_bridge_never_sent():
     assert "was" not in journal.format_calls([call])
 
 
+def test_par_set_records_the_old_values_a_bridge_that_reads_them_sends():
+    client = _Answering(port=9977)
+    client.answer = {
+        "path": "/project1/geo1", "applied": {"tx": 0.5, "ty": 3.0},
+        "before": {"tx": {"value": 0.2, "mode": "CONSTANT"},
+                   "ty": {"expr": "absTime.seconds", "mode": "EXPRESSION"}},
+    }
+    client.call("par_set", path="/project1/geo1", pars={"tx": 0.5, "ty": 3.0})
+    (call,) = journal.read()
+    assert call.change.get("before", {}).get("tx") == {
+        "value": 0.2, "mode": "CONSTANT"}
+    text = journal.format_calls([call])
+    assert "tx = 0.5 (was 0.2)" in text
+    assert "ty = 3.0 (was expr absTime.seconds)" in text
+
+
+def test_a_batch_step_keeps_the_old_value_of_its_par_set():
+    client = _Answering(port=9977)
+    client.answer = {"applied": 1, "results": [
+        {"path": "/project1/noise1", "applied": {"amp": 3.0},
+         "before": {"amp": {"value": 1.0, "mode": "CONSTANT"}}},
+    ]}
+    client.batch([{"method": "par_set", "params": {"path": "/project1/noise1",
+                                                   "pars": {"amp": 3.0}}}])
+    (call,) = journal.read()
+    assert call.change["steps"][0].get("before") == {
+        "amp": {"value": 1.0, "mode": "CONSTANT"}}
+    assert "amp = 3.0 (was 1.0)" in journal.format_calls([call])
+
+
 def test_flags_set_records_the_old_values_the_bridge_already_returns():
     client = _Answering(port=9977)
     client.answer = {"path": "/project1/look", "type": "renderTOP",

@@ -2711,10 +2711,54 @@ def _apply_pars(target, values):
     return applied
 
 
+def _pars_before(target, values):
+    """What each parameter about to be written holds now, for the journal.
+
+    The host's journal can only keep an old value the bridge sends, and until
+    this read existed "put it back the way it was" meant finding the earlier
+    line that set the parameter — which is no answer for a value the artist
+    set by hand. The read is one attribute per parameter inside the request
+    that is writing it anyway.
+
+    What is kept is what the write replaces: the expression text in
+    expression mode, the bind expression in bind mode, and the constant
+    (`par.val`, not `eval()`) otherwise, each beside the mode it was in. A
+    pulse replaces nothing and is skipped; so is a name the operator lacks,
+    which `_apply_pars` refuses in its own words. Nothing read here may cost
+    the write: a value that will not read is left out, not raised.
+    """
+    before = {}
+    for name, value in values.items():
+        if isinstance(value, dict) and value.get("pulse"):
+            continue
+        par = getattr(target.par, name, None)
+        if par is None:
+            continue
+        try:
+            mode = str(par.mode).rsplit(".", 1)[-1]
+            if mode == "EXPRESSION":
+                entry = {"expr": _jsonable(par.expr)}
+            elif mode == "BIND":
+                entry = {"bind": _jsonable(par.bindExpr)}
+            else:
+                entry = {"value": _jsonable(par.val)}
+            entry["mode"] = mode
+        except Exception:
+            continue
+        before[name] = entry
+    return before
+
+
 def m_par_set(params):
     _guard_scopes(params, params.get("path"))
     target = _resolve(params.get("path"))
-    return {"path": target.path, "applied": _apply_pars(target, params["pars"])}
+    # Read before the write, necessarily: afterwards the old value is gone.
+    before = _pars_before(target, params["pars"])
+    return {
+        "path": target.path,
+        "applied": _apply_pars(target, params["pars"]),
+        "before": before,
+    }
 
 
 def m_render(params):
