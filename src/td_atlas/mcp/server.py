@@ -1060,6 +1060,26 @@ def td_errors(path: str = "/project1") -> str:
     return _warn(client) + "\n".join(lines) + cut
 
 
+def _indented(text: str) -> str:
+    return "\n".join("  " + line for line in text.rstrip("\n").splitlines())
+
+
+def _exec_failure_head(exc: BridgeError) -> str:
+    """The failure of a script, preceded by whatever it produced first."""
+    parts = []
+    if exc.stdout:
+        parts.append("stdout (before the error):\n" + _indented(exc.stdout))
+    if exc.stderr:
+        parts.append("stderr (before the error):\n" + _indented(exc.stderr))
+    if exc.result is not None:
+        parts.append(
+            "result (set before the error):\n"
+            + _indented(json.dumps(exc.result, indent=2, default=str))
+        )
+    parts.append(f"{exc.type}: {exc.message}\n{exc.traceback or ''}")
+    return "\n\n".join(parts)
+
+
 @mcp.tool()
 @guarded
 def td_exec(code: str) -> str:
@@ -1069,14 +1089,16 @@ def td_exec(code: str) -> str:
     families, operator type classes). A trailing expression, or a variable named
     `result`, is returned. Reach for the structured tools first — this blocks
     TouchDesigner's main thread while it runs.
+
+    A script that raises still returns what it printed before the error, and
+    `result` if it had been set, so a mistyped name on the last line does not
+    cost the measurements above it.
     """
     client = bridge()
     try:
         result = client.exec(code)
     except BridgeError as exc:
-        return failure(
-            exc, head=f"{exc.type}: {exc.message}\n{exc.traceback or ''}"
-        )
+        return failure(exc, head=_exec_failure_head(exc))
     except BridgeUnavailable as exc:
         return failure(exc)
     parts = []

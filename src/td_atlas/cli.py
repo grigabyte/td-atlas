@@ -1105,6 +1105,15 @@ def cmd_exec(args: argparse.Namespace) -> int:
     try:
         result = client.exec(code)
     except (BridgeUnavailable, BridgeError) as exc:
+        if isinstance(exc, BridgeError):
+            # What the script printed before it raised goes where it would
+            # have gone had it not raised, ahead of the error.
+            if exc.stdout:
+                sys.stdout.write(exc.stdout)
+            if exc.stderr:
+                sys.stderr.write(exc.stderr)
+            if exc.result is not None:
+                print(json.dumps(exc.result, indent=2))
         _say(f"error: {exc}")
         if isinstance(exc, BridgeError) and exc.traceback:
             _say(exc.traceback)

@@ -2308,18 +2308,50 @@ def m_exec(params):
     result = None
     with redirect_stdout(out), redirect_stderr(err):
         try:
-            # Prefer eval so a trailing expression returns its value; fall back
-            # to exec for statements.
-            compiled = compile(code, "<td-atlas>", "eval")
-            result = eval(compiled, scope)
-        except SyntaxError:
-            exec(compile(code, "<td-atlas>", "exec"), scope)
-            result = scope.get("result")
+            try:
+                # Prefer eval so a trailing expression returns its value; fall
+                # back to exec for statements.
+                compiled = compile(code, "<td-atlas>", "eval")
+            except SyntaxError:
+                exec(compile(code, "<td-atlas>", "exec"), scope)
+                result = scope.get("result")
+            else:
+                result = eval(compiled, scope)
+        except Exception as exc:
+            # What the script printed before it raised existed and was thrown
+            # away: in live work, four prints of a measurement were lost to a
+            # mistyped name on the fifth line, about five times in a session.
+            # The reply stays a failure with the exception's own type, since
+            # the journal and the panel count failures by it; the output rides
+            # on the exception, and onHTTPRequest folds it into the error.
+            _attach_partial(exc, {
+                "stdout": out.getvalue(),
+                "stderr": err.getvalue(),
+                "result": _jsonable(scope.get("result")),
+            })
+            raise
     return {
         "stdout": out.getvalue(),
         "stderr": err.getvalue(),
         "result": _jsonable(result),
     }
+
+
+_PARTIAL_ATTR = "td_atlas_partial"
+
+
+def _attach_partial(exc, partial):
+    """Hang a failed request's partial output on its exception, if it takes it.
+
+    An exception raised from TouchDesigner's C++ side may refuse a new
+    attribute. The output is then lost, as it always was, rather than the
+    exception being swapped for one of a different type, which is what the
+    host's recovery hints are keyed on.
+    """
+    try:
+        setattr(exc, _PARTIAL_ATTR, partial)
+    except Exception:
+        pass
 
 
 def m_op_info(params):
@@ -4218,18 +4250,17 @@ def onHTTPRequest(dat, request, response):
         return _reply(response, {"ok": True, "result": result})
 
     except Exception as exc:
-        return _reply(
-            response,
-            {
-                "ok": False,
-                "error": {
-                    "type": type(exc).__name__,
-                    "message": str(exc),
-                    "traceback": traceback.format_exc(limit=12),
-                },
-            },
-            500,
-        )
+        error = {
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": traceback.format_exc(limit=12),
+        }
+        # Only `exec` attaches this today: what its script printed before it
+        # raised (see m_exec).
+        partial = getattr(exc, _PARTIAL_ATTR, None)
+        if isinstance(partial, dict):
+            error.update(partial)
+        return _reply(response, {"ok": False, "error": error}, 500)
 
 
 def onWebSocketOpen(dat, client, uri):
