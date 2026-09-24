@@ -65,8 +65,17 @@ def mcp_command() -> list[str]:
     return [sys.executable, "-m", "td_atlas.cli", "mcp"]
 
 
-def mcp_connection_line(server_name: str = "td-atlas") -> str:
-    return "claude mcp add " + server_name + " -- " + " ".join(mcp_command())
+def mcp_connection_line(server_name: str = "td-atlas", scope: str = "") -> str:
+    """The `claude mcp add` line; `scope="user"` registers it for every directory.
+
+    Without a scope Claude Code registers the server as `local`: this
+    directory only (its `--help`, 2026-09-24). The owner opened a session in
+    an empty directory to record it and had no tools there.
+    """
+    flag = f"-s {scope} " if scope else ""
+    return (
+        "claude mcp add " + flag + server_name + " -- " + " ".join(mcp_command())
+    )
 
 
 def write_mcp_json(directory: Path, server_name: str = "td-atlas") -> Path:
@@ -287,10 +296,19 @@ def cmd_install(args: argparse.Namespace) -> int:
         except (subprocess.SubprocessError, OSError):
             pass
 
+    # Printed, never run: registering a server for every directory changes the
+    # person's Claude Code setup beyond this project, so it is their choice.
+    # The directory line comes first because install.sh takes the first
+    # `claude mcp add` line it finds as the default.
     print()
-    print("To use td-atlas as an MCP server, run:")
+    print("To use td-atlas as an MCP server, run one of these.")
+    print("In the directory you work in, for that directory only:")
     print()
     print("    " + mcp_connection_line())
+    print()
+    print("Or once, for every directory you open Claude Code in:")
+    print()
+    print("    " + mcp_connection_line(scope="user"))
     print()
 
     if args.write_mcp_json:

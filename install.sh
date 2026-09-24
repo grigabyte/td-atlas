@@ -284,6 +284,9 @@ fi
 
 BOOTSTRAP_LINE=$(awk '/^ *exec\(open\(/ { sub(/^ */, ""); print; exit }' "$INSTALL_OUT")
 MCP_LINE=$(awk '/^ *claude mcp add/ { sub(/^ */, ""); print; exit }' "$INSTALL_OUT")
+# The same server for every directory: `claude mcp add -s user`. Printed as
+# the alternative, never run — it changes Claude Code beyond this project.
+MCP_USER_LINE=$(awk '/^ *claude mcp add -s user/ { sub(/^ */, ""); print; exit }' "$INSTALL_OUT")
 rm -f "$INSTALL_OUT"
 
 printf '\n'
@@ -306,6 +309,12 @@ if [ -n "$MCP_LINE" ]; then
     say "   $MCP_LINE"
 else
     say "   (re-run \`$TD install\` to print it)"
+fi
+if [ -n "$MCP_USER_LINE" ]; then
+    printf '\n'
+    say "   Or once, for every directory you open Claude Code in:"
+    printf '\n'
+    say "   $MCP_USER_LINE"
 fi
 printf '\n'
 say "Then, with TouchDesigner open and line 1 pasted in:"
