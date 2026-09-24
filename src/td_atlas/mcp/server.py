@@ -21,6 +21,7 @@ from .. import config as cfg
 from .. import journal
 from ..atoms.store import AtomStore
 from ..atoms.validate import validate_params
+from ..bridge import timeline
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
 from ..component.handler import NODE_FLAGS
 from .hints import IndexMissing, failure, from_record, guarded, hint
@@ -789,6 +790,115 @@ def td_render(path: str, width: int = 512, height: int = 0):
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
     return Image(data=data, format="png")
+
+
+@mcp.tool()
+@guarded
+def td_timeline_run(
+    path: str,
+    frames: str,
+    output: str = "",
+    save: str = "",
+    tiles: int = 1,
+    from_start: bool = True,
+    settle: int = 2,
+    render: str = "",
+    hold: bool | None = None,
+) -> str:
+    """Walk the timeline frame by frame and save a TOP's frames — as a job.
+
+    Reach for this instead of a td_exec loop whenever frames depend on what came
+    before them: live audio analysis, Feedback TOPs, trails, anything with
+    history. It returns at once with a job id; poll td_timeline_status, stop
+    with td_timeline_cancel. No request holds TouchDesigner for more than one
+    step, so the 30 s limit on a call does not apply to the walk.
+
+    `frames` is the walk, e.g. "1..994". `save` picks the frames to write,
+    e.g. "92..217,459..541" (default: every frame walked), into `output`, a
+    template such as "/renders/f{frame:04d}.png". Without `output` nothing is
+    saved and the job only advances the timeline — the way to warm history up
+    to frame N before td_render, and then the timeline is held paused at N.
+
+    What it handles so you do not have to: it pauses the timeline and gives
+    the play mode back at the end (so live audio is repeatable); it walks
+    every frame consecutively, from the start of `frames` when `from_start`,
+    otherwise from the first frame to save; it waits `settle` application
+    frames between steps (2 was measured repeatable for live audio — do not go
+    lower with audio); and its steps cannot run twice.
+
+    `tiles=2` renders past the licence's 1280 cap as 2x2 quarters, by cropping
+    the Render TOP(s) named in `render` (or `path`, if it is one). Put {tile}
+    in `output`: 0 top left, 1 top right, 2 bottom left, 3 bottom right. Each
+    quarter is a whole walk of its own, four times the time, because a
+    Feedback TOP only builds a quarter's history right under that quarter's
+    crop. Nothing resets a Feedback TOP between passes, so each quarter's
+    first frames carry the last one's tail — a decaying trail forgets it, an
+    accumulator does not. The crop goes back to 0..1 however the job ends.
+    """
+    try:
+        walk = timeline.parse_frames(frames)
+        wanted = timeline.parse_frames(save) if save.strip() else None
+    except ValueError as exc:
+        return f"error: {exc}"
+    if len(walk) != 1:
+        return "error: `frames` is one range to walk, e.g. '1..994'; pick frames to keep with `save`"
+    request: dict[str, Any] = {
+        "path": path,
+        "start": walk[0][0],
+        "end": walk[0][1],
+        "output": output,
+        "tiles": tiles,
+        "from_start": from_start,
+        "settle": settle,
+    }
+    if wanted is not None:
+        request["save"] = wanted
+    if render.strip():
+        request["render"] = [name.strip() for name in render.split(",") if name.strip()]
+    if hold is not None:
+        request["hold"] = hold
+    client = bridge()
+    try:
+        job = client.call("timeline_run", **request)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    lines = timeline.describe(job)
+    lines.append(
+        f"Poll with td_timeline_status(job={job['job']!r}); stop with "
+        f"td_timeline_cancel."
+    )
+    return _warn(client) + "\n".join(lines)
+
+
+@mcp.tool()
+@guarded
+def td_timeline_status(job: str = "") -> str:
+    """Progress of a td_timeline_run job: frame, pass, files saved, errors.
+
+    Without `job`, the latest one, finished or not. A walk that has not taken
+    a step for several seconds is reported as stalled, with what to do.
+    """
+    client = bridge()
+    try:
+        result = client.call("timeline_status", job=job)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    return _warn(client) + "\n".join(timeline.describe(result))
+
+
+@mcp.tool()
+@guarded
+def td_timeline_cancel(job: str = "") -> str:
+    """Stop a td_timeline_run job now; the crop and the play mode go back.
+
+    Files already written stay. Without `job`, the latest one.
+    """
+    client = bridge()
+    try:
+        result = client.call("timeline_cancel", job=job)
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    return _warn(client) + "\n".join(timeline.describe(result))
 
 
 @mcp.tool()

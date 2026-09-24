@@ -2783,6 +2783,513 @@ def m_contact_sheet(params):
     }
 
 
+# -- timeline jobs -----------------------------------------------------------
+#
+# `capture` above samples a TOP over wall-clock time for a proof sheet, and
+# the host has to drive it, because a request runs inside one cook and time
+# does not advance while it does. A timeline job is the other half: it walks
+# the *timeline* frame by frame, a step per scheduled call, and saves the
+# frames it was asked for. No request holds the main thread longer than one
+# step, and the host only starts, polls and cancels.
+#
+# Two agents in a row wrote this chain by hand in live work (agent reports 1
+# and 2), and what they found is what the code below is shaped by:
+#
+# - with the timeline paused, `run(delayFrames=N)` counts timeline frames,
+#   which do not pass, so it never fires and raises nothing. The delay is
+#   counted on op.TDResources, an independent time component;
+# - a delayed call that did not fire wakes when the frame changes and runs as
+#   a second chain. Every step carries the job's generation and its own
+#   sequence number, and one that is not the latest exits;
+# - live audio analysis (audiofileinCHOP locked to the timeline into a
+#   timeslice analyze) repeated to the last digit over two 221-frame walks,
+#   but only paused, stepped consecutively from the first frame, with two
+#   application frames between steps. The job pauses, walks consecutively,
+#   defaults to that step, and fails when the timeline is set playing
+#   mid-walk rather than save frames that cannot be repeated;
+# - a Feedback TOP advances only on a real timeline frame, and a quarter
+#   rendered under a crop is only right if its feedback was built under the
+#   same crop (report 1, point 4: nine tiles each carried the full frame's
+#   trail). So quarters are four whole walks, one per crop, never one walk
+#   with four crops per frame;
+# - the crop goes back to 0..1 on every way out, a failure and a cancel
+#   included, or it stays in the project and spoils the next render;
+# - the chain's helpers once lived in a COMP's storage and were still there
+#   when TouchDesigner stopped answering, so a save would have written
+#   unpicklable functions into the .toe. The job's state is plain data, and
+#   it lives in a module registered in `sys.modules`, which belongs to the
+#   process and not to any operator: nothing of it is ever saved with a
+#   project. It survives this handler being re-executed or reloaded.
+
+_TIMELINE_GROUP = "tdatlas_timeline"
+_TIMELINE_REGISTRY = "_tdatlas_timeline"
+# Seconds without a step before a running walk is reported as stalled. A step
+# is due every `settle` application frames, 33 ms at the default and 60 fps;
+# five seconds is past any background throttling of the window, which slows a
+# walk without stopping it.
+_TIMELINE_STALL = 5.0
+# Application frames between steps, as measured for repeatable live audio.
+_TIMELINE_SETTLE = 2
+_CROP_PARS = ("cropleft", "cropright", "cropbottom", "croptop")
+_FULL_CROP = (0.0, 1.0, 0.0, 1.0)
+
+
+def _quarter_crop(tile):
+    """(left, right, bottom, top) of quarter `tile`, numbered in reading order.
+
+    0 is top left, 1 top right, 2 bottom left, 3 bottom right. The crop is
+    measured from the bottom-left corner, so the top row is bottom 0.5, top 1.
+    """
+    column, row = tile % 2, tile // 2
+    left = 0.5 * column
+    top = 1.0 - 0.5 * row
+    return (left, left + 0.5, top - 0.5, top)
+
+
+class _LiveTimelineEnv:
+    """The TouchDesigner half of a timeline job; the tests replace it whole."""
+
+    def op(self, path):
+        return op(path)
+
+    def time_of(self, target):
+        return target.time
+
+    def schedule(self, fn, gen, seq, delay):
+        run(fn, gen, seq, delayFrames=delay, delayRef=op.TDResources,
+            group=_TIMELINE_GROUP)
+
+    def kill_pending(self):
+        # `runs` iterates its Run objects and each carries the `group` label
+        # it was scheduled under (Runs Class and Run Class, in the index's
+        # copy of the wiki). The generation check in the step is the second
+        # belt, for a Run this misses.
+        for pending in list(runs):
+            try:
+                if pending.group == _TIMELINE_GROUP:
+                    pending.kill()
+            except Exception:
+                pass
+
+    def registry(self):
+        import sys
+        import types
+
+        holder = sys.modules.get(_TIMELINE_REGISTRY)
+        if holder is None:
+            holder = types.ModuleType(_TIMELINE_REGISTRY)
+            holder.state = {}
+            sys.modules[_TIMELINE_REGISTRY] = holder
+        return holder.state
+
+    def now(self):
+        return time.time()
+
+
+def _timeline_env():
+    return _LiveTimelineEnv()
+
+
+def _frame_ranges(value):
+    """`[[a, b], n, ...]` as sorted, merged, inclusive `[a, b]` pairs."""
+    pairs = []
+    for item in value or []:
+        if isinstance(item, (list, tuple)):
+            if len(item) != 2:
+                raise ValueError("a frame range is [first, last], got %r" % (item,))
+            first, last = int(item[0]), int(item[1])
+        else:
+            first = last = int(item)
+        if last < first:
+            raise ValueError("frame range %d..%d runs backwards" % (first, last))
+        pairs.append([first, last])
+    pairs.sort()
+    merged = []
+    for first, last in pairs:
+        if merged and first <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], last)
+        else:
+            merged.append([first, last])
+    return merged
+
+
+def _in_ranges(frame, ranges):
+    for first, last in ranges:
+        if first <= frame <= last:
+            return True
+    return False
+
+
+def _crop_of(render):
+    return tuple(float(getattr(render.par, name).eval()) for name in _CROP_PARS)
+
+
+def _set_crop(render, box):
+    for name, value in zip(_CROP_PARS, box):
+        setattr(render.par, name, value)
+
+
+def _job_timeline(job, env):
+    target = env.op(job["path"])
+    if target is not None:
+        return env.time_of(target)
+    timeline = env.op(job["timeline"])
+    if timeline is None:
+        raise LookupError(
+            "the TOP %s and its time component %s are both gone"
+            % (job["path"], job["timeline"])
+        )
+    return timeline
+
+
+def _timeline_renders(params, target, env):
+    """The Render TOPs whose crop makes the quarters, checked before any moves."""
+    names = params.get("render") or []
+    if isinstance(names, str):
+        names = [name.strip() for name in names.split(",") if name.strip()]
+    if not names and target.OPType == "renderTOP":
+        names = [target.path]
+    if not names:
+        raise ValueError(
+            "quarters crop a Render TOP, and %s is a %s: pass `render` with the "
+            "Render TOP(s) upstream of it" % (target.path, target.OPType)
+        )
+    renders = []
+    for name in names:
+        render = env.op(name)
+        if render is None:
+            raise LookupError("no operator at path '%s'" % name)
+        if render.OPType != "renderTOP":
+            raise TypeError(
+                "render needs a renderTOP, but %s is a %s" % (render.path, render.OPType)
+            )
+        for par in _CROP_PARS:
+            # TouchDesigner raises its own tdAttributeError for a missing
+            # parameter, so this is not left to getattr's default.
+            try:
+                unit = getattr(render.par, par + "unit")
+            except Exception:
+                continue
+            if str(unit.eval()) != "fraction":
+                raise ValueError(
+                    "%s.%sunit is %r; quarters are set as fractions, so set it to "
+                    "'fraction' first" % (render.path, par, str(unit.eval()))
+                )
+        renders.append(render)
+    return renders
+
+
+def _timeline_plan(params, env):
+    """Validate a job and lay it out, touching nothing in the project.
+
+    Every refusal is raised here, before the timeline is paused or a crop is
+    set, so a refused job has nothing to put back.
+    """
+    target = env.op(params.get("path"))
+    if target is None:
+        raise LookupError("no operator at path '%s'" % params.get("path"))
+    if target.family != "TOP":
+        raise TypeError("a timeline job needs a TOP, got a %s" % target.family)
+    start, end = int(params["start"]), int(params["end"])
+    if end < start:
+        raise ValueError("the walk %d..%d runs backwards" % (start, end))
+    tiles = int(params.get("tiles") or 1)
+    if tiles not in (1, 2):
+        raise ValueError("tiles is 1 (whole frame) or 2 (2x2 quarters), got %d" % tiles)
+    settle = int(params.get("settle") or _TIMELINE_SETTLE)
+    if settle < 1:
+        raise ValueError("settle is at least one application frame, got %d" % settle)
+    output = params.get("output") or ""
+    save = params.get("save")
+    if save and not output:
+        raise ValueError("`save` names frames to save, but there is no `output` to save them to")
+
+    ranges = []
+    if output:
+        wanted = _frame_ranges(save) if save else [[start, end]]
+        for first, last in wanted:
+            first, last = max(first, start), min(last, end)
+            if first <= last:
+                ranges.append([first, last])
+        if not ranges:
+            raise ValueError(
+                "none of the frames to save lies inside the walk %d..%d" % (start, end)
+            )
+    elif tiles != 1:
+        raise ValueError("quarters without an `output` would save nothing")
+    per_pass = sum(last - first + 1 for first, last in ranges)
+    from_start = params.get("from_start", True)
+    first = start if (from_start or not ranges) else ranges[0][0]
+    last = ranges[-1][1] if ranges else end
+
+    if output:
+        try:
+            one = output.format(frame=first, tile=0)
+            other_frame = output.format(frame=first + 1, tile=0)
+            other_tile = output.format(frame=first, tile=1)
+        except (KeyError, IndexError, ValueError) as exc:
+            raise ValueError(
+                "output is a template taking {frame} and {tile}, e.g. "
+                "'/renders/f{frame:04d}.png'; formatting it failed: %s" % exc
+            ) from None
+        if per_pass > 1 and one == other_frame:
+            raise ValueError(
+                "every frame would be saved to %s: put {frame} in the output" % one
+            )
+        if tiles == 2 and one == other_tile:
+            raise ValueError(
+                "the four quarters would be saved to one file: put {tile} in the output"
+            )
+    renders = _timeline_renders(params, target, env) if tiles == 2 else []
+
+    timeline = env.time_of(target)
+    if first < timeline.start or last > timeline.end:
+        raise ValueError(
+            "the walk %d..%d leaves the timeline's range %d..%d, and TouchDesigner "
+            "does not go to a frame outside it"
+            % (first, last, int(timeline.start), int(timeline.end))
+        )
+
+    notes = []
+    if settle < _TIMELINE_SETTLE:
+        notes.append(
+            "settle %d: live audio analysis was only measured repeatable at %d "
+            "application frames between steps" % (settle, _TIMELINE_SETTLE)
+        )
+    range_start = getattr(timeline, "rangeStart", timeline.start)
+    range_end = getattr(timeline, "rangeEnd", timeline.end)
+    if range_start > first or range_end < last:
+        notes.append(
+            "the playback range is %d..%d, narrower than the walk %d..%d; a "
+            "frame TouchDesigner will not go to fails the job there, by name"
+            % (int(range_start), int(range_end), first, last)
+        )
+    for render in renders:
+        crop = _crop_of(render)
+        if crop != _FULL_CROP:
+            notes.append(
+                "%s was cropped to %r before the job; it is left at 0..1"
+                % (render.path, crop)
+            )
+
+    hold = params.get("hold")
+    now = env.now()
+    return {
+        "path": target.path,
+        "timeline": getattr(timeline, "path", ""),
+        "mode": "capture" if output else "advance",
+        "start": start,
+        "end": end,
+        "first": first,
+        "last": last,
+        "save": ranges,
+        "output": output,
+        "passes": 4 if tiles == 2 else 1,
+        "pass": 0,
+        "frame": None,
+        "settle": settle,
+        "render": [render.path for render in renders],
+        "hold": (not output) if hold is None else bool(hold),
+        "saved": 0,
+        "toSave": per_pass * (4 if tiles == 2 else 1),
+        "lastFile": None,
+        "state": "running",
+        "error": None,
+        "errors": [],
+        "notes": notes,
+        "restored": None,
+        "wasPlaying": None,
+        "started": now,
+        "stepped": now,
+        "finished": None,
+        "gen": 0,
+        "seq": 0,
+    }
+
+
+def _timeline_schedule(job, env):
+    job["seq"] += 1
+    env.schedule(_timeline_step, job["gen"], job["seq"], job["settle"])
+
+
+def _timeline_enter_pass(job, env, timeline):
+    """Set the pass's crop, go to its first frame, and let that frame cook."""
+    if job["passes"] > 1:
+        box = _quarter_crop(job["pass"])
+        for path in job["render"]:
+            _set_crop(env.op(path), box)
+    job["frame"] = job["first"]
+    timeline.frame = job["first"]
+    _timeline_schedule(job, env)
+
+
+def _timeline_advance(job, env):
+    """One step: save the frame that has cooked, then set the next one."""
+    target = env.op(job["path"])
+    if target is None:
+        raise LookupError("the TOP %s is gone" % job["path"])
+    timeline = env.time_of(target)
+    frame = job["frame"]
+    if timeline.play:
+        raise RuntimeError(
+            "the timeline was set playing at frame %d; a playing timeline moves "
+            "live audio between steps, so the frames could not be repeated" % frame
+        )
+    actual = int(round(timeline.frame))
+    if actual != frame:
+        raise RuntimeError(
+            "the timeline is at frame %d where the walk set %d: TouchDesigner did "
+            "not take the frame, or something else moved it" % (actual, frame)
+        )
+    if _in_ranges(frame, job["save"]):
+        name = job["output"].format(frame=frame, tile=job["pass"])
+        target.save(name, createFolders=True)
+        job["saved"] += 1
+        job["lastFile"] = name
+    if frame < job["last"]:
+        job["frame"] = frame + 1
+        timeline.frame = frame + 1
+        _timeline_schedule(job, env)
+    elif job["pass"] + 1 < job["passes"]:
+        job["pass"] += 1
+        _timeline_enter_pass(job, env, timeline)
+    else:
+        _timeline_finish(job, env, "done")
+
+
+def _timeline_step(gen, seq):
+    """The scheduled call. Exits at once unless it is the walk's latest step."""
+    env = _timeline_env()
+    job = env.registry().get("job")
+    if (
+        not job
+        or job.get("state") != "running"
+        or job.get("gen") != gen
+        or job.get("seq") != seq
+    ):
+        return
+    job["stepped"] = env.now()
+    try:
+        _timeline_advance(job, env)
+    except Exception as exc:
+        _timeline_finish(job, env, "failed", exc)
+
+
+def _timeline_finish(job, env, outcome, exc=None):
+    """Every way out of a walk: put the crop and the play mode back.
+
+    Each restoration is tried on its own, so one that raises cannot keep the
+    next from running; what failed is listed in `errors`.
+    """
+    if exc is not None:
+        job["error"] = "%s: %s" % (type(exc).__name__, exc)
+    restored = {"play": None, "crop": []}
+    if job["passes"] > 1:
+        for path in job["render"]:
+            try:
+                _set_crop(env.op(path), _FULL_CROP)
+                restored["crop"].append(path)
+            except Exception as err:
+                job["errors"].append("crop of %s not put back: %s" % (path, err))
+    try:
+        timeline = _job_timeline(job, env)
+        if job["wasPlaying"] is not None:
+            play = False if job["hold"] else job["wasPlaying"]
+            timeline.play = play
+            restored["play"] = play
+    except Exception as err:
+        job["errors"].append("play mode not put back: %s" % err)
+    try:
+        env.kill_pending()
+    except Exception as err:
+        job["errors"].append("pending steps not killed: %s" % err)
+    job["state"] = outcome
+    job["restored"] = restored
+    job["finished"] = env.now()
+
+
+_TIMELINE_VIEW = (
+    "job", "state", "mode", "path", "timeline", "frame", "saved", "toSave",
+    "lastFile", "output", "settle", "render", "hold", "error", "errors", "notes",
+    "restored",
+)
+
+
+def _timeline_view(job, env):
+    view = {key: job.get(key) for key in _TIMELINE_VIEW}
+    now = env.now()
+    view["walk"] = [job["first"], job["last"]]
+    view["tiles"] = job["passes"]
+    view["tile"] = job["pass"] if job["passes"] > 1 else None
+    view["elapsed"] = round((job["finished"] or now) - job["started"], 3)
+    view["sinceStep"] = round(now - job["stepped"], 3)
+    view["stalled"] = (
+        job["state"] == "running" and now - job["stepped"] > _TIMELINE_STALL
+    )
+    return view
+
+
+def m_timeline_run(params):
+    """Start walking the timeline frame by frame; returns at once with the job.
+
+    One job at a time, since two would move one timeline.
+    """
+    env = _timeline_env()
+    state = env.registry()
+    running = state.get("job")
+    if running and running.get("state") == "running":
+        raise RuntimeError(
+            "timeline job %s is still running (frame %s of %d..%d); cancel it "
+            "first, since two walks would move one timeline"
+            % (running["job"], running["frame"], running["first"], running["last"])
+        )
+    job = _timeline_plan(params, env)
+    gen = int(state.get("gen", 0)) + 1
+    state["gen"] = gen
+    job["gen"] = gen
+    job["job"] = "t%d" % gen
+    state["job"] = job
+    try:
+        timeline = _job_timeline(job, env)
+        job["wasPlaying"] = bool(timeline.play)
+        timeline.play = False
+        _timeline_enter_pass(job, env, timeline)
+    except Exception as exc:
+        _timeline_finish(job, env, "failed", exc)
+        raise
+    return _timeline_view(job, env)
+
+
+def _timeline_job(params, env):
+    job = env.registry().get("job")
+    wanted = params.get("job")
+    if job and wanted and wanted != job["job"]:
+        raise LookupError(
+            "no timeline job %s; the latest is %s" % (wanted, job["job"])
+        )
+    return job
+
+
+def m_timeline_status(params):
+    """Progress of the latest timeline job, finished or not."""
+    env = _timeline_env()
+    job = _timeline_job(params, env)
+    if not job:
+        return {"job": None, "state": "none"}
+    return _timeline_view(job, env)
+
+
+def m_timeline_cancel(params):
+    """Stop the running walk now, and put the crop and play mode back."""
+    env = _timeline_env()
+    job = _timeline_job(params, env)
+    if not job:
+        return {"job": None, "state": "none"}
+    if job["state"] == "running":
+        _timeline_finish(job, env, "cancelled")
+    return _timeline_view(job, env)
+
+
 def m_errors(params):
     """Every operator at or under one component reporting an error or warning.
 
@@ -4158,6 +4665,9 @@ METHODS = {
     "errors": m_errors,
     "capture": m_capture,
     "contact_sheet": m_contact_sheet,
+    "timeline_run": m_timeline_run,
+    "timeline_status": m_timeline_status,
+    "timeline_cancel": m_timeline_cancel,
     "batch": m_batch,
     "undo": m_undo,
     "redo": m_redo,

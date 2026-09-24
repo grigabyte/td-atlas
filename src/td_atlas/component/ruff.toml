@@ -11,6 +11,8 @@ extend = "../../../pyproject.toml"
 builtins = [
     # The session and the application.
     "op", "ui", "me", "app", "project", "root", "absTime", "licenses",
+    # Delayed execution: the timeline job schedules its steps with these.
+    "run", "runs",
     # Operator types, which are names in the same namespace.
     "baseCOMP", "executeDAT", "tableDAT", "textDAT", "textTOP", "webserverDAT",
 ]
