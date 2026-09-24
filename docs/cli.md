@@ -189,6 +189,7 @@ Saves a TOP's image to a file.
 | --- | --- |
 | `-o, --output PATH` | where to write (default `render.png`) |
 | `--width N`, `--height N` | resize; omitted, the TOP's own resolution is used |
+| `--settle-frames N` | wait N of TouchDesigner's own frames first, so an edit made just before is in the image; says so if TouchDesigner stopped drawing |
 
 ### `td-atlas log`
 

@@ -26,6 +26,7 @@ from ..atoms.validate import (
     validate_params,
 )
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
+from ..bridge.settle import wait_frames
 from ..component.handler import NODE_FLAGS
 from .hints import IndexMissing, failure, from_record, guarded, hint
 
@@ -829,23 +830,55 @@ def td_set_params(
 
 @mcp.tool()
 @guarded
-def td_render(path: str, width: int = 512, height: int = 0):
+def td_render(
+    path: str,
+    width: int = 512,
+    height: int = 0,
+    save_to: str = "",
+    settle_frames: int = 0,
+):
     """Render a TOP and return the image, so you can see what you built.
 
     TouchDesigner is a visual tool: check your work with this rather than
     inferring it from parameter values. `height` defaults to preserving the
-    TOP's aspect ratio.
+    TOP's aspect ratio; `width=0` keeps the TOP's own resolution.
+
+    `save_to` writes the PNG to that path on this machine and answers in text
+    instead of returning the image — for comparing two states pixel by pixel,
+    or keeping a frame, without spending context on it.
+
+    `settle_frames` waits that many of TouchDesigner's own frames before
+    rendering. A render right after td_set_params or td_build can return the
+    frame from before the edit; 2–3 frames is enough for a parameter change.
+    The answer says so if TouchDesigner stopped drawing during the wait.
     """
     # Deliberately unannotated: this returns an Image on success and an error
     # string otherwise, and a union of the two cannot be expressed in the
     # output schema FastMCP derives from the annotation.
+    client = bridge()
     try:
-        data, _meta = bridge().render(
+        settled = wait_frames(client, settle_frames)
+        data, meta = client.render(
             path, fmt=".png", width=width or None, height=height or None
         )
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
-    return Image(data=data, format="png")
+    note = settled.note()
+    if not save_to:
+        if note:
+            return [note, Image(data=data, format="png")]
+        return Image(data=data, format="png")
+    target = Path(save_to).expanduser().resolve()
+    try:
+        target.write_bytes(data)
+    except OSError as exc:
+        return f"rendered {path}, but could not write {target}: {exc}"
+    return _warn(client) + "\n".join(
+        line for line in (
+            f"{meta['width']}x{meta['height']} -> {target} ({len(data)} bytes)",
+            note,
+        ) if line
+    )
 
 
 @mcp.tool()

@@ -24,6 +24,7 @@ from .bridge.client import (
     BridgeError,
     BridgeUnavailable,
 )
+from .bridge.settle import wait_frames
 from .install import InstallNotFound, TDInstall, discover
 
 COMPONENT_DIR = Path(__file__).parent / "component"
@@ -1136,6 +1137,7 @@ def cmd_render(args: argparse.Namespace) -> int:
     if client is None:
         return 1
     try:
+        settled = wait_frames(client, args.settle_frames)
         data, meta = client.render(
             args.path, width=args.width, height=args.height
         )
@@ -1145,6 +1147,8 @@ def cmd_render(args: argparse.Namespace) -> int:
     out = Path(args.output)
     out.write_bytes(data)
     print(f"{meta['width']}x{meta['height']} -> {out} ({len(data)} bytes)")
+    if settled.note():
+        _say(settled.note())
     return 0
 
 
@@ -1511,6 +1515,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", default="render.png")
     p.add_argument("--width", type=int)
     p.add_argument("--height", type=int)
+    p.add_argument(
+        "--settle-frames",
+        type=int,
+        default=0,
+        help="wait this many TouchDesigner frames first, so a just-made edit "
+        "is in the image",
+    )
     p.set_defaults(func=cmd_render, uses_selector=True)
 
     p = sub.add_parser(
