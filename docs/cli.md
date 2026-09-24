@@ -193,7 +193,9 @@ rollback.
 
 ### `td-atlas render PATH`
 
-Saves a TOP's image to a file.
+Saves a TOP's image to a file, replacing one already there. `td_render`
+refuses to, unless given `overwrite=True`: an agent cannot see the
+directory it writes into.
 
 | Flag | |
 | --- | --- |

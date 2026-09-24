@@ -56,6 +56,26 @@ def test_save_to_writes_the_file_and_answers_in_text(client, tmp_path):
     assert str(target) in reply and "512x" in reply
 
 
+def test_save_to_does_not_overwrite_a_file_that_is_there(client, tmp_path):
+    """Every other writer here refuses an existing file; this one did not."""
+    target = tmp_path / "frame.png"
+    target.write_bytes(b"the artist's own frame")
+    reply = server.td_render("/project1/out1", save_to=str(target))
+    assert target.read_bytes() == b"the artist's own frame"
+    assert isinstance(reply, str) and "already exists" in reply
+    assert "overwrite=True" in reply
+    # Refused before the bridge was asked for anything, settle included.
+    assert client.calls == []
+
+
+def test_overwrite_replaces_the_file_when_asked(client, tmp_path):
+    target = tmp_path / "frame.png"
+    target.write_bytes(b"old")
+    reply = server.td_render("/project1/out1", save_to=str(target), overwrite=True)
+    assert target.read_bytes() == PNG
+    assert str(target) in reply
+
+
 def test_without_save_to_the_image_comes_back_inline(client):
     reply = server.td_render("/project1/out1")
     assert type(reply).__name__ == "Image"

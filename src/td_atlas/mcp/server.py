@@ -874,6 +874,7 @@ def td_render(
     height: int = 0,
     save_to: str = "",
     settle_frames: int = 0,
+    overwrite: bool = False,
 ):
     """Render a TOP and return the image, so you can see what you built.
 
@@ -883,7 +884,8 @@ def td_render(
 
     `save_to` writes the PNG to that path on this machine and answers in text
     instead of returning the image — for comparing two states pixel by pixel,
-    or keeping a frame, without spending context on it.
+    or keeping a frame, without spending context on it. A file already at
+    that path is refused unless `overwrite=True`: it may be the artist's.
 
     `settle_frames` waits that many of TouchDesigner's own frames before
     rendering. A render right after td_set_params or td_build can return the
@@ -893,6 +895,17 @@ def td_render(
     # Deliberately unannotated: this returns an Image on success and an error
     # string otherwise, and a union of the two cannot be expressed in the
     # output schema FastMCP derives from the annotation.
+    target = Path(save_to).expanduser().resolve() if save_to else None
+    # Before the bridge is dialled: a refusal that arrives after a ten-second
+    # settle and a render has spent both for nothing. Every other writer here
+    # refuses a file that is there (AGENTS.md, "Never write beside a user's
+    # file"); this one wrote over it without a word.
+    if target is not None and target.exists() and not overwrite:
+        return (
+            f"{target} already exists, and nothing was rendered: a file at "
+            f"save_to is not replaced unless you pass overwrite=True. Write "
+            f"beside it under another name to compare the two."
+        )
     client = bridge()
     try:
         settled = wait_frames(client, settle_frames)
@@ -902,11 +915,10 @@ def td_render(
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
     note = settled.note()
-    if not save_to:
+    if target is None:
         if note:
             return [note, Image(data=data, format="png")]
         return Image(data=data, format="png")
-    target = Path(save_to).expanduser().resolve()
     try:
         target.write_bytes(data)
     except OSError as exc:
