@@ -168,6 +168,13 @@ An operator that did not cook while the check ran goes into the note
 of the current frame and not a suspect for the frame rate. Only `expensive`
 names those.
 
+The split needs a clock that moved. The frame compared against is
+`absTime.frame`, and with the root timeline paused it stands still, so nothing
+cooks during the check and "frames ago" would count only the frames that
+played. On a paused timeline, or any check across which that frame did not
+advance, every time over 8 ms stays under `expensive` with the frame it was
+measured on, and the finding says the times are the last ones measured.
+
 The operator summary says so in prose too, *"The ones that are calculated on the
 GPU will have GPU in their name"*, which is easy to read past. Prefer `perlin*`,
 `simplex*` and `randomgpu`.
@@ -561,9 +568,14 @@ GLSL TOP or a Math, is not checked.
 
 ## A frame that reads the application clock does not reproduce
 
-`absTime` is the application's clock. It keeps counting while the timeline
-stands still and starts wherever the application happens to be. A camera
-driven by `absTime.seconds` moved differently in every recording. It surfaced
+`absTime` does not follow the timeline's frame number. Stepping the timeline
+or jumping to a frame does not move it back or forward to match, so a render
+walked frame by frame, or the same timeline recorded a second time, reads
+other values at the same timeline frame. Nor is it a clock that always runs:
+with the root timeline paused it stands still (2025.32460: `absTime.frame`
+2013719 -> 2013719 across one second, while `op.TDResources.time.frame` went
+516 -> 577). A camera driven by `absTime.seconds` moved differently in every
+recording. It surfaced
 only when the tiles of a tiled render stopped lining up, and it had spoiled
 the ordinary recordings before that. `time.time()` and an unseeded `random`
 do the same.

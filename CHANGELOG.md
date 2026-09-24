@@ -23,7 +23,8 @@ either from the code they are running:
   bridge. A bridge laid down by an earlier build is refused at connect with
   that fix in the message. Three methods joined the table (`timeline_run`,
   `timeline_status`, `timeline_cancel`), and five replies gained fields an
-  older bridge does not send: `ping` (`absFrame` and a `timeline` block),
+  older bridge does not send: `ping` (`absFrame`, `tick` and a `timeline`
+  block),
   the error reply of `exec` (`stdout`, `stderr`, `result`), `health_sample`
   (`cookAbsFrame`, `cookFrame`, `feedback`, `negativeFloat`, `clockReads`,
   `clockReadsCount`, `clockScan`), and `network` and `op_info` (`viewer` on a
@@ -84,7 +85,10 @@ either from the code they are running:
 - `td_render` takes `save_to`, which writes the PNG to that path and answers
   in text, and `settle_frames` (`--settle-frames` on the CLI), which waits
   that many TouchDesigner frames first. A render right after an edit could
-  show the frame before it.
+  show the frame before it. The frames are counted on
+  `op.TDResources.time.frame`, which keeps counting while the timeline is
+  paused; `absTime.frame` stands still then, and a wait on it reported a
+  drawing TouchDesigner as stalled.
 - The index records the tuple members a size menu adds (`amp2` on a
   noisePOP, with the menu value that shows it), after `td-atlas probe`. The
   validator refuses a member the size in force does not show, and a size

@@ -1,7 +1,7 @@
 ---
 istochnik: CHANGELOG.md
 kommit: cda2d9b
-hesh: 317e719fa116ce757c17b1cd8ec26e1938f419eff147118241b0f8e232fdd89a
+hesh: 735c04ff5abd9914d34d8175064e133d9d512bc409e18d01ff0f58a1190fb326
 ---
 
 # Журнал изменений
@@ -31,8 +31,8 @@ hesh: 317e719fa116ce757c17b1cd8ec26e1938f419eff147118241b0f8e232fdd89a
   где лежит мост. Мост, разложенный прежней сборкой, отвергают прямо
   на соединении, и в сообщении стоит эта починка. В таблицу вошли три метода
   (`timeline_run`, `timeline_status`, `timeline_cancel`), а пять ответов
-  получили поля, которых старый мост не шлёт: `ping` (`absFrame` и блок
-  `timeline`), ответ `exec` с ошибкой (`stdout`, `stderr`, `result`),
+  получили поля, которых старый мост не шлёт: `ping` (`absFrame`, `tick`
+  и блок `timeline`), ответ `exec` с ошибкой (`stdout`, `stderr`, `result`),
   `health_sample` (`cookAbsFrame`, `cookFrame`, `feedback`, `negativeFloat`,
   `clockReads`, `clockReadsCount`, `clockScan`), а также `network` и `op_info`
   (`viewer` у TOP).
@@ -91,7 +91,9 @@ hesh: 317e719fa116ce757c17b1cd8ec26e1938f419eff147118241b0f8e232fdd89a
 - `td_render` принимает `save_to`, который пишет PNG по этому пути и отвечает
   текстом, и `settle_frames` (`--settle-frames` в CLI), который сначала ждёт
   столько кадров TouchDesigner. Рендер сразу после правки мог показать кадр
-  до неё.
+  до неё. Кадры считаются по `op.TDResources.time.frame`, который идёт и на
+  паузе таймлайна; `absTime.frame` тогда стоит, и ожидание по нему называло
+  рисующий TouchDesigner зависшим.
 - Индекс записывает члены кортежа, которые добавляет меню размера (`amp2`
   у noisePOP, со значением меню, при котором он появляется), после
   `td-atlas probe`. Проверка отвергает член, которого действующий размер

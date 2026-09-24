@@ -7,10 +7,17 @@ request runs inside one cook on TouchDesigner's main thread, so a request
 cannot wait for frames itself: the handler would block the very frames it is
 waiting for. The wait has to happen between requests, on the host.
 
-The clock is the one `ping` reports, `absTime.frame` — the application's own
-frame count, which advances whether or not the timeline plays. A paused
-timeline does not stop it; an application that is asleep or behind a modal
-dialog does, and then the wait says so instead of pretending.
+The clock is `ping`'s `tick`, `op.TDResources.time.frame`: a frame count
+that advances while the application draws, whether or not the project
+timeline plays. It is not `absTime.frame`, which this module first waited on
+on the belief that it was that count. Measured on 2025.32460 (demo2.toe),
+two pings a second apart with the root timeline paused: absTime.frame
+2013719 -> 2013719 while op.TDResources.time.frame went 516 -> 577. On a
+paused timeline the old wait sat out its ten seconds and reported "drew 0 of
+3 frame(s) in 10.0 s — stalled, asleep or behind a dialog" about an
+application that was drawing. A bridge older than `tick` sends only `frame`,
+and is waited on by it, with that blind spot. An application that is asleep
+or behind a modal dialog stops both, and then the wait says so.
 """
 
 from __future__ import annotations
@@ -30,6 +37,8 @@ class Settled:
     advanced: int | None
     """Frames the application clock moved, or None when it could not be read."""
     seconds: float
+    clock: str = "tick"
+    """The `ping` field counted: `tick`, or `frame` from an older bridge."""
 
     @property
     def complete(self) -> bool:
@@ -45,11 +54,18 @@ class Settled:
                 f"{self.seconds:.2f} s by the clock instead of counting "
                 f"{self.asked} frame(s)"
             )
-        return (
+        text = (
             f"settle: TouchDesigner drew {self.advanced} of {self.asked} "
             f"frame(s) in {self.seconds:.1f} s — it is stalled, asleep or "
             f"behind a dialog, and this image may predate the last edit"
         )
+        if self.clock == "frame":
+            text += (
+                ". This bridge counts absTime.frame, which also stands still "
+                "while the timeline is paused; 'td-atlas reload' gives it a "
+                "clock that does not"
+            )
+        return text
 
 
 def wait_frames(client, frames: int, budget: float | None = None) -> Settled:
@@ -66,18 +82,21 @@ def wait_frames(client, frames: int, budget: float | None = None) -> Settled:
     if frames <= 0:
         return Settled(frames, 0, 0.0)
     first = client.ping()
-    origin = first.get("frame")
+    # One key for the whole wait: `tick` where the bridge sends it, else the
+    # older `frame` (absTime.frame, which stands still on a paused timeline).
+    key = "tick" if isinstance(first.get("tick"), (int, float)) else "frame"
+    origin = first.get(key)
     rate = float(first.get("fps") or 60.0) or 60.0
     step = max(frames / rate, 0.005)
     if not isinstance(origin, (int, float)):
         sleep(step)
-        return Settled(frames, None, clock() - started)
+        return Settled(frames, None, clock() - started, key)
     advanced = 0
     while True:
         sleep(step)
-        now = client.ping().get("frame")
+        now = client.ping().get(key)
         if isinstance(now, (int, float)):
             advanced = int(now - origin)
         if advanced >= frames or clock() - started >= budget:
-            return Settled(frames, advanced, clock() - started)
+            return Settled(frames, advanced, clock() - started, key)
         step = max(1.0 / rate, 0.005)

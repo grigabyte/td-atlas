@@ -197,7 +197,8 @@ class Health:
 
 
 def _file_cook_time(node: dict, first_frame: float, now: float,
-                    current: list[str], stale: list[str]) -> None:
+                    current: list[str], stale: list[str],
+                    frozen: bool = False) -> None:
     """Put an expensive operator in the list its cook time belongs to.
 
     `cookTime` is the duration of the last cook, whenever that was. Read
@@ -205,11 +206,26 @@ def _file_cook_time(node: dict, first_frame: float, now: float,
     and a Movie File In last cooked 374,144 frames earlier was reported as a
     44 ms culprit that way (agent report, 2026-09-20). A bridge older than
     `cookAbsFrame` sends no frame, and its line stays what it was.
+
+    `frozen` is a check across which the frame clock did not move. The clock
+    compared against is `absTime.frame`, and it stands still while the root
+    timeline is paused (2025.32460, one second apart: 2013719 -> 2013719 with
+    `root.time.play` False). Then nothing cooked during the check and the
+    distance to a cook counts only the frames that played, so the split into
+    "now" and "long ago" is not drawn: the time goes to `current` with the
+    frame it was measured on, and no verdict on when.
     """
     cost = f"{node['path']} ({node['cookTime']:.0f} ms"
     last = node.get("cookAbsFrame")
     if not isinstance(last, (int, float)):
         current.append(cost + ")")
+        return
+    if frozen:
+        timeline = node.get("cookFrame")
+        where = (f", timeline frame {timeline:.0f}"
+                 if isinstance(timeline, (int, float)) else "")
+        current.append(f"{cost}, last cooked at absolute frame {last:.0f}"
+                       f"{where})")
         return
     if last >= first_frame - _CURRENT_ALLOWANCE:
         current.append(f"{cost}, cooked {now - last:.0f} frame(s) ago, during "
@@ -362,7 +378,8 @@ def check(
             health.cooking += 1
 
         if node["cookTime"] >= _SLOW_COOK_MS:
-            _file_cook_time(node, first["frame"], second["frame"], slow, stale)
+            _file_cook_time(node, first["frame"], second["frame"], slow, stale,
+                            frozen=frames <= 0 or paused)
         feedback = node.get("feedback")
         if isinstance(feedback, dict) and not feedback.get("reset"):
             target = feedback.get("target") or "no target parameter"
@@ -514,7 +531,11 @@ def check(
             Finding(
                 "warning", "expensive",
                 f"{len(slow)} operator(s) cost more than {_SLOW_COOK_MS:.0f} ms "
-                f"per cook (a whole frame at 60 fps is 16.7 ms)",
+                f"per cook (a whole frame at 60 fps is 16.7 ms)"
+                + (". The frame clock did not advance during this check "
+                   "(a paused timeline stops it), so these are the last cook "
+                   "times measured, not the cost of a frame being drawn now"
+                   if frames <= 0 or paused else ""),
                 slow,
             )
         )
@@ -598,9 +619,11 @@ def check(
                 f"{count} read(s) of a clock or a random generator that is "
                 f"not the timeline{more} — the frame does not reproduce "
                 f"between runs, and two recordings of the same timeline "
-                f"differ. absTime is the application's clock and keeps "
-                f"counting while the timeline stands still; for a "
-                f"deterministic render read me.time.seconds or "
+                f"differ. absTime does not follow the timeline's frame "
+                f"number: stepping or jumping the timeline does not move it "
+                f"back or forward to match, so a walk frame by frame or a "
+                f"second recording reads other values at the same timeline "
+                f"frame. For a deterministic render read me.time.seconds or "
                 f"me.time.frame, and seed any generator",
                 [_clock_read_line(read) for read in reads],
             )

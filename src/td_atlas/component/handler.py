@@ -2327,8 +2327,29 @@ def _timeline():
     return out
 
 
+def _tick():
+    """A frame count that advances while the application draws, or None.
+
+    `absTime.frame` is not that count: it follows the root timeline's play
+    state. Measured on 2025.32460 (demo2.toe), two pings a second apart:
+    playing, absTime.frame 2013656 -> 2013717, op.TDResources.time.frame
+    453 -> 514 and /local/time 592 -> 653; paused, absTime.frame
+    2013719 -> 2013719, absTime.seconds and /local/time stood, while
+    op.TDResources.time.frame went 516 -> 577 (its own `play` is True). A wait
+    for "the next frames drawn" has to count this one. Read on its own, like
+    each member of `_timeline`, because a failure here must not cost `ping`.
+    """
+    try:
+        value = op.TDResources.time.frame
+    except Exception:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value if isinstance(value, (int, float)) else None
+
+
 def m_ping(_params):
-    return {
+    reply = {
         "protocol": PROTOCOL_VERSION,
         # app.version is the branch ('099'); app.build is the actual build.
         "build": app.build,
@@ -2337,12 +2358,17 @@ def m_ping(_params):
         "project": project.name,
         "projectFolder": project.folder,
         "fps": me.time.rate,
-        # Kept under its old name for any reader of the old reply; it was
-        # always the application clock, which `absFrame` now says outright.
+        # Kept under its old name for any reader of the old reply. It is
+        # `absTime.frame`, which stands still while the root timeline is
+        # paused (see `_tick`); `absFrame` names it outright.
         "frame": absTime.frame,
         "absFrame": absTime.frame,
         "timeline": _timeline(),
     }
+    tick = _tick()
+    if tick is not None:
+        reply["tick"] = tick
+    return reply
 
 
 def m_exec(params):
@@ -3685,8 +3711,11 @@ _NEGATIVE_DEPTH = 4
 _NEGATIVE_VISIT = 32
 
 # Reads of a clock or a generator that differ between two runs of the same
-# timeline: the application clock (`absTime.*` keeps counting whether the
-# timeline plays or not), the wall clock, and Python's or NumPy's generator.
+# timeline: `absTime.*`, which does not follow the timeline's frame number
+# (stepping or jumping the timeline does not move it to match, and with the
+# root timeline paused it stands still: 2025.32460, absTime.frame 2013719 ->
+# 2013719 across one second), the wall clock, and Python's or NumPy's
+# generator.
 # `seed`, `Random` and `default_rng` build or seed a generator rather than
 # drawing from one, and are left out; `tdu.rand(seed)` is a hash of its
 # argument and is not matched at all.

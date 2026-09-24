@@ -396,8 +396,9 @@ def td_status() -> str:
     whether its timeline is playing.
 
     Read the `timeline:` line before trusting a live CHOP between two of your
-    own calls: `(playing)` means frames keep cooking in between. `abs` is the
-    application clock, not the project's frame. A `(!)` on the range means
+    own calls: `(playing)` means frames keep cooking in between. `abs` is
+    `absTime.frame`, not the project's frame: stepping the timeline does not
+    move it, and a paused root timeline stops it. A `(!)` on the range means
     playback stops short of `end` — usually a range left over from a test, and
     a recording stops there without an error.
     """

@@ -36,7 +36,8 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
   cook, whenever that was, and a Movie File In last cooked 374,144 frames
   earlier was once blamed for the frame rate. `expensive` keeps only the
   operators that cooked while the check ran, and each time is printed with the
-  frame it was measured on.
+  frame it was measured on. On a paused timeline `absTime.frame` stands
+  still, so the split is not drawn and the times are listed as last measured.
 - `feedback-loops` (note) lists every feedback operator not held in `reset`.
   `cook(force=True)` does not advance a loop, so a frame made by forced cooks
   carries a stale trail. Play the timeline instead.

@@ -172,3 +172,35 @@ def test_cli_status_shows_the_line(monkeypatch, capsys, tmp_path):
     cli.main(["status"])
     out = capsys.readouterr().out
     assert "timeline      : frame 851 (paused)" in out
+
+
+class _Resources:
+    def __init__(self, frame):
+        self.time = type("RT", (), {"frame": frame, "play": True})()
+
+
+def test_ping_sends_a_tick_that_moves_while_the_timeline_is_paused(td_globals,
+                                                                     monkeypatch):
+    """`tick` is `op.TDResources.time.frame`, the clock settle waits on.
+
+    Measured on 2025.32460 (demo2.toe), one second apart with the root
+    timeline paused: absTime.frame 2013719 -> 2013719, /local/time stood,
+    op.TDResources.time.frame 516 -> 577.
+    """
+    class _Op:
+        TDResources = _Resources(577.0)
+
+        def __call__(self, path):
+            return _Root(_Time())
+
+    monkeypatch.setattr(handler, "op", _Op(), raising=False)
+    reply = handler.m_ping({})
+    assert reply["tick"] == 577
+    assert reply["absFrame"] == 1284807
+
+
+def test_ping_leaves_tick_out_when_it_will_not_read(td_globals):
+    """The faked `op` has no TDResources: the reply still comes back whole."""
+    reply = handler.m_ping({})
+    assert "tick" not in reply
+    assert reply["timeline"]["frame"] == 851

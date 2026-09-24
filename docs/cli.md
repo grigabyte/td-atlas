@@ -114,8 +114,9 @@ machine. Those numbers belong to your TouchDesigner build.
 
 With a bridge up it also prints what the project timeline is doing, as
 `frame 851 (playing) | start 1 end 994 | range 1–994 | rate 60 | abs 1284807`.
-`frame` is the timeline's own frame and `abs` is the application clock, which
-keeps counting whatever the timeline does. A range narrower than `start`–`end`
+`frame` is the timeline's own frame and `abs` is `absTime.frame`, which does
+not follow it: stepping the timeline does not move it, and it stands still
+while the root timeline is paused. A range narrower than `start`–`end`
 is marked `(!)` with the frame where playback will stop, since a range left
 over from a test stops a recording there without an error.
 

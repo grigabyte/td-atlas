@@ -429,3 +429,27 @@ def test_the_clock_scan_stops_at_its_budget_and_says_so(monkeypatch, td_globals)
         Par("tx", 0.0, "absTime.seconds", "ParMode.EXPRESSION")])
     reply = sampled(monkeypatch, film, Op("/project1/b"), Op("/project1/c"))
     assert reply["clockScan"]["scanned"] < reply["clockScan"]["of"]
+
+
+def test_a_paused_timeline_does_not_split_cook_times_into_now_and_long_ago():
+    """With the root timeline paused, absTime.frame stands still.
+
+    Measured on 2025.32460: 2013719 -> 2013719 across one second with
+    `root.time.play` False. Nothing cooks and the clock does not move, so a
+    cook at the frozen frame is not "during this check" and one before it is
+    not "long ago" by any count this check made. The time is listed with the
+    frame it was measured on, and the split is not drawn.
+    """
+    nodes = [
+        node("/project1/recent", 10, cookTime=30.0, cookAbsFrame=2013719.0),
+        node("/project1/older", 10, cookTime=40.0, cookAbsFrame=2013000.0),
+    ]
+    result = check(sample(2013719, nodes, playing=False),
+                   sample(2013719, nodes, playing=False))
+    assert finding(result, "expensive-stale") is None
+    expensive = finding(result, "expensive")
+    assert expensive is not None and len(expensive.paths) == 2
+    for line in expensive.paths:
+        assert "during this check" not in line
+    assert any("2013000" in line for line in expensive.paths)
+    assert "clock did not advance" in expensive.message

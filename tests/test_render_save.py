@@ -90,3 +90,36 @@ def test_the_cli_takes_the_same_settle(monkeypatch, tmp_path, capsys):
     assert args.func(args) == 0
     assert out.read_bytes() == PNG
     assert fake.calls.count("ping") == 3
+
+
+class PausedClient(FakeClient):
+    """A bridge on a paused root timeline, as measured on 2025.32460.
+
+    With `root.time.play` False, `absTime.frame` stood at 2013719 across a
+    one-second gap while `op.TDResources.time.frame` went 516 -> 577: the
+    application still draws, but the clock `ping` called `frame` does not
+    move. A settle that waits on `frame` waits out its whole budget and then
+    blames a stalled TouchDesigner that is not stalled.
+    """
+
+    def __init__(self):
+        super().__init__(step=0)
+        self.tick = 516
+
+    def ping(self):
+        reply = super().ping()
+        self.tick += 1
+        reply["tick"] = self.tick
+        return reply
+
+
+def test_a_paused_timeline_does_not_read_as_a_stalled_application(monkeypatch):
+    monkeypatch.setattr(settle, "DEFAULT_BUDGET", 0.5)
+    settled = settle.wait_frames(PausedClient(), 3)
+    assert settled.complete, settled.note()
+    assert settled.note() == ""
+
+
+def test_an_older_bridge_without_tick_is_still_waited_on_by_frame():
+    settled = settle.wait_frames(FakeClient(step=1), 3)
+    assert settled.complete
