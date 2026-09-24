@@ -331,7 +331,7 @@ class BridgeClient:
                           error_type="BridgeUnavailable",
                           reason=exc.reason, message=str(exc))
             raise
-        self._journal(method, params, started, None)
+        self._journal(method, params, started, None, result=result)
         return result
 
     def _journal(
@@ -343,9 +343,14 @@ class BridgeClient:
         error_type: str = "",
         reason: str = "",
         message: str = "",
+        result: Any = None,
     ) -> None:
+        # The reply goes along because it is the only source of an old value
+        # the journal may record: `flags_set` reads each flag before writing
+        # it and says so. The journal takes what it names and nothing else.
         journal.record(
             method,
+            result=result,
             ok=exc is None,
             seconds=time.perf_counter() - started,
             params=params,

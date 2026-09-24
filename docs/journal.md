@@ -34,8 +34,20 @@ The host writes the journal. A Table DAT inside TouchDesigner dies with the
 process, and keeping one would mean saving the project, which is a Save As that
 moves the artist's file.
 
-The file is bounded at 1 MiB, about 5,300 calls measured, and the oldest lines
-are dropped first. Parameters are not logged. A line carries the method, the
-outcome, the duration, the path, the caller and a batch's step count. A DAT's
-text and a whole network stay out of it, and the bridge token is scrubbed from
-every line before it is written.
+A line carries the method, the outcome, the duration, the path, the caller and
+a batch's step count. A call that changed the project also carries what it
+changed, and the listing prints it under the call: `tx = 0.5`, `ty = expr
+absTime.seconds (reads 12.25)`, `viewer = False (was True)`, every step of a
+batch, and the first lines of the code an `exec` ran. So "what did I set
+yesterday at 19:00" is `td-atlas log --method par_set -n 500`, or `batch`, or
+`exec`, read rather than reconstructed. An old parameter value is the earlier
+line that set it: `par_set` returns only what the parameter reads after the
+write, and the journal records no value the bridge did not send. Flags are the
+exception, since `flags_set` reads each one before writing it.
+
+Calls that only read keep their path and nothing else, so a whole network
+never lands in the file. Code and DAT text are clipped at 4 KB and other
+values at 1,000 characters, with the full length noted; a batch keeps its
+first 64 steps and counts the rest; one line never passes 32 KB. The file is
+bounded at 16 MiB and the oldest lines are dropped first. The bridge token is
+scrubbed from every line before it is written, code included.

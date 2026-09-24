@@ -110,12 +110,8 @@ Installation, index and bridge state in a few lines, with no exit-code opinion.
 The line of index counts it prints is the canonical size of the corpus on this
 machine. Those numbers belong to your TouchDesigner build.
 
-With a bridge up it also prints what the project timeline is doing:
-
-```
-timeline      : frame 851 (playing) | start 1 end 994 | range 1–994 | rate 60 | abs 1284807
-```
-
+With a bridge up it also prints what the project timeline is doing, as
+`frame 851 (playing) | start 1 end 994 | range 1–994 | rate 60 | abs 1284807`.
 `frame` is the timeline's own frame and `abs` is the application clock, which
 keeps counting whatever the timeline does. A range narrower than `start`–`end`
 is marked `(!)` with the frame where playback will stop, since a range left
@@ -204,8 +200,10 @@ Saves a TOP's image to a file.
 ### `td-atlas log`
 
 The trail of bridge calls from `~/.td-atlas/calls.jsonl`, written by the host
-and outliving the session. Parameters are never logged and the bridge token is
-scrubbed from every line.
+and outliving the session. A call that changed the project is listed with what
+it changed: parameter values and expressions, flags with the value they had
+before, every step of a batch, the first lines of the code an `exec` ran. The
+bridge token is scrubbed from every line.
 
 | Flag | |
 | --- | --- |

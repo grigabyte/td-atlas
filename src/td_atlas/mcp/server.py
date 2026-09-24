@@ -428,6 +428,14 @@ def td_log(
     TouchDesigner being closed and reopened, so it also answers "what happened
     yesterday".
 
+    Every call that changed the project is listed with what it changed:
+    `tx = 0.5` and `ty = expr ...` under a td_set_params, each step of a
+    td_build, flags with the value they had before, and the first lines of
+    the code a td_exec ran. To put back what was set earlier, read it here
+    with `method="par_set"`, `"batch"` or `"exec"` and a large `limit`,
+    rather than reconstructing it from a render. An old parameter value is
+    the earlier line that set it; the journal does not record one otherwise.
+
     Also reach for it before repeating a call that failed. `failures=True`
     gives the refusals alone, each with the text it refused with, and the
     repair for the most recent one — repeating a call that a scope claim or a

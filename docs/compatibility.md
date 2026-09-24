@@ -72,7 +72,7 @@ agent at work you care about.
   Writing (`td_project_write`, `td_variant_restore`) refuses an output path
   that already exists.
 - **On the host** td-atlas writes only under `~/.td-atlas`. That is the index,
-  the staged bridge, the call journal `calls.jsonl` (capped at 1 MiB),
+  the staged bridge, the call journal `calls.jsonl` (capped at 16 MiB),
   snapshots, variants and the expansion cache. The cache is capped by count and
   evicted least-recently-used. `td-atlas doctor` says how many expansions it
   holds and `td-atlas doctor --clear-cache` empties it.

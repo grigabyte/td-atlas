@@ -67,31 +67,174 @@ def test_a_runaway_refusal_is_clipped_not_dropped():
     assert call.message.endswith("[clipped]")
 
 
-def test_batch_records_its_size_and_not_its_steps():
-    ops = [{"method": "op_create", "params": {"type": "noiseTOP"}} for _ in range(7)]
-    journal.record("batch", ok=True, seconds=0.2, params={"ops": ops})
+# -- what a change leaves behind ---------------------------------------------
+#
+# Until 2026-09-24 the policy was the opposite: names, never payloads. Six
+# thousand journal lines of an agent's session held the method, the outcome and
+# the time, and not one parameter value, so "put it back the way it was
+# yesterday" was answered by matching stills from a rendered video for forty
+# minutes (ПРОЧТИ-БОЛИ-АГЕНТА-2, point 1). The owner reversed it: a call that
+# changes the project records what it changed. A call that only reads still
+# records its path and nothing else.
+
+class _Answering(BridgeClient):
+    """A client whose transport answers with a chosen result."""
+
+    answer: object = None
+
+    def _call(self, method, timeout=None, **params):
+        return self.answer
+
+
+def test_par_set_records_the_values_and_what_they_read_back_as():
+    client = _Answering(port=9977)
+    client.answer = {"path": "/project1/geo1",
+                     "applied": {"tx": 0.5, "ty": 12.25}}
+    client.call("par_set", path="/project1/geo1",
+                pars={"tx": 0.5, "ty": {"expr": "absTime.seconds"}}, owner="")
     (call,) = journal.read()
-    assert call.steps == 7
-    assert "noiseTOP" not in journal.journal_path().read_text()
+    assert call.path == "/project1/geo1"
+    assert call.change["pars"] == {"tx": 0.5, "ty": {"expr": "absTime.seconds"}}
+    assert call.change["applied"]["ty"] == 12.25
+    text = journal.format_calls([call])
+    assert "tx = 0.5" in text
+    assert "ty = expr absTime.seconds" in text and "12.25" in text
 
 
-def test_payloads_never_reach_the_file():
-    """The BOUNDARY: a DAT's text and a whole network stay out of the log."""
+def test_par_set_does_not_invent_an_old_value_the_bridge_never_sent():
+    client = _Answering(port=9977)
+    client.answer = {"path": "/project1/geo1", "applied": {"tx": 0.5}}
+    client.call("par_set", path="/project1/geo1", pars={"tx": 0.5})
+    (call,) = journal.read()
+    assert "before" not in call.change
+    assert "was" not in journal.format_calls([call])
+
+
+def test_flags_set_records_the_old_values_the_bridge_already_returns():
+    client = _Answering(port=9977)
+    client.answer = {"path": "/project1/look", "type": "renderTOP",
+                     "before": {"viewer": True}, "applied": {"viewer": False}}
+    client.call("flags_set", path="/project1/look", flags={"viewer": False})
+    (call,) = journal.read()
+    assert call.change["flags"] == {"viewer": False}
+    assert call.change["before"] == {"viewer": True}
+    assert "viewer = False (was True)" in journal.format_calls([call])
+
+
+def test_exec_records_its_code_clipped_and_saying_so():
+    code = "op('/project1/noise1').par.amp = 3\n" + "# padding\n" * 2000
+    journal.record("exec", ok=True, seconds=0.01, params={"code": code})
+    (call,) = journal.read()
+    stored = call.change["code"]
+    assert stored.startswith("op('/project1/noise1').par.amp = 3")
+    assert len(stored) == journal.MAX_CODE_CHARS
+    assert stored.endswith("[clipped]")
+    assert call.change["code_chars"] == len(code)
+
+
+def test_a_short_exec_is_kept_whole():
+    code = "op('/project1/noise1').par.amp = 3"
+    journal.record("exec", ok=True, seconds=0.01, params={"code": code})
+    (call,) = journal.read()
+    assert call.change == {"code": code}
+    assert code in journal.format_calls([call])
+
+
+def test_the_token_is_scrubbed_out_of_recorded_code():
+    _write_config()
+    journal.record("exec", ok=True, seconds=0.0,
+                   params={"code": "headers = {'X-TD-Atlas-Token': '%s'}" % TOKEN})
+    raw = journal.journal_path().read_text()
+    assert TOKEN not in raw
+    assert "<token redacted>" in raw
+
+
+def test_batch_records_every_step_and_what_each_changed():
+    client = _Answering(port=9977)
+    client.answer = {"applied": 3, "results": [
+        {"path": "/project1/noise1", "type": "noiseTOP"},
+        {"path": "/project1/noise1", "applied": {"amp": 3.0}},
+        {"path": "/project1/look", "before": {"bypass": False},
+         "applied": {"bypass": True}},
+    ]}
+    client.batch([
+        {"method": "op_create", "params": {"parent": "/project1",
+                                           "type": "noiseTOP", "name": "noise1"}},
+        {"method": "par_set", "params": {"path": "/project1/noise1",
+                                         "pars": {"amp": 3.0}}},
+        {"method": "flags_set", "params": {"path": "/project1/look",
+                                           "flags": {"bypass": True}}},
+    ], undo_name="demo")
+    (call,) = journal.read()
+    assert call.steps == 3
+    steps = call.change["steps"]
+    assert [s["method"] for s in steps] == ["op_create", "par_set", "flags_set"]
+    assert steps[0]["type"] == "noiseTOP"
+    assert steps[0]["created"] == "/project1/noise1"
+    assert steps[1]["pars"] == {"amp": 3.0}
+    assert steps[2]["before"] == {"bypass": False}
+    text = journal.format_calls([call])
+    assert "amp = 3.0" in text and "bypass = True (was False)" in text
+
+
+def test_a_failed_change_still_records_what_was_attempted():
+    journal.record("par_set", ok=False, seconds=0.0,
+                   params={"path": "/project1/n", "pars": {"nosuchpar": 1}},
+                   error_type="AttributeError", error_message="has no parameter")
+    (call,) = journal.read()
+    assert call.change["pars"] == {"nosuchpar": 1}
+
+
+def test_a_call_that_only_reads_records_its_path_and_nothing_else():
+    """What stays out: a whole network, a render's bytes, a read's arguments."""
     journal.record(
-        "exec",
+        "network",
         ok=True,
         seconds=0.01,
         params={
-            "code": "op('/project1/text1').par.text = 'the artist's whole shader'",
             "network": {"children": [{"name": "n%d" % i} for i in range(200)]},
             "path": "/project1/text1",
+            "depth": 3,
         },
     )
     raw = journal.journal_path().read_text()
-    assert "shader" not in raw
     assert "children" not in raw
     assert "/project1/text1" in raw  # the path is kept on purpose
     assert len(raw) < 300
+    (call,) = journal.read()
+    assert call.change is None
+
+
+def test_one_line_stays_bounded_however_large_the_change():
+    ops = [{"method": "op_create",
+            "params": {"parent": "/project1", "type": "textDAT",
+                       "text": "x" * 20_000}} for _ in range(500)]
+    journal.record("batch", ok=True, seconds=0.2, params={"ops": ops})
+    raw = journal.journal_path().read_text()
+    assert len(raw.encode("utf-8")) <= journal.MAX_LINE_BYTES
+    (call,) = journal.read()
+    assert call.steps == 500
+    assert call.change, "something of the change is kept, not all dropped"
+
+
+def test_the_journal_holds_a_day_of_changes_not_an_hour():
+    """The cap is sized for the question it has to answer: yesterday.
+
+    An exec a line at the code bound is the worst case; the cap must hold a
+    working session of those, not a few hours of pings.
+    """
+    assert journal.MAX_BYTES // journal.MAX_CODE_CHARS >= 3000
+
+
+def test_both_reading_surfaces_show_the_change(capsys):
+    from td_atlas import cli
+    from td_atlas.mcp import server
+
+    journal.record("par_set", ok=True, seconds=0.01,
+                   params={"path": "/project1/geo1", "pars": {"rx": 45}})
+    assert cli.main(["log", "--method", "par_set"]) == 0
+    assert "rx = 45" in capsys.readouterr().out
+    assert "rx = 45" in server.td_log(method="par_set")
 
 
 # -- the token --------------------------------------------------------------
@@ -295,7 +438,8 @@ def test_an_unreachable_bridge_lands_with_the_reason_hints_are_keyed_on():
 # -- the repair advice ------------------------------------------------------
 
 def test_a_stored_failure_maps_to_the_same_hint_a_live_one_would():
-    for reason in ("bridge_timeout", "bridge_unreachable", "bridge_protocol"):
+    for reason in ("bridge_timeout", "bridge_asleep", "bridge_unreachable",
+                   "bridge_protocol"):
         live = hints.classify(BridgeUnavailable("x", reason=reason))
         assert hints.from_record("BridgeUnavailable", reason) is live
     live = hints.classify(BridgeError({"type": "ScopeHeld", "message": ""}, "m"))
@@ -308,9 +452,10 @@ def test_an_unmapped_stored_failure_gets_the_honest_gap():
 
 
 def test_every_reason_the_journal_can_store_has_a_hint():
-    """The four `BridgeUnavailable.reason` values all resolve to real advice."""
+    """The five `BridgeUnavailable.reason` values all resolve to real advice."""
     for reason in ("bridge_unreachable", "bridge_http", "bridge_timeout",
-                   "bridge_protocol"):
+                   "bridge_asleep", "bridge_protocol"):
+        assert reason in hints.HINTS
         assert hints.from_record("BridgeUnavailable", reason).action
 
 

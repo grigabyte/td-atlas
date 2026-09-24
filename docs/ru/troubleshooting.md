@@ -1,7 +1,7 @@
 ---
 istochnik: docs/troubleshooting.md
 kommit: f767122
-hesh: bb11fad8415afa1cc2ad0a6ce150130de2344911b49629d61a281654cc18251e
+hesh: 33f8305a5f3c6cdea609c26b982d2579d14a332792883989b4e4e418141a0e3b
 ---
 
 # Починка
