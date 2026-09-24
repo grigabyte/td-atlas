@@ -14,6 +14,7 @@ import hmac
 import io
 import json
 import os
+import re
 import time
 import traceback
 from contextlib import redirect_stderr, redirect_stdout
@@ -3112,6 +3113,196 @@ def m_palette_load(params):
 # read below stays silent rather than inventing a result.
 _GLSL_TYPES = ("glslTOP", "glslmultiTOP", "glslMAT", "glslPOP")
 
+# Operators that hold the previous frame's data, and the parameter naming what
+# they feed back from (the index: `top` on feedbackTOP, `targetpop` on
+# feedbackPOP; feedbackCHOP has no target parameter). Reported because a
+# forced cook does not advance them: an agent on build 2025.32460 warmed a
+# chain with `cook(force=True)` over 1200 frames per tile and the Feedback TOP
+# kept the frame from before the tiling began, observed live and reported
+# 2026-09-20. That was a Feedback TOP; the CHOP and the POP keep state between
+# frames by the same design and were not observed.
+_FEEDBACK_TARGETS = {
+    "feedbackTOP": "top",
+    "feedbackPOP": "targetpop",
+    "feedbackCHOP": None,
+}
+
+# How far below a suspect Level TOP to look for an Add. Chosen, not measured:
+# the case that cost a session had the Add as the Level's direct consumer, and
+# a handful of hops covers a null or a transform in between while keeping a
+# walk that runs once per suspect Level — rare — trivially bounded.
+_NEGATIVE_DEPTH = 4
+_NEGATIVE_VISIT = 32
+
+# Reads of a clock or a generator that differ between two runs of the same
+# timeline: the application clock (`absTime.*` keeps counting whether the
+# timeline plays or not), the wall clock, and Python's or NumPy's generator.
+# `seed`, `Random` and `default_rng` build or seed a generator rather than
+# drawing from one, and are left out; `tdu.rand(seed)` is a hash of its
+# argument and is not matched at all.
+_CLOCK_READ = re.compile(
+    r"\babsTime\.\w+"
+    r"|\btime\.time\s*\(\s*\)"
+    r"|\b(?:np\.|numpy\.)?random\.(?!seed\b|Random\b|default_rng\b)\w+\s*\("
+)
+_SEEDED = re.compile(r"\brandom\.seed\s*\(")
+
+# DATs whose text is code TouchDesigner runs on its own schedule. Every other
+# DAT is data or a shader, and matching its text would name notes and GLSL.
+_SCRIPT_DATS = (
+    "executeDAT", "chopexecuteDAT", "datexecuteDAT", "opexecuteDAT",
+    "panelexecuteDAT", "parameterexecuteDAT", "pargroupexecuteDAT",
+)
+# Script operators keep their code in the DAT their `callbacks` names.
+_SCRIPT_OPS = ("scriptCHOP", "scriptTOP", "scriptSOP", "scriptDAT")
+
+# The parameter half of the clock scan reads every parameter of every walked
+# operator — the one per-parameter pass in this sample — so it stops at a
+# budget and reports how far it got, as the walk does at its node ceiling.
+# Chosen, not measured: a little under one 60 fps frame (16.7 ms), on top of
+# the walk's own cost. Its real cost per operator has not been timed inside
+# TouchDesigner.
+_CLOCK_SCAN_BUDGET_S = 0.015
+_MAX_CLOCK_READS = 50
+
+
+def _attr(target, name):
+    """An attribute read that cannot cost the node its entry."""
+    try:
+        return getattr(target, name, None)
+    except Exception:
+        return None
+
+
+def _par_value(target, name):
+    """A parameter's evaluated value, or None when it is absent or unreadable."""
+    try:
+        par = getattr(target.par, name, None)
+        return None if par is None else par.eval()
+    except Exception:
+        return None
+
+
+def _feedback_state(target):
+    name = _FEEDBACK_TARGETS.get(target.OPType)
+    source = _par_value(target, name) if name else None
+    path = getattr(source, "path", None)
+    if path is None and source:
+        path = str(source)
+    return {"target": path or "", "reset": bool(_par_value(target, "reset"))}
+
+
+def _negative_float_risk(level):
+    """A Level TOP that can hand negative values downstream, or None.
+
+    Measured by an agent on build 2025.32460 (reported 2026-09-20): black
+    level 0.42 in rgba16float with the Post-page clamp off gave -0.21 to
+    -0.38, and a Composite adding it darkened what it was added to. Only that
+    condition is checked — a float format that can hold a negative, a black
+    level above zero, and no clamp at or above zero. `pixelFormatName` is the
+    format the TOP really has; its `format` parameter says `useinput` as often
+    as not. rgba11float stores positive values only (the parameter's own menu
+    label), so it cannot carry the fault.
+
+    Then a short walk downstream for an Add, either an Add TOP or a Composite
+    set to `add`: those are where a negative subtracts instead of adding.
+    """
+    fmt = str(_attr(level, "pixelFormatName") or "")
+    if "float" not in fmt or "11float" in fmt:
+        return None
+    black = _par_value(level, "blacklevel")
+    if not isinstance(black, (int, float)) or black <= 0:
+        return None
+    if _par_value(level, "clamp"):
+        low = _par_value(level, "clamplow2")
+        if isinstance(low, (int, float)) and low >= 0:
+            return None
+    adds = []
+    seen = set()
+    frontier = list(_attr(level, "outputs") or [])
+    for _ in range(_NEGATIVE_DEPTH):
+        following = []
+        for node in frontier:
+            path = getattr(node, "path", None)
+            if path is None or path in seen or len(seen) >= _NEGATIVE_VISIT:
+                continue
+            seen.add(path)
+            kind = getattr(node, "OPType", "")
+            if kind == "addTOP" or (
+                kind == "compositeTOP" and _par_value(node, "operand") == "add"
+            ):
+                adds.append(path)
+            following.extend(_attr(node, "outputs") or [])
+        frontier = following
+    return {
+        "format": fmt,
+        "blacklevel": round(float(black), 4),
+        "adds": adds,
+        "depth": _NEGATIVE_DEPTH,
+    }
+
+
+def _clock_calls(text):
+    """The clock and generator reads in a piece of code, each named once."""
+    seeded = bool(_SEEDED.search(text))
+    calls = []
+    for match in _CLOCK_READ.finditer(text):
+        call = re.sub(r"\s+", "", match.group(0))
+        if call.endswith("("):
+            if seeded:
+                continue
+            call += ")"
+        if call not in calls:
+            calls.append(call)
+    return calls
+
+
+def _clock_reads(ops, budget):
+    """Where a frame depends on something other than the timeline.
+
+    Returns (reads, scanned, total). Script text first — few DATs, and the
+    likelier home of such a call — then every expression-mode parameter until
+    `budget` seconds have passed. A parameter is judged by its mode: an
+    expression left behind on a constant parameter is not evaluated.
+    """
+    reads = []
+
+    def note(path, where, text):
+        for call in _clock_calls(text):
+            reads.append({"path": path, "where": where, "call": call})
+
+    for target in ops:
+        kind = getattr(target, "OPType", "")
+        try:
+            if kind in _SCRIPT_DATS:
+                note(target.path, "text", str(target.text or ""))
+            elif kind in _SCRIPT_OPS:
+                dat = _par_value(target, "callbacks")
+                text = getattr(dat, "text", None)
+                if text:
+                    note(dat.path, "callbacks of %s" % target.path, str(text))
+        except Exception:
+            continue
+
+    deadline = time.perf_counter() + budget
+    scanned = 0
+    for target in ops:
+        if time.perf_counter() >= deadline:
+            break
+        scanned += 1
+        try:
+            pars = target.pars()
+        except Exception:
+            continue
+        for par in pars:
+            try:
+                if "EXPRESSION" not in str(par.mode).upper():
+                    continue
+                note(target.path, par.name, str(par.expr or ""))
+            except Exception:
+                continue
+    return reads, scanned, len(ops)
+
 
 def m_health_sample(params):
     """One snapshot of the state a silent failure shows up in.
@@ -3125,6 +3316,13 @@ def m_health_sample(params):
     A failed shader compile and a traceback from a script or callback are the
     same kind of blind spot, and neither is visible through `errors()`: they
     are read from `compileResult` and `scriptErrors` respectively.
+
+    Four more surfaces ride in the same walk, each for a trap an agent paid
+    for in a live session: the frame a cook time was measured on
+    (`cookAbsFrame`, `cookFrame`), the target of every feedback operator, a
+    Level TOP that can output negative values into an Add, and reads of the
+    application clock or an unseeded generator (`clockReads`, bounded by
+    `_CLOCK_SCAN_BUDGET_S` and reported as `clockScan`).
     """
     root_path = params.get("path") or "/project1"
     target = _resolve(root_path)
@@ -3191,6 +3389,22 @@ def m_health_sample(params):
                 "errors": child.errors(recurse=False) or None,
                 "warnings": child.warnings(recurse=False) or None,
             }
+            # When the cook that `cookTime` timed happened. Without it the
+            # time reads as current: a Movie File In that last cooked at
+            # absolute frame 353, read at 374497, was reported at 44 ms "per
+            # cook" and blamed for the frame rate (agent report, 2026-09-20).
+            # The absolute frame is what the host compares, against
+            # `absTime.frame` below; the timeline frame is sent for display.
+            for key in ("cookAbsFrame", "cookFrame"):
+                value = _attr(child, key)
+                if isinstance(value, (int, float)):
+                    entry[key] = value
+            if child.OPType in _FEEDBACK_TARGETS:
+                entry["feedback"] = _feedback_state(child)
+            if child.OPType == "levelTOP":
+                risk = _negative_float_risk(child)
+                if risk:
+                    entry["negativeFloat"] = risk
             # Output-ish operators that quietly do nothing when switched off.
             for flag in ("active", "record", "play"):
                 par = getattr(child.par, flag, None)
@@ -3234,6 +3448,12 @@ def m_health_sample(params):
                 "%s (%s: %s)" % (target.path, type(exc).__name__, exc)
             )
 
+    # The root's own parameters count: a custom parameter on the component is
+    # where a camera driver or a global clock often lives.
+    clock_reads, clock_scanned, clock_total = _clock_reads(
+        [target] + list(scanned), _CLOCK_SCAN_BUDGET_S
+    )
+
     licence = {}
     try:
         licence = {
@@ -3259,6 +3479,9 @@ def m_health_sample(params):
         "scriptErrors": script_errors,
         "scriptErrorsRaw": _clip(script_errors_root),
         "scanned": len(scanned) + 1,
+        "clockReads": clock_reads[:_MAX_CLOCK_READS],
+        "clockReadsCount": len(clock_reads),
+        "clockScan": {"scanned": clock_scanned, "of": clock_total},
     }
     if unvisited:
         # A health verdict over part of a network must not read as a verdict

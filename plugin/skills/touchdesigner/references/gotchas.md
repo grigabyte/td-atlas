@@ -72,6 +72,8 @@ def cook(scriptOp):
 ```
 
 Then set the expression once: `op('…/curve').par.Time.expr = 'absTime.seconds'`.
+For a render that has to reproduce, use `me.time.seconds` there instead. See
+*A frame that reads the application clock does not reproduce*.
 
 ## A render chain is not connected to anything the artist is looking at
 
@@ -153,6 +155,15 @@ project's target. Tell the two apart. `expensive` with no `slow` means the rest
 of the network is absorbing it, and `slow` with no `expensive` means the cost is
 spread across many operators or is not in cooking at all.
 
+A cook time is the duration of the operator's *last* cook, whenever that was.
+An agent read `/project1/moviefilein1 (44 ms)` as a cost of the current frame,
+when the node had last cooked at absolute frame 353 with the clock at 374497,
+and spent five calls on it. `td_health` now puts the frame beside each time.
+An operator that did not cook while the check ran goes into the note
+`expensive-stale` instead, with how many frames ago its cook was. It is not part
+of the current frame and not a suspect for the frame rate. Only `expensive`
+names those.
+
 The operator summary says so in prose too, *"The ones that are calculated on the
 GPU will have GPU in their name"*, which is easy to read past. Prefer `perlin*`,
 `simplex*` and `randomgpu`.
@@ -224,6 +235,23 @@ The cook stack behind that sentence is left to `td_errors`, which prints the
 whole thing.
 
 **Fix.** Take the Feedback TOP's wired input from a node *before* the loop.
+
+### A forced cook does not advance a feedback loop
+
+A Feedback TOP takes its next frame when the timeline advances. `cook(force=True)`
+cooks the whole chain again but leaves the loop holding what the last real
+timeline frame put in it. An agent warmed each tile of a tiled render with 1200
+forced cooks, and every tile carried the trail of the full frame from before
+the tiling began (build 2025.32460, reported 2026-09-20). It took an hour to
+find.
+
+`td_health` lists every feedback operator with its target in the note
+`feedback-loops`. One held in `reset` passes its input through and is left out.
+The behaviour was observed on a Feedback TOP. The CHOP and the POP keep state
+between frames the same way and are listed too, but were not tested.
+
+**Fix.** To get a correct frame out of a network with a loop, play the timeline
+and capture from it rather than forcing cooks.
 
 ## A composite's first input is the foreground
 
@@ -444,6 +472,51 @@ names them all. Bypass is a flag, not a parameter. It is in `NODE_FLAGS`, so
 `td_flags` reads it and `td_set_flags` clears it, and it does not appear in
 `td_operator_schema`.
 
+Bypass on an operator whose job is to scale a signal reads as "switched off",
+and does the opposite. A bypassed Level TOP hands its input through at full
+strength, so the layer it was dimming comes back. An agent bypassed a glow's
+Level TOP to rule the glow out, and the glow stayed. `td_health` adds the note
+`bypass-passes-through` for a bypassed `levelTOP`, `mathTOP`, `hsvadjustTOP`,
+`mathCHOP` or `mathPOP`. To take a layer out, bring its level to zero. In that
+case `brightness1 = 0` on the Level TOP did it. Disconnecting it works too.
+
+## A Level TOP in a float format can output negative values
+
+A Level TOP with `blacklevel` above 0 in `rgba16float` or `rgba32float`, with
+the Post page `clamp` off, outputs values below zero. An agent measured −0.21
+to −0.38 at black level 0.42. An 8-bit format clamps them away. A float one
+keeps them, and a Composite set to `add` then *subtracts* them from what it adds
+to. A background went black that way, and was turned up twice by hand before a
+sample down the chain found the cause.
+
+`td_health` reports `negative-float` for such a Level TOP. It reads the TOP's
+actual pixel format, not its `format` parameter, which usually says `useinput`.
+It is a warning when an Add TOP or a Composite set to `add` sits within four
+operators downstream, and a note otherwise. Anything else that sums, such as a
+GLSL TOP or a Math, is not checked.
+
+**Fix.** `clamp = True`, `clamplow2 = 0`, `clamphigh2 = 1` on the Level TOP.
+
+## A frame that reads the application clock does not reproduce
+
+`absTime` is the application's clock. It keeps counting while the timeline
+stands still and starts wherever the application happens to be. A camera
+driven by `absTime.seconds` moved differently in every recording. It surfaced
+only when the tiles of a tiled render stopped lining up, and it had spoiled
+the ordinary recordings before that. `time.time()` and an unseeded `random`
+do the same.
+
+`td_health` reports `nondeterministic` for every parameter in expression mode,
+and every Execute-family DAT or Script operator's callbacks, that reads
+`absTime.*`, `time.time()` or draws from `random` (NumPy's included) without a
+`random.seed(` in the same text. A parameter holds no seed, so a draw there is
+always named. `tdu.rand(seed)` is a hash of its argument and is not flagged.
+The parameter half of the scan stops at the bridge's time budget, and says so
+as `nondeterminism-unscanned`.
+
+**Fix.** For a render that has to come out the same twice, read the timeline:
+`me.time.seconds` or `me.time.frame`. Seed any generator.
+
 ## Realtime off changes what "one frame" means
 
 With Realtime on, the default, TouchDesigner drops frames to keep the timeline
@@ -467,6 +540,9 @@ Two of `td_health`'s findings are about the report, not about the project:
 - `interval-clamped` means the gap asked for between the two samples was
   reduced. The host sleeps through that gap and answers nothing else meanwhile,
   so the interval is bounded.
+- `nondeterminism-unscanned` means the check for clock reads ran out of its
+  time budget. It names how many operators' parameters it got through. Script
+  DATs are read in full before that budget starts.
 
 ## Stale errors
 

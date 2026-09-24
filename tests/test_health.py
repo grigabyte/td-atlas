@@ -9,6 +9,7 @@ import time
 import pytest
 
 from td_atlas.bridge import health as health_mod
+from td_atlas.component import handler
 
 
 class FakeClient:
@@ -318,7 +319,7 @@ def test_a_bridge_without_the_new_fields_reports_neither():
 # -- what each new section costs the host -----------------------------------
 
 def test_prints_what_each_new_section_costs():
-    """Time the two new sections, host side.
+    """Time each section added since the gate, host side.
 
     This measures parsing a payload, not collecting it inside TouchDesigner.
     Collection was timed separately on a live instance (build 2025.32460, a
@@ -366,8 +367,71 @@ def test_prints_what_each_new_section_costs():
           "0.02 ms for the recursive scriptErrors call, compileResult read "
           "inside the existing walk; not measured at thousands of nodes")
 
+    # The sections of 2026-09-24, each against the same baseline and each in
+    # its worst case: every node carrying the field the section reads.
+    # Collection inside TouchDesigner was not timed for any of them — no live
+    # instance was used — and is stated as that below rather than estimated.
+    stale_first = [node(f"/p/n{i}", 100, cookTime=40.0, cookAbsFrame=3.0,
+                        cookFrame=3.0) for i in range(count)]
+    # Cook counts advance, so not-cooking stays out of the measurement and
+    # what is timed is this section alone.
+    stale_second = [dict(n, cooks=n["cooks"] + 60) for n in stale_first]
+    with_stale, stale_result = timed(sample(1000, stale_first),
+                                     sample(1060, stale_second))
+
+    loop = {"target": "/p/out", "reset": False}
+    loops_first = [node(f"/p/f{i}", 100 + i, type="feedbackTOP",
+                        feedback=loop) for i in range(count)]
+    loops_second = [dict(n, cooks=n["cooks"] + 60) for n in loops_first]
+    with_loops, loop_result = timed(sample(0, loops_first),
+                                    sample(60, loops_second))
+
+    gains_first = [node(f"/p/l{i}", 100 + i, type="levelTOP", bypass=True)
+                   for i in range(count)]
+    gains_second = [dict(n, cooks=n["cooks"] + 60) for n in gains_first]
+    with_gains, gain_result = timed(sample(0, gains_first),
+                                    sample(60, gains_second))
+
+    risk = {"format": "rgba16float", "blacklevel": 0.42,
+            "adds": ["/p/add"], "depth": 4}
+    neg_first = [node(f"/p/v{i}", 100 + i, type="levelTOP",
+                      negativeFloat=risk) for i in range(count)]
+    neg_second = [dict(n, cooks=n["cooks"] + 60) for n in neg_first]
+    with_negative, negative_result = timed(sample(0, neg_first),
+                                           sample(60, neg_second))
+
+    reads = [{"path": f"/p/n{i}", "where": "tx", "call": "absTime.seconds"}
+             for i in range(50)]
+    with_clock, clock_result = timed(
+        sample(0, plain),
+        sample(60, plain_after, clockReads=reads, clockReadsCount=count,
+               clockScan={"scanned": count // 2, "of": count}),
+    )
+
+    print(f"  + expensive-stale       : {with_stale - base:+.2f} ms "
+          f"({count} expensive nodes, all last cooked before the check)")
+    print(f"  + feedback-loops        : {with_loops - base:+.2f} ms "
+          f"({count} feedback operators)")
+    print(f"  + bypass-passes-through : {with_gains - base:+.2f} ms "
+          f"({count} bypassed Level TOPs)")
+    print(f"  + negative-float        : {with_negative - base:+.2f} ms "
+          f"({count} Level TOPs at risk)")
+    print(f"  + nondeterministic      : {with_clock - base:+.2f} ms "
+          f"(50 listed reads, the bridge's cap, and a partial scan)")
+    print("  collection inside TouchDesigner for these: not measured. The "
+          "clock scan stops at the bridge's own budget "
+          f"({handler._CLOCK_SCAN_BUDGET_S * 1000:.0f} ms, "
+          "chosen); the rest are reads inside the existing walk, filtered by "
+          "type except cookAbsFrame and cookFrame, read on every node")
+
     assert "shader-compile" in kinds(shader_result)
     assert "script-errors" in kinds(script_result)
+    assert "expensive-stale" in kinds(stale_result)
+    assert "feedback-loops" in kinds(loop_result)
+    assert "bypass-passes-through" in kinds(gain_result)
+    assert "negative-float" in kinds(negative_result)
+    assert "nondeterministic" in kinds(clock_result)
+    assert "nondeterminism-unscanned" in kinds(clock_result)
 
 
 # -- the one-line verdict the bridge's status panel shows -------------------
@@ -505,6 +569,12 @@ SECTION_COSTS = {
     "bypassed": PARSED_FIELD,
     "stalled": PARSED_FIELD,
     "slow": PARSED_FIELD,
+    "expensive-stale": TIMED,
+    "feedback-loops": TIMED,
+    "bypass-passes-through": TIMED,
+    "negative-float": TIMED,
+    "nondeterministic": TIMED,
+    "nondeterminism-unscanned": TIMED,
 }
 
 
