@@ -81,6 +81,9 @@ CREATE TABLE params (
     read_only  INTEGER,
     hidden     INTEGER,
     enable_expr TEXT,
+    -- A member a size menu adds, with the first setting that shows it:
+    -- 'parsize=3' for noisePOP's amp2. NULL for everything a fresh node lists.
+    appears_when TEXT,
     PRIMARY KEY (op_type, name)
 );
 CREATE INDEX params_op ON params(op_type);
@@ -419,6 +422,7 @@ class AtomStore:
         the probe legitimately reports names the first pass never saw.
         """
         rows = list(params)
+        self._ensure_appears_when()
         payload = [
             (
                 op_type,
@@ -449,6 +453,7 @@ class AtomStore:
                 _as_int(p.get("read_only")),
                 _as_int(p.get("hidden")),
                 p.get("enable_expr"),
+                p.get("appears_when"),
             )
             for p in rows
         ]
@@ -459,9 +464,9 @@ class AtomStore:
                 max_value, clamp_min, clamp_max, norm_min, norm_max,
                 menu_names, menu_labels, page, page_ord, ord, vec_index, group_name,
                 is_menu, is_pulse, is_toggle, is_number, is_string, is_op,
-                is_sequence, read_only, hidden, enable_expr)
+                is_sequence, read_only, hidden, enable_expr, appears_when)
             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                   ?, ?, ?, ?, ?, ?, ?, ?)
+                   ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(op_type, name) DO UPDATE SET
                 label=COALESCE(params.label, excluded.label),
                 style=excluded.style,
@@ -488,11 +493,25 @@ class AtomStore:
                 is_sequence=excluded.is_sequence,
                 read_only=excluded.read_only,
                 hidden=excluded.hidden,
-                enable_expr=excluded.enable_expr
+                enable_expr=excluded.enable_expr,
+                appears_when=excluded.appears_when
             """,
             payload,
         )
         return len(payload)
+
+    def _ensure_appears_when(self) -> None:
+        """Add the column to an index `build` wrote before it existed.
+
+        `td-atlas probe` runs over whatever `build` left, and an index built
+        by an older release would otherwise fail the insert below.
+        """
+        columns = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(params)")
+        }
+        if "appears_when" not in columns:
+            self.conn.execute("ALTER TABLE params ADD COLUMN appears_when TEXT")
 
     # -- search indexes ----------------------------------------------------
 

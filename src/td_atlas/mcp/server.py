@@ -151,6 +151,11 @@ def _fmt_param(row: dict[str, Any]) -> str:
             bits.append(f"slider={lo:g}..{hi:g}")
     if row.get("read_only"):
         bits.append("READ-ONLY")
+    if row.get("appears_when"):
+        # A member a size menu adds. Below this size TouchDesigner refuses a
+        # write to it with "Index out of range" (measured, amp2 at parsize 1).
+        governor, _, value = row["appears_when"].partition("=")
+        bits.append(f"only-when {governor}>='{value}'")
     line = f"  {row['name']} — {row['label'] or ''} [{' '.join(bits)}]"
     if row.get("summary"):
         line += f"\n      {row['summary'][:300]}"

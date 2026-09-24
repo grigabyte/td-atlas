@@ -1083,6 +1083,9 @@ def cmd_op(args: argparse.Namespace) -> int:
                     f"clamp={par['min_value'] if par['clamp_min'] else ''}"
                     f"..{par['max_value'] if par['clamp_max'] else ''}"
                 )
+        if par.get("appears_when"):
+            governor, _, value = par["appears_when"].partition("=")
+            bits.append(f"only-when {governor}>='{value}'")
         print(f"  {par['name']:<20} {par['label'] or '':<26} {' '.join(bits)}")
 
     if groups and args.groups:

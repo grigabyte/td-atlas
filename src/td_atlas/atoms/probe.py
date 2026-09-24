@@ -115,11 +115,46 @@ for _t in _types:
                 _pageorder[_pg.name] = _i
         except Exception:
             pass
+        _seen = set()
         for _p in _node.pars():
+            _seen.add(_p.name)
             try:
                 _entry['params'].append(_describe(_p, _pageorder))
             except Exception as _pe:
                 _entry['params'].append({'name': _p.name, 'error': str(_pe)})
+        # Tuples a size menu grows. pars() lists only the members the current
+        # size shows, and a fresh node sits at the smallest: noisePOP's amp is
+        # amp0 at parsize '1' and amp0..amp3 at '4' (measured, see
+        # tests/test_param_tuples.py). A size menu is a Menu whose entries are
+        # all digits; each is stepped through its values, what each step adds
+        # is recorded with the first value that shows it, and the menu is put
+        # back before the next one so their effects are not mixed.
+        for _mp in [_p for _p in _node.pars()]:
+            _names = _safe(lambda: [str(_n) for _n in (_mp.menuNames or [])], [])
+            if (_safe(lambda: _mp.style) != 'Menu' or not _names
+                    or len(_names) > 8 or not all(_n.isdigit() for _n in _names)):
+                continue
+            _orig = _safe(lambda: _mp.val)
+            try:
+                for _v in _names:
+                    _mp.val = _v
+                    for _p in _node.pars():
+                        if _p.name in _seen:
+                            continue
+                        _seen.add(_p.name)
+                        try:
+                            _d = _describe(_p, _pageorder)
+                        except Exception as _pe:
+                            _d = {'name': _p.name, 'error': str(_pe)}
+                        _d['appears_when'] = '%%s=%%s' %% (_mp.name, _v)
+                        _entry['params'].append(_d)
+            except Exception:
+                pass
+            finally:
+                try:
+                    _mp.val = _orig
+                except Exception:
+                    pass
         _out[_t] = _entry
     except Exception as _e:
         _out[_t] = {'type': _t, 'error': '%%s: %%s' %% (type(_e).__name__, _e)}

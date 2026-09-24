@@ -286,10 +286,11 @@ def _presence_problem(
     """A tuple member written where its tuple is too short for it to exist.
 
     The probe records, for the members a size menu adds, the first setting at
-    which each appears ('parsize=3' for noisePOP's amp2). TouchDesigner still
-    answers `par.amp2` below that size (measured), and the write lands on a
-    parameter that does nothing — so it is judged here, but only where the
-    size is known: set in the same write, or a fresh operator's default.
+    which each appears ('parsize=3' for noisePOP's amp2). Below that size
+    `par.amp2` is still there, and writing to it raises "Index out of range"
+    (measured on 2025.32460), which inside a batch rolls back every step. So
+    it is judged here, but only where the size is known: set in the same
+    write, or a fresh operator's default.
     """
     rule = row.get("appears_when")
     if not rule or "=" not in rule:
@@ -299,6 +300,18 @@ def _presence_problem(
     if gov_row is None:
         return None
     if governor in values:
+        # The handler applies `pars` in the order given, so a size set after
+        # the member arrives too late for it.
+        order = list(values)
+        if order.index(governor) > order.index(name):
+            return Problem(
+                name,
+                f"is written before {governor}, which it needs at '{needed}' "
+                f"or later — pars are applied in order, and until then "
+                f"TouchDesigner refuses the write with 'Index out of range'. "
+                f"Put {governor} first",
+                [f"{governor}='{needed}'"],
+            )
         current = values[governor]
         if isinstance(current, dict):
             return None
@@ -313,8 +326,8 @@ def _presence_problem(
     return Problem(
         name,
         f"exists only when {governor} is '{needed}' or later in its menu, and "
-        f"here it is '{current}' — the write would land on a hidden parameter "
-        f"and change nothing. Set {governor} in the same step",
+        f"here it is '{current}'; below that TouchDesigner refuses the write "
+        f"with 'Index out of range'. Set {governor} first, in the same pars",
         [f"{governor}='{needed}'"],
     )
 
