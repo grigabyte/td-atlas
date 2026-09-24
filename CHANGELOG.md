@@ -110,7 +110,9 @@ either from the code they are running:
   validator refuses a member the size in force does not show, and a size
   menu the probe cannot step is reported.
 - **`td_trace`: why the output is black.** It walks up a TOP's inputs,
-  reads each image's minimum, mean and maximum without forcing a cook, and
+  reads each image's minimum, mean and maximum without forcing a cook
+  (reading an image that is out of date still makes TouchDesigner cook that
+  node once, which on a Feedback TOP is a step of the loop), and
   marks where the picture dropped, went negative, lost its alpha or turned
   NaN, with the cause the parameters show (bypass, opacity 0, a black level,
   an empty input, a Level TOP in float with no clamp and contrast above 1,

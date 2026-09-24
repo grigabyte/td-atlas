@@ -1405,9 +1405,13 @@ def td_trace(path: str, depth: int = 12) -> str:
     - `NaN/Inf start here` — usually a shader dividing by zero
 
     A `?` on a mark means an input could not be read, and the loss may have
-    come from there. Nothing is cooked to take a reading: a node that never
-    cooked says so instead of reporting zeros, and so does a non-TOP input, a
-    node past the time or download budget, and an image the read failed on.
+    come from there. No cook is forced to take a reading, but reading an
+    image that is out of date makes TouchDesigner cook that node once, as any
+    read would (measured on a Noise TOP: each read after a seed change added
+    one cook). On a Feedback TOP that cook is a step of the loop. A node that
+    never cooked is not read and says so instead of reporting zeros, and so
+    does a non-TOP input, a node past the time or download budget, and an
+    image the read failed on.
     Wires only: an image a Select TOP or a Render TOP reaches through a
     parameter is not followed — trace from that operator next.
     """

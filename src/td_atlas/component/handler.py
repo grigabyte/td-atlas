@@ -5451,8 +5451,14 @@ def _trace_stats(numpy, image):
 def _trace_sample(target):
     """The statistics of a TOP's current image, or None when it has none.
 
-    Reads what is there and cooks nothing: a forced cook would advance a
-    feedback loop and change the very state being asked about.
+    Never forces a cook: a forced cook would advance a feedback loop and
+    change the very state being asked about. The read can still cause one:
+    numpyArray() on a TOP whose image is out of date has TouchDesigner cook
+    it once first, lazily. Measured on 2025.32460
+    (demo2.toe, 2026-09-24) on a Noise TOP: cook(force=True) -> totalCooks 1;
+    seed changed, numpyArray() -> 2; seed changed again, this sample -> 3.
+    On a Feedback TOP that one cook is a step of the loop. Whether a node is
+    out of date is not checked before reading.
     """
     import numpy
 
