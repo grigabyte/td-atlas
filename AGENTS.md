@@ -223,10 +223,11 @@ launch string stays the one `cli.mcp_command()` settled on, which is
 `sys.executable` of the user's to point at.
 
 `scripts/publish.sh` is the only thing here that sends anything outward, and
-nothing calls it. Before the first `gh` it gates on five things, cheapest
+nothing calls it. Before the first `gh` it gates on six things, cheapest
 first. A clean working tree, untracked files included, since `git archive HEAD`
 packs neither. A bundle whose `dist/build.json` names the current HEAD. A
-`v<version>` tag that does not exist yet. A green `pytest`. Last, and the only
+`v<version>` tag that does not exist yet. A `## [<version>]` section in
+`CHANGELOG.md`, since that section is the release notes. A green `pytest`. Last, and the only
 gate that needs the network, a `git ls-remote` saying the tag is not on
 `origin` either. That last one catches a tag deleted here but still published
 there, which is what a half-finished release leaves behind. A `ls-remote` that

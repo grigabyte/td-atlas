@@ -23,6 +23,8 @@ gated at build time by `scripts/build_mcpb.py`.
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -268,3 +270,123 @@ def test_the_server_announces_our_version_not_the_library_s():
     options = mcp._mcp_server.create_initialization_options()
     assert options.server_version == version("td-atlas")
     assert options.server_version != version("mcp")
+
+
+# -- the release notes ------------------------------------------------------
+#
+# `publish.sh` takes the release notes from the version's own section of
+# CHANGELOG.md. Its `--notes <version>` mode prints them and exits before any
+# gate, so these run the real script, on a copy placed beside a sample
+# changelog: it reads the CHANGELOG.md next to its own `scripts/`, and a copy
+# in a temporary directory has no `.venv`, no `dist` and no repository to
+# reach past it.
+
+_SAMPLE_CHANGELOG = """\
+# Changelog
+
+Preamble that belongs to no release.
+
+## [0.2.0] - 2026-09-24
+
+Measured against something.
+
+### Changed
+
+- The middle release.
+
+### Fixed
+
+- Its last line.
+
+## [0.1.0] - 2026-09-15
+
+The first release.
+
+- Its only line.
+
+[0.2.0]: https://github.com/grigabyte/td-atlas/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/grigabyte/td-atlas/releases/tag/v0.1.0
+"""
+
+_FOOTER = """\
+---
+
+- **Site and docs:** https://grigabyte.github.io/td-atlas/
+- **Install:** `curl -fsSL https://grigabyte.github.io/td-atlas/i | sh`
+- **From an agent:** open the attached `.mcpb` to install the MCP bundle.
+"""
+
+# Git for Windows checks shell scripts out with CRLF endings unless told
+# otherwise, and bash reads the `\r` as part of every command. The script is
+# the owner's, run on macOS; the extraction it does is the same on any bash.
+needs_bash = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("bash") is None,
+    reason="publish.sh is a bash script run on macOS",
+)
+
+
+def _notes(tmp_path: Path, version: str) -> subprocess.CompletedProcess:
+    (tmp_path / "scripts").mkdir(exist_ok=True)
+    shutil.copy(ROOT / "scripts" / "publish.sh", tmp_path / "scripts")
+    (tmp_path / "CHANGELOG.md").write_text(_SAMPLE_CHANGELOG, encoding="utf-8")
+    return subprocess.run(
+        ["bash", str(tmp_path / "scripts" / "publish.sh"), "--notes", version],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+
+@needs_bash
+def test_the_release_notes_are_the_version_s_changelog_section(tmp_path):
+    result = _notes(tmp_path, "0.2.0")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == (
+        "Measured against something.\n"
+        "\n"
+        "### Changed\n"
+        "\n"
+        "- The middle release.\n"
+        "\n"
+        "### Fixed\n"
+        "\n"
+        "- Its last line.\n"
+        "\n" + _FOOTER
+    )
+
+
+@needs_bash
+def test_the_last_section_leaves_the_link_references_behind(tmp_path):
+    """The oldest section runs to the end of the file, where the link
+    references live. They are the changelog's plumbing, not release notes."""
+    result = _notes(tmp_path, "0.1.0")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "The first release.\n\n- Its only line.\n\n" + _FOOTER
+
+
+@needs_bash
+def test_a_version_the_changelog_does_not_describe_is_refused(tmp_path):
+    """A release without its changelog is what the notes gate is for, and
+    `0.2` must not be read as the start of `0.2.0`."""
+    for version in ("9.9.9", "0.2"):
+        result = _notes(tmp_path, version)
+        assert result.returncode != 0
+        assert result.stdout == ""
+        assert f"## [{version}]" in result.stderr
+        assert "CHANGELOG.md" in result.stderr
+
+
+def test_the_notes_gate_stands_before_anything_goes_out():
+    """The notes are made, and a missing section refused, before the prompt
+    and before the first command that sends anything anywhere; the release
+    carries them as a file rather than a fixed sentence."""
+    text = (ROOT / "scripts" / "publish.sh").read_text(encoding="utf-8")
+    assert "--notes-file" in text
+    assert "Open the .mcpb to install." not in text
+    # Commands, not the header's prose about them: each starts a line.
+    gate = text.index('\nrelease_notes "$VERSION" CHANGELOG.md >')
+    assert gate < text.index("\nread -r -p")
+    assert gate < text.index("\ngh release create")
+    assert gate < text.index("\ngit ls-remote")

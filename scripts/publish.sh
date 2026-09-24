@@ -3,6 +3,7 @@
 # Release the bundle and list it in the official MCP Registry.
 #
 #   ./scripts/publish.sh
+#   ./scripts/publish.sh --notes 0.2.0    print a release's notes, send nothing
 #
 # This is the only script in the repository that sends anything outward, and
 # it is deliberately not run by the build. `scripts/build_mcpb.py` stops at
@@ -11,7 +12,9 @@
 # Three outward steps, in this order, because each depends on the last:
 #
 #   1. `gh release create` attaches the .mcpb to a GitHub release. Until this
-#      exists, the download URL in server.json points at nothing.
+#      exists, the download URL in server.json points at nothing. Its notes
+#      are the version's own section of CHANGELOG.md, so the release page
+#      says what changed, not only that a file is attached.
 #   2. `mcp-publisher login github` proves the io.github.grigabyte namespace.
 #   3. `mcp-publisher publish` submits server.json.
 #
@@ -24,7 +27,7 @@
 # must be that exact file — rebuild and re-run this script together, never one
 # without the other.
 #
-# Everything before the first outward step is a gate. Five of them, cheapest
+# Everything before the first outward step is a gate. Six of them, cheapest
 # first, with the only one that needs the network last. Cheapest first because
 # a release cannot be taken back: a published tag and a registry entry are
 # permanent, and the one release this repository nearly made would have
@@ -35,6 +38,49 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# The release notes: the version's section of CHANGELOG.md, then a fixed
+# footer. The section runs from its `## [x.y.z]` heading to the next `## [`,
+# or to the end of the file for the oldest one — which is where the link
+# references (`[x.y.z]: https://...`) live, so those are left out, and so is
+# the heading, since the release title already names the version. The footer
+# sits under a rule because the section ends in a list, and a list straight
+# after it would read as one more entry of that list.
+#
+# A version with no section, or an empty one, is refused on stderr with a
+# non-zero exit and nothing on stdout.
+release_notes() {
+  local version="$1" changelog="$2" section
+  section="$(awk -v head="## [$version]" '
+    index($0, head) == 1 { found = 1; on = 1; next }
+    on && /^## \[/ { exit }
+    on && /^\[[^]]*\]: / { next }
+    on { print }
+    END { exit !found }
+  ' "$changelog" | sed '/./,$!d')" || section=""
+  [ -n "$section" ] || {
+    echo "$changelog has no \`## [$version]\` section, or nothing under it." >&2
+    echo "The release notes are that section: write it, commit, rebuild," >&2
+    echo "then publish" >&2
+    return 1
+  }
+  printf '%s\n\n' "$section"
+  cat <<'FOOTER'
+---
+
+- **Site and docs:** https://grigabyte.github.io/td-atlas/
+- **Install:** `curl -fsSL https://grigabyte.github.io/td-atlas/i | sh`
+- **From an agent:** open the attached `.mcpb` to install the MCP bundle.
+FOOTER
+}
+
+# `--notes <version>` prints the notes that version's release would carry and
+# exits here, before every gate and without touching the network, so they
+# can be read before a release and tested without one.
+if [ "${1:-}" = "--notes" ]; then
+  release_notes "${2:?usage: ./scripts/publish.sh --notes <version>}" CHANGELOG.md
+  exit
+fi
 
 VERSION="$(.venv/bin/python -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
 BUNDLE="dist/td-atlas-${VERSION}.mcpb"
@@ -75,7 +121,7 @@ HEAD_NOW="$(git rev-parse HEAD)"
 
 # 3. The tag is free *here*. `gh release create` on an existing tag fails
 #    halfway through, after the prompt has already been answered. The remote
-#    is asked separately, in gate 5 — this one costs nothing and rules the
+#    is asked separately, in gate 6 — this one costs nothing and rules the
 #    release out before the tests are run.
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
   echo "$TAG already exists — bump the version in pyproject.toml, or delete" >&2
@@ -93,8 +139,17 @@ ACTUAL="$(shasum -a 256 "$BUNDLE" | cut -d' ' -f1)"
   exit 1
 }
 
-# 4. The tests pass. Last of the local gates because it is the slowest, and
-#    the three above can rule the release out in under a second.
+# 4. CHANGELOG.md describes this version. The release notes are its section,
+#    and a release published without one has a page that says nothing about
+#    what changed — the fixed one-line note this replaced said only that a
+#    bundle was attached. The notes are written now, before the tests, so the
+#    prompt below is answered about a release that is complete.
+NOTES_FILE="$(mktemp)"
+trap 'rm -f "$NOTES_FILE"' EXIT
+release_notes "$VERSION" CHANGELOG.md >"$NOTES_FILE" || exit 1
+
+# 5. The tests pass. Last of the local gates because it is the slowest, and
+#    the four above can rule the release out in under a second.
 echo "running the tests before anything goes out..." >&2
 .venv/bin/python -m pytest -q || {
   echo "tests are not green; nothing published" >&2
@@ -109,7 +164,7 @@ for tool in gh mcp-publisher; do
   }
 done
 
-# 5. The tag is free on the remote too. Gate 3 reads the local ref store, and
+# 6. The tag is free on the remote too. Gate 3 reads the local ref store, and
 #    a tag deleted locally but still on origin passes it — which is exactly
 #    the state a re-run after a half-finished release leaves behind. This is
 #    the only gate that touches the network, so it stands last, after
@@ -148,7 +203,7 @@ read -r -p "Proceed? [y/N] " reply
 
 gh release create "$TAG" "$BUNDLE" \
   --title "td-atlas $VERSION" \
-  --notes "MCP bundle for td-atlas $VERSION. Open the .mcpb to install."
+  --notes-file "$NOTES_FILE"
 
 mcp-publisher login github
 mcp-publisher publish "$SUBMISSION"
