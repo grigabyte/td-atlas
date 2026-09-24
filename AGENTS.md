@@ -87,7 +87,7 @@ person does to this machine once, or something that writes a directory to disk.
 
 ### MCP only
 
-Twenty-seven, in four groups. The CLI's live surface is the few commands a
+Twenty-eight, in four groups. The CLI's live surface is the few commands a
 person types at a terminal, which are `exec`, `render`, `status`, `instances`
 and `log`. A bridge capability gets a subcommand when someone wants to type it,
 not for symmetry.
@@ -95,7 +95,7 @@ not for symmetry.
 | MCP | Group | Why an agent calls it |
 | --- | --- | --- |
 | `td_docs`, `td_glossary`, `td_example`, `td_expression_help`, `td_python_api`, `td_palette`, `td_search_parameters`, `td_op_info` | index lookups | A person reads the wiki, the palette browser and the operator's own help; `search` and `op` cover what a terminal is actually better at. |
-| `td_build`, `td_set_params`, `td_flags`, `td_set_flags`, `td_network`, `td_errors`, `td_annotate`, `td_annotations`, `td_undo`, `td_snapshot`, `td_extension_add`, `td_palette_load`, `td_health` | live editing | A person editing a network does it in TouchDesigner, where the result is visible. These exist because an agent cannot see the network. |
+| `td_build`, `td_set_params`, `td_flags`, `td_set_flags`, `td_network`, `td_errors`, `td_annotate`, `td_annotations`, `td_undo`, `td_snapshot`, `td_extension_add`, `td_palette_load`, `td_health`, `td_trace` | live editing | A person editing a network does it in TouchDesigner, where the result is visible. These exist because an agent cannot see the network. |
 | `td_claim_scope`, `td_release_scope`, `td_scopes` | scope claims | An agreement between agents about which subtree each may touch. A person at a terminal is the party the claims protect, not one of the claimants. |
 | `td_timeline_run`, `td_timeline_status`, `td_timeline_cancel` | timeline jobs | A walk outlives the call that starts it, and an agent has no other way past the 30 s a request may take. A person renders a frame sequence with a Movie File Out TOP in TouchDesigner, and a terminal command would only wait on the same job. |
 
