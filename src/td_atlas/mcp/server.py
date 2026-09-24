@@ -1311,6 +1311,8 @@ def td_trace(path: str, depth: int = 12) -> str:
     - `negative values start here` — a float image gone below zero, typically
       a Level TOP with black level above 0 and no clamp: invisible on its own
       tile, it darkens whatever it is added to
+    - `alpha goes to 0 here` — colour still there under an alpha of 0,
+      which vanishes once composited
     - `NaN/Inf start here` — usually a shader dividing by zero
 
     A `?` on a mark means an input could not be read, and the loss may have

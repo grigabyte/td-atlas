@@ -332,6 +332,18 @@ def test_opacity_zero_and_an_empty_input_are_named_as_reasons():
     lines = marked(text)
     assert len(lines) == 1 and "lev" in lines[0] and "opacity 0" in lines[0]
 
+    # Colour left standing under an alpha of 0: what opacity 0 does to R, G
+    # and B is not assumed, so the alpha alone has to find it.
+    text = trace.render(reply([
+        row("/p/out", ["/p/lev"], "nullTOP", 0, rgb(0.1, 0.3, 0.6, alpha=0.0)),
+        row("/p/lev", ["/p/noise"], "levelTOP", 1,
+            rgb(0.1, 0.3, 0.6, alpha=0.0), pars={"opacity": 0.0}),
+        row("/p/noise", [], "noiseTOP", 2, rgb(0.1, 0.3, 0.6)),
+    ]))
+    lines = marked(text)
+    assert len(lines) == 1 and "lev" in lines[0]
+    assert "alpha goes to 0" in lines[0] and "opacity 0" in lines[0]
+
     text = trace.render(reply([
         row("/p/out", ["/p/blur"], "nullTOP", 0, rgb(0, 0, 0)),
         row("/p/blur", [], "blurTOP", 1, rgb(0, 0, 0), minInputs=1),

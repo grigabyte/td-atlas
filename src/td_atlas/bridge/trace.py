@@ -8,10 +8,11 @@ and both times it found the cause: a Level TOP in 16-bit float with black
 level 0.42 and no clamp went to -0.21, and the Add below it took that away
 from what it added to (report of 2026-09-20).
 
-Three things are marked, each where it starts rather than everywhere it
+Four things are marked, each where it starts rather than everywhere it
 shows: the node where the image goes black while an input still carried
-something, an Add fed a negative input (where the negative subtracts), and
-the first node with negative values or with NaN or Inf. A node whose input
+something, an Add fed a negative input (where the negative subtracts), the
+node where the alpha goes to 0 under colour that is still there, and the
+first node with negative values or with NaN or Inf. A node whose input
 could not be read is marked with a question mark, since the loss may have
 come from the input nobody looked at.
 """
@@ -34,7 +35,7 @@ def _numbers(values: Any, count: int = 3) -> list[float]:
 
 
 def state(entry: dict) -> str:
-    """`unsampled`, `nan`, `negative`, `black` or `ok`, from one node's read."""
+    """`unsampled`, `nan`, `negative`, `black`, `transparent` or `ok`."""
     stats = entry.get("stats")
     if not stats:
         return "unsampled"
@@ -46,6 +47,13 @@ def state(entry: dict) -> str:
         return "negative"
     if highs and max(highs) <= _EPS:
         return "black"
+    # Colour with no alpha: invisible once composited over anything, while
+    # every colour number above looks fine. What opacity 0 on a Level TOP
+    # does to R, G and B has not been measured, so the alpha is judged on
+    # its own rather than assumed to follow.
+    alpha = (stats.get("max") or [])[3:4]
+    if alpha and isinstance(alpha[0], (int, float)) and alpha[0] <= _EPS:
+        return "transparent"
     return "ok"
 
 
@@ -133,6 +141,12 @@ def verdicts(nodes: list[dict]) -> dict[str, tuple[str, list[str]]]:
                        f"subtracts"]
             marks[path] = ("dropped here", reasons + facts(entry))
             continue
+        if mine == "transparent":
+            if "ok" in seen or not inputs:
+                marks[path] = ("alpha goes to 0 here", facts(entry))
+            elif not seen:
+                marks[path] = ("alpha goes to 0 here?", hedge(facts(entry)))
+            continue
         if mine != "black":
             continue
         if "ok" in seen or not inputs:
@@ -207,9 +221,9 @@ def render(reply: dict) -> str:
         )
     else:
         lines.append(
-            "No node in this chain is black, negative or NaN, so the signal "
-            "is not lost anywhere these values can show. Compare the look "
-            "with td_render, or trace from a node further down."
+            "No node in this chain is black, transparent, negative or NaN, so "
+            "the signal is not lost anywhere these values can show. Compare "
+            "the look with td_render, or trace from a node further down."
         )
     lines.append("")
 
