@@ -1,7 +1,7 @@
 ---
 istochnik: docs/cli.md
 kommit: 0a1fec2
-hesh: 12bec82cec7e880ecb69ca30b8acc9880325e80a19ffbdee7b53e38dc0ea96d7
+hesh: d85472dc68b333ce158ce059d23a3dee2b884dad19cc3c91744b4b486dec1ca7
 ---
 
 # Командная строка

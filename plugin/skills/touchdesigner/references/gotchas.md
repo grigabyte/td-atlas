@@ -594,7 +594,7 @@ judging performance.
 
 ## A health report that only looked at part of the network
 
-Two of `td_health`'s findings are about the report, not about the project:
+Three of `td_health`'s findings are about the report, not about the project:
 
 - `walk-truncated` means the bridge stopped walking at its own node cap, so the
   report covers only the operators it reached. It names how many were skipped.
