@@ -1072,7 +1072,8 @@ def cmd_op(args: argparse.Namespace) -> int:
         if par["menu_names"]:
             names = par["menu_names"]
             shown = ", ".join(names[:6]) + ("..." if len(names) > 6 else "")
-            bits.append(f"menu=[{shown}]")
+            key = "suggests" if par["style"] == "StrMenu" else "menu"
+            bits.append(f"{key}=[{shown}]")
         elif par["is_number"]:
             lo, hi = par["norm_min"], par["norm_max"]
             if lo is not None and hi is not None:
