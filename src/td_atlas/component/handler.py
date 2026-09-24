@@ -2277,6 +2277,44 @@ def _op_summary(target, include_pars=False):
 
 # -- methods ----------------------------------------------------------------
 
+# The root Time COMP's members that say what playback will do, in the order
+# the status line prints them. Read from `op("/").time` and not `me.time`:
+# `me` is the bridge's own DAT and answers for whatever Time COMP the bridge
+# was dropped under, which need not be the one the project plays on.
+_TIMELINE_FIELDS = ("frame", "play", "start", "end", "rangeStart", "rangeEnd",
+                    "rate")
+
+
+def _timeline():
+    """The project timeline as plain numbers, each member read on its own.
+
+    Exists because `absTime.frame` was the only frame the status line had: the
+    application's clock, 1,284,807 when the timeline stood at 851 and was
+    playing. An agent took "paused" on trust and a live CHOP cooked frames it
+    did not expect; another left `rangeEnd` at 600 from a test and a recording
+    stopped there in silence. A member that will not read is left out rather
+    than failing the whole reply — this runs inside `ping`, which is the
+    protocol check every session starts with.
+    """
+    out = {}
+    try:
+        clock = op("/").time
+    except Exception:
+        return out
+    for name in _TIMELINE_FIELDS:
+        try:
+            value = getattr(clock, name)
+        except Exception:
+            continue
+        if name == "play":
+            out[name] = bool(value)
+        elif isinstance(value, float) and value.is_integer():
+            out[name] = int(value)
+        else:
+            out[name] = _jsonable(value)
+    return out
+
+
 def m_ping(_params):
     return {
         "protocol": PROTOCOL_VERSION,
@@ -2287,7 +2325,11 @@ def m_ping(_params):
         "project": project.name,
         "projectFolder": project.folder,
         "fps": me.time.rate,
+        # Kept under its old name for any reader of the old reply; it was
+        # always the application clock, which `absFrame` now says outright.
         "frame": absTime.frame,
+        "absFrame": absTime.frame,
+        "timeline": _timeline(),
     }
 
 

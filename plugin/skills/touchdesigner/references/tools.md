@@ -24,7 +24,7 @@ name, every parameter list and that count against the server.
 
 | Tool | Use it for |
 | --- | --- |
-| `td_status()` | Is the bridge up, what project is open. |
+| `td_status()` | Is the bridge up, what project is open, and is the timeline playing: `timeline: frame 851 (playing) \| start 1 end 994 \| range 1–994 \| rate 60 \| abs 1284807`. Check it before trusting a live CHOP between two of your calls. `abs` is the application clock, not the project's frame; `(!)` on the range means playback stops short of `end`. |
 | `td_log(limit, failures, summary, method)` | Your own trail: every bridge call this host made, how long it took and what it refused with. `td_status` reports no call history at all; this survives the session and answers "what did I break yesterday". `failures=True` for the refusals alone with the repair for the latest; `summary=True` for which methods refuse and which are slow. Offline tools never dial the bridge and leave no trace here. |
 | `td_instances()` | Every running TouchDesigner that registered a bridge, and which one these tools reach. Check it before believing an edit landed in the project you meant. |
 | `td_doctor()` | Every link — install, index, probe pass, bridge, this server — with the command that fixes each. Catches the index built from another TouchDesigner build, which raises nothing. The read cache is a CLI-only concern: `td-atlas doctor` on a terminal also says how many unpacked projects it holds and `td-atlas doctor --clear-cache` empties it, neither of which this tool reports or does — deleting a user's cache is not something a tool call should do on its own. |
