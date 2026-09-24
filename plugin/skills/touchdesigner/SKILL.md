@@ -176,9 +176,22 @@ a patcher, so it needs the original `file` too, and it lists what it could not
 write, so read those gaps before assuming.
 
 Before trying a direction, `td_variant_save(file, label)` keeps the current
-state, and `td_variant_list`/`_restore`/`_diff` branch, restore and compare. On
-a live instance the same shape is `td_snapshot("before")` → work →
-`td_snapshot("after")` → `td_project_diff`.
+state, and `td_variant_list`/`_restore`/`_diff` branch, restore and compare.
+
+On a live instance, to keep a branch's parameters before changing them, do not
+dump them to text by hand:
+
+1. `td_snapshot("before", path="/project1/branch")` writes that COMP to a
+   `.tox` and replies with the file path.
+2. Make the edits.
+3. `td_snapshot("after", path="/project1/branch")`. The label must differ,
+   because a reused label replaces the file you meant to compare against.
+4. `td_project_diff(before=<before.tox>, after=<after.tox>)` lists each changed
+   parameter as `name: old -> new`, expressions and custom parameters included.
+5. To roll back, use `td_undo` while the edits are still on its stack.
+   Otherwise take the old values from `td_project_text(<before.tox>)` into
+   `td_set_params`. The diff shows an expression's text without saying it is
+   one, and the text keeps it as `{"expr": ...}`.
 
 **Never save the artist's project.** `project.save()` is Save As in disguise and
 moves the file they have open. Nothing here needs it; TouchDesigner writes the

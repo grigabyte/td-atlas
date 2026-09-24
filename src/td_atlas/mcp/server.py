@@ -1618,6 +1618,14 @@ def td_project_diff(
     Reports added, removed, retyped, rewired and re-parameterised operators,
     plus a line diff of any changed DAT code. Nodes that were only dragged to
     a new position are counted separately so they cannot bury a real change.
+
+    To compare a live branch before and after some edits, pass two td_snapshot
+    files of the same COMP. A parameter line shows what drives the parameter:
+    its constant, or its expression or bind text, with no mark saying which.
+    A file keeps only parameters that are off their default, so `-name (was
+    X)` normally means the parameter went back to its default, and `+name`
+    that it left it. To put a value back, read it from td_project_text of the
+    before file, which keeps the mode.
     """
     from ..project import ExpandError, index_resolver, load_file
     from ..project.diff import diff
@@ -1638,9 +1646,21 @@ def td_project_diff(
 def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     """Save a component to a file so it can be diffed later.
 
-    Take one before a round of edits and another after, then pass both to
-    td_project_diff to see exactly what changed. Snapshots go to
-    ~/.td-atlas/snapshots.
+    This is how to keep "every parameter of this branch" before changing it,
+    instead of dumping them to text by hand. `path` is the COMP holding the
+    branch. Take one snapshot before a round of edits and another of the same
+    `path` after, under a different label, then pass both files to
+    td_project_diff. It lists each parameter that moved as `name: before ->
+    after`, including expressions and custom parameters, and it lists wiring
+    and DAT code too. That is three calls. Snapshots go to
+    ~/.td-atlas/snapshots, and a label used again replaces its file, so
+    reusing a label loses the state you meant to compare against.
+
+    The before snapshot is also the roll-back point. td_project_text on it
+    gives each parameter in the form td_set_params takes, with {"expr": ...}
+    where the diff shows only the expression's text. The diff does not mark
+    which values are expressions, so put values back from the text, not from
+    the diff. td_undo is shorter while the edits are still on the undo stack.
 
     A component is written rather than the whole session because saving the
     session is a Save As: it repoints TouchDesigner at the snapshot file and
@@ -1651,7 +1671,10 @@ def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     target = cfg.home() / "snapshots"
     target.mkdir(parents=True, exist_ok=True)
     destination = target / f"{label}.tox"
-    if destination.exists():
+    # Said aloud because the default label is shared: two bare td_snapshot()
+    # calls leave one file, and the diff meant to follow reads "No differences."
+    replaced = destination.exists()
+    if replaced:
         destination.unlink()
 
     client = bridge()
@@ -1660,7 +1683,15 @@ def td_snapshot(label: str = "snapshot", path: str = "/project1") -> str:
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
     saved = result.get("saved") or destination
-    return f"{_warn(client)}saved {path} to {saved}"
+    lines = [f"{_warn(client)}saved {path} to {saved}"]
+    if replaced:
+        lines.append(f"(this replaced an earlier snapshot '{label}')")
+    lines.append(
+        f"next: after your edits, td_snapshot(label='<another label>', "
+        f"path='{path}'), then td_project_diff(before='{saved}', "
+        f"after=<that file>) lists every parameter that changed"
+    )
+    return "\n".join(lines)
 
 
 @mcp.tool()
