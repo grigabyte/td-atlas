@@ -3779,10 +3779,10 @@ _SCRIPT_DATS = (
 # Script operators keep their code in the DAT their `callbacks` names.
 _SCRIPT_OPS = ("scriptCHOP", "scriptTOP", "scriptSOP", "scriptDAT")
 
-# The parameter half of the clock scan reads every parameter of every walked
-# operator — the one per-parameter pass in this sample — so it stops at a
-# budget and reports how far it got, as the walk does at its node ceiling.
-# Chosen, not measured: a little under one 60 fps frame (16.7 ms), on top of
+# The clock scan reads the text of every script and every parameter of every
+# walked operator — the one per-parameter pass in this sample — so both halves
+# stop at one deadline and report how far each got, as the walk does at its
+# node ceiling. Chosen, not measured: a little under one 60 fps frame (16.7 ms), on top of
 # the walk's own cost. Its real cost per operator has not been timed inside
 # TouchDesigner.
 _CLOCK_SCAN_BUDGET_S = 0.015
@@ -3883,10 +3883,17 @@ def _clock_calls(text):
 def _clock_reads(ops, budget):
     """Where a frame depends on something other than the timeline.
 
-    Returns (reads, scanned, total). Script text first — few DATs, and the
-    likelier home of such a call — then every expression-mode parameter until
-    `budget` seconds have passed. A parameter is judged by its mode: an
-    expression left behind on a constant parameter is not evaluated.
+    Returns (reads, scanned, total, scripts_scanned, scripts_total). Script
+    text first — few DATs, and the likelier home of such a call — then every
+    expression-mode parameter, the two under one deadline `budget` seconds
+    away. A parameter is judged by its mode: an expression left behind on a
+    constant parameter is not evaluated.
+
+    The script half was read whole until 2026-09-24, with no clock on it. Its
+    cost grows with the code in the project as the parameter half grows with
+    the operators, and both run on the main thread, so one deadline covers
+    both and each half says how far it got. One deadline rather than two of
+    the same size, because the budget is sized against one frame.
     """
     reads = []
 
@@ -3894,12 +3901,21 @@ def _clock_reads(ops, budget):
         for call in _clock_calls(text):
             reads.append({"path": path, "where": where, "call": call})
 
-    for target in ops:
+    deadline = time.perf_counter() + budget
+    scripts = [
+        target for target in ops
+        if getattr(target, "OPType", "") in _SCRIPT_DATS + _SCRIPT_OPS
+    ]
+    scripts_scanned = 0
+    for target in scripts:
+        if time.perf_counter() >= deadline:
+            break
+        scripts_scanned += 1
         kind = getattr(target, "OPType", "")
         try:
             if kind in _SCRIPT_DATS:
                 note(target.path, "text", str(target.text or ""))
-            elif kind in _SCRIPT_OPS:
+            else:
                 dat = _par_value(target, "callbacks")
                 text = getattr(dat, "text", None)
                 if text:
@@ -3907,7 +3923,6 @@ def _clock_reads(ops, budget):
         except Exception:
             continue
 
-    deadline = time.perf_counter() + budget
     scanned = 0
     for target in ops:
         if time.perf_counter() >= deadline:
@@ -3924,7 +3939,7 @@ def _clock_reads(ops, budget):
                 note(target.path, par.name, str(par.expr or ""))
             except Exception:
                 continue
-    return reads, scanned, len(ops)
+    return reads, scanned, len(ops), scripts_scanned, len(scripts)
 
 
 def m_health_sample(params):
@@ -4073,7 +4088,8 @@ def m_health_sample(params):
 
     # The root's own parameters count: a custom parameter on the component is
     # where a camera driver or a global clock often lives.
-    clock_reads, clock_scanned, clock_total = _clock_reads(
+    (clock_reads, clock_scanned, clock_total,
+     scripts_scanned, scripts_total) = _clock_reads(
         [target] + list(scanned), _CLOCK_SCAN_BUDGET_S
     )
 
@@ -4104,7 +4120,11 @@ def m_health_sample(params):
         "scanned": len(scanned) + 1,
         "clockReads": clock_reads[:_MAX_CLOCK_READS],
         "clockReadsCount": len(clock_reads),
-        "clockScan": {"scanned": clock_scanned, "of": clock_total},
+        "clockScan": {
+            "scanned": clock_scanned,
+            "of": clock_total,
+            "scripts": {"scanned": scripts_scanned, "of": scripts_total},
+        },
     }
     if unvisited:
         # A health verdict over part of a network must not read as a verdict

@@ -586,8 +586,8 @@ and every Execute-family DAT or Script operator's callbacks, that reads
 `absTime.*`, `time.time()` or draws from `random` (NumPy's included) without a
 `random.seed(` in the same text. A parameter holds no seed, so a draw there is
 always named. `tdu.rand(seed)` is a hash of its argument and is not flagged.
-The parameter half of the scan stops at the bridge's time budget, and says so
-as `nondeterminism-unscanned`.
+The scan stops at the bridge's time budget, script text first and parameters
+after it, and says so as `nondeterminism-unscanned`.
 
 **Fix.** For a render that has to come out the same twice, read the timeline:
 `me.time.seconds` or `me.time.frame`. Seed any generator.
@@ -616,8 +616,9 @@ Three of `td_health`'s findings are about the report, not about the project:
   reduced. The host sleeps through that gap and answers nothing else meanwhile,
   so the interval is bounded.
 - `nondeterminism-unscanned` means the check for clock reads ran out of its
-  time budget. It names how many operators' parameters it got through. Script
-  DATs are read in full before that budget starts.
+  time budget. It names how many operators' parameters it got through, and
+  how many scripts when it stopped before reading them all. Scripts are read
+  first, under the same budget.
 
 ## Stale errors
 

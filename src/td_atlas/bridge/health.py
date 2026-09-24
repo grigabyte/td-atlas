@@ -634,15 +634,27 @@ def check(
             )
         )
     scan = second.get("clockScan") or {}
-    if scan.get("scanned", 0) < scan.get("of", 0):
+    # A bridge from before the script half had a deadline sends no `scripts`,
+    # and it read every script, so for it "all read" is still the truth.
+    scripts = scan.get("scripts") if isinstance(scan.get("scripts"), dict) else None
+    pars_short = scan.get("scanned", 0) < scan.get("of", 0)
+    scripts_short = bool(scripts) and scripts.get("scanned", 0) < scripts.get("of", 0)
+    if pars_short or scripts_short:
+        checked = []
+        if scripts_short:
+            checked.append(f"the text of {scripts['scanned']} of "
+                           f"{scripts['of']} script(s)")
+        checked.append(f"the parameters of {scan.get('scanned', 0)} of "
+                       f"{scan.get('of', 0)} operator(s)")
+        tail = "" if scripts_short else (
+            f", and all {scripts['of']} script(s) were read" if scripts
+            else ", and script DATs were all read")
         health.findings.append(
             Finding(
                 "note", "nondeterminism-unscanned",
-                f"the parameters of {scan['scanned']} of {scan['of']} "
-                f"operator(s) were checked for clock reads before the "
-                f"bridge's time budget ran out; the rest were not looked at, "
-                f"and script DATs were all read. Run this on a subtree to "
-                f"cover them",
+                f"{' and '.join(checked)} were checked for clock reads "
+                f"before the bridge's time budget ran out; the rest were not "
+                f"looked at{tail}. Run this on a subtree to cover them",
             )
         )
     if warned:

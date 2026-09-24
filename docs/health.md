@@ -52,8 +52,9 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
 - `nondeterministic` (warning) names each read of `absTime`, `time.time()` or
   an unseeded `random` in a parameter expression or a callback. The frame then
   does not reproduce between runs. When the bridge's time budget ends the
-  parameter scan early, `nondeterminism-unscanned` (note) says how many
-  operators were checked.
+  scan early, `nondeterminism-unscanned` (note) says how many operators'
+  parameters were checked, and how many scripts when not all were. Scripts
+  are read first, under the same budget.
 
 `td_health` also tells a genuinely dead network from a paused timeline or a
 backgrounded window. In those the frame clock is frozen and there is no evidence

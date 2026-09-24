@@ -447,6 +447,56 @@ def test_the_clock_scan_stops_at_its_budget_and_says_so(monkeypatch, td_globals)
     assert reply["clockScan"]["scanned"] < reply["clockScan"]["of"]
 
 
+def test_the_script_half_of_the_clock_scan_stops_at_the_budget_too(
+    monkeypatch, td_globals
+):
+    """Script text was read whole, however many DATs, with no clock on it.
+
+    Its cost grows with the code in the project as the parameter half grows
+    with the operators, and both run on TouchDesigner's main thread.
+    """
+    monkeypatch.setattr(handler, "_CLOCK_SCAN_BUDGET_S", 0.0)
+    scripts = [Op("/project1/cb%d" % i, "executeDAT", "DAT",
+                  text="t = absTime.seconds\n") for i in range(3)]
+    reply = sampled(monkeypatch, *scripts)
+    part = reply["clockScan"].get("scripts") or {}
+    assert part.get("of") == 3
+    assert part.get("scanned", 3) < 3
+
+
+def test_every_script_is_read_when_there_is_time(monkeypatch, td_globals):
+    scripts = [Op("/project1/cb%d" % i, "executeDAT", "DAT",
+                  text="t = absTime.seconds\n") for i in range(3)]
+    reply = sampled(monkeypatch, *scripts)
+    assert reply["clockScan"].get("scripts") == {"scanned": 3, "of": 3}
+    assert len(reply["clockReads"]) == 3
+
+
+def test_a_scan_that_left_scripts_unread_says_how_many():
+    nodes = [node("/p/a", 10)]
+    result = check(sample(0, nodes),
+                   sample(60, [node("/p/a", 70)], clockReads=[],
+                          clockReadsCount=0,
+                          clockScan={"scanned": 0, "of": 900,
+                                     "scripts": {"scanned": 4, "of": 40}}))
+    partial = finding(result, "nondeterminism-unscanned")
+    assert partial is not None
+    assert "4 of 40 script" in partial.message
+    assert "0 of 900" in partial.message
+    assert "were all read" not in partial.message
+
+
+def test_a_scan_short_only_on_scripts_still_says_so():
+    nodes = [node("/p/a", 10)]
+    result = check(sample(0, nodes),
+                   sample(60, [node("/p/a", 70)], clockReads=[],
+                          clockReadsCount=0,
+                          clockScan={"scanned": 900, "of": 900,
+                                     "scripts": {"scanned": 4, "of": 40}}))
+    partial = finding(result, "nondeterminism-unscanned")
+    assert partial is not None and "4 of 40 script" in partial.message
+
+
 def test_a_paused_timeline_does_not_split_cook_times_into_now_and_long_ago():
     """With the root timeline paused, absTime.frame stands still.
 
