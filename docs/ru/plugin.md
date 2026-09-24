@@ -25,5 +25,5 @@ hesh: 9a928799671a04fd168085a73a2aee4a59292c2515891e2d1a1319ef7c8b48ba
 
 Агент, у клиента которого плагинов нет, читает то же руководство прямо
 из клона. Наведите его на
-[`plugin/skills/touchdesigner/SKILL.md`](../plugin/skills/touchdesigner/SKILL.md),
+[`plugin/skills/touchdesigner/SKILL.md`](SKILL.md),
 и не хватать будет только обновления в одну команду.

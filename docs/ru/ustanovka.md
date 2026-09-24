@@ -10,22 +10,22 @@ td-atlas даёт агенту три вещи. Точные имена опер
 
 ## Что он делает
 
-- **[Индекс атомов](docs/atom-index.md)** хранит список имён. За два прохода
+- **[Индекс атомов](atom-index.md)** хранит список имён. За два прохода
   каждый оператор и каждый параметр вычитываются из вашей собственной копии
   программы в один файл SQLite. Значения в нём те, о которых сообщает эта копия.
-- **[Мост](docs/bridge.md)** даёт агенту менять ваш проект, пока
+- **[Мост](bridge.md)** даёт агенту менять ваш проект, пока
   TouchDesigner запущен. Скрипт строит его там из четырёх обычных узлов:
   Web Server DAT, DAT с обратными вызовами, панель состояния и Execute DAT,
   срабатывающий при сохранении. Его можно прочитать глазами, увидеть его
   правки в git и обновить на месте.
-- **[О чём TouchDesigner молчит](docs/health.md)**. `errors` берёт то, что
+- **[О чём TouchDesigner молчит](health.md)**. `errors` берёт то, что
   TouchDesigner сам называет ошибкой, а `td_health` берёт поломки, о которых
   он молчит.
-- **[Журнал вызовов](docs/journal.md)** пишет строку на каждый вызов моста
+- **[Журнал вызовов](journal.md)** пишет строку на каждый вызов моста
   в файл на диске, и переживает сессию.
-- **[Чтение проектов офлайн](docs/offline-projects.md)** осматривает, обыскивает
+- **[Чтение проектов офлайн](offline-projects.md)** осматривает, обыскивает
   и сравнивает проект при закрытом TouchDesigner, и оригинал файла не меняется.
-- **[Текст сети, записанный при сохранении](docs/network-text.md)** мост умеет
+- **[Текст сети, записанный при сохранении](network-text.md)** мост умеет
   класть рядом с `.toe` при каждом сохранении, и у проекта появляется история
   в git, которая ложится в diff.
 
@@ -33,7 +33,7 @@ td-atlas даёт агенту три вещи. Точные имена опер
 
 Сначала нужны три вещи.
 
-- **TouchDesigner**, уже установленный. [Индекс](docs/atom-index.md) снимается
+- **TouchDesigner**, уже установленный. [Индекс](atom-index.md) снимается
   с *вашей* копии программы и держит те значения, о которых она сообщает.
   Скачивать нечего.
 - **Python 3.11 или новее**, на том же компьютере, где TouchDesigner.
@@ -43,7 +43,7 @@ td-atlas даёт агенту три вещи. Точные имена опер
   команда стоит ниже строкой `claude mcp add`. Любой клиент MCP получает те же
   инструменты.
 
-[Совместимость](docs/compatibility.md) перечисляет платформы и то, что
+[Совместимость](compatibility.md) перечисляет платформы и то, что
 коннектор может изменить в вашем проекте.
 
 На macOS это одна строка из терминала. Установщик написан для оболочки POSIX,
@@ -55,8 +55,8 @@ td-atlas даёт агенту три вещи. Точные имена опер
 
 @@kod:2@@
 
-[`install.sh`](install.sh) находит Python, клонирует репозиторий, делает рядом
-virtualenv, ставит пакет, собирает индекс и раскладывает [мост](docs/bridge.md).
+[`install.sh`](../../install.sh) находит Python, клонирует репозиторий, делает рядом
+virtualenv, ставит пакет, собирает индекс и раскладывает [мост](bridge.md).
 Каждая команда печатается до того, как выполнится.
 
 Он задаёт два вопроса: куда клонировать и собирать ли индекс сейчас. Для
@@ -151,7 +151,7 @@ TouchDesigner и проект, к которому подключился мос
 46 инструментов в трёх группах. **9 по индексу** работают офлайн, **28 живых**
 действуют в запущенной программе, **9 по файлам проекта** читают и пишут
 `.toe`/`.tox` с диска. Каждый, с аргументами и с тем, зачем он нужен, лежит в
-[`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md),
+[`plugin/skills/touchdesigner/references/tools.md`](tools.md),
 и тест держит этот список у кода.
 
 `td_build` и `td_set_params` сверяют имена параметров с индексом до отправки,
@@ -163,31 +163,31 @@ TouchDesigner и проект, к которому подключился мос
 
 | Документ | Кому и зачем |
 | --- | --- |
-| [`plugin/skills/touchdesigner/SKILL.md`](plugin/skills/touchdesigner/SKILL.md) | агентам, которые *пользуются* коннектором |
-| [`plugin/skills/touchdesigner/references/gotchas.md`](plugin/skills/touchdesigner/references/gotchas.md) | каждая ловушка, которая не дала ни одной ошибки |
-| [`plugin/skills/touchdesigner/references/tools.md`](plugin/skills/touchdesigner/references/tools.md) | все 46 инструментов MCP |
+| [`plugin/skills/touchdesigner/SKILL.md`](SKILL.md) | агентам, которые *пользуются* коннектором |
+| [`plugin/skills/touchdesigner/references/gotchas.md`](gotchas.md) | каждая ловушка, которая не дала ни одной ошибки |
+| [`plugin/skills/touchdesigner/references/tools.md`](tools.md) | все 46 инструментов MCP |
 | [`AGENTS.md`](AGENTS.md) | агентам, которые *вносят правки* в этот репозиторий |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | как прогнать тесты и линтер перед пул-реквестом |
 | [`CHANGELOG.md`](CHANGELOG.md) | что изменилось в каждой версии, и каждая смена протокола обязательно |
-| [`docs/architecture.md`](docs/architecture.md) | как три слоя складываются вместе и почему |
-| [`docs/cli.md`](docs/cli.md) | каждая подкоманда и каждый ключ `td-atlas`, и что каждому нужно |
-| [`docs/formats.md`](docs/formats.md) | формат `.toe`/`.tox`, разобранный обратной инженерией, с уликами |
-| [`docs/atom-index.md`](docs/atom-index.md) | два прохода, которые собирают индекс, и что даёт каждый источник |
-| [`docs/bridge.md`](docs/bridge.md) | компонент, который работает внутри TouchDesigner, и что он добавляет сверх `exec` |
-| [`docs/health.md`](docs/health.md) | о чём TouchDesigner молчит и что вместо него печатает `td_health` |
-| [`docs/journal.md`](docs/journal.md) | журнал вызовов: что пишется, кем, и что в него не попадает |
-| [`docs/offline-projects.md`](docs/offline-projects.md) | как читать, искать и сравнивать `.toe` при закрытом TouchDesigner |
-| [`docs/network-text.md`](docs/network-text.md) | текст рядом с `.toe`, который ложится в diff, и семь известных расхождений |
-| [`docs/compatibility.md`](docs/compatibility.md) | сборки, Python, операционные системы и что это может изменить в вашем проекте |
-| [`docs/skill.md`](docs/skill.md) | навык для агента и его установка как плагина |
-| [`docs/bundle.md`](docs/bundle.md) | сборка `.mcpb` и что означала бы его публикация |
-| [`docs/troubleshooting.md`](docs/troubleshooting.md) | каждый симптом, что это такое и что запустить |
-| [`docs/development.md`](docs/development.md) | набор тестов и инвариант, который он держит |
-| [`docs/layout.md`](docs/layout.md) | каждый каталог репозитория и что в нём лежит |
+| [`docs/architecture.md`](architecture.md) | как три слоя складываются вместе и почему |
+| [`docs/cli.md`](cli.md) | каждая подкоманда и каждый ключ `td-atlas`, и что каждому нужно |
+| [`docs/formats.md`](formats.md) | формат `.toe`/`.tox`, разобранный обратной инженерией, с уликами |
+| [`docs/atom-index.md`](atom-index.md) | два прохода, которые собирают индекс, и что даёт каждый источник |
+| [`docs/bridge.md`](bridge.md) | компонент, который работает внутри TouchDesigner, и что он добавляет сверх `exec` |
+| [`docs/health.md`](health.md) | о чём TouchDesigner молчит и что вместо него печатает `td_health` |
+| [`docs/journal.md`](journal.md) | журнал вызовов: что пишется, кем, и что в него не попадает |
+| [`docs/offline-projects.md`](offline-projects.md) | как читать, искать и сравнивать `.toe` при закрытом TouchDesigner |
+| [`docs/network-text.md`](network-text.md) | текст рядом с `.toe`, который ложится в diff, и семь известных расхождений |
+| [`docs/compatibility.md`](compatibility.md) | сборки, Python, операционные системы и что это может изменить в вашем проекте |
+| [`docs/skill.md`](plugin.md) | навык для агента и его установка как плагина |
+| [`docs/bundle.md`](bundle.md) | сборка `.mcpb` и что означала бы его публикация |
+| [`docs/troubleshooting.md`](troubleshooting.md) | каждый симптом, что это такое и что запустить |
+| [`docs/development.md`](development.md) | набор тестов и инвариант, который он держит |
+| [`docs/layout.md`](layout.md) | каждый каталог репозитория и что в нём лежит |
 
 ## Лицензия
 
-MIT, полный текст лежит в [LICENSE](LICENSE). TouchDesigner выпускает
+MIT, полный текст лежит в [LICENSE](../../LICENSE). TouchDesigner выпускает
 компания Derivative Inc. Наш проект с ними никак не связан и ничего
 из установленной программы не раздаёт. Он только читает то, что уже есть
 на вашей машине.

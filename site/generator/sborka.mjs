@@ -396,10 +396,57 @@ function perepisatSsylku(href, fajlIstochnika) {
   return GITHUB + '/blob/' + KOMMIT + '/' + celPuti + (yakorRaw ? '#' + yakorRaw : '')
 }
 
+// ── ссылка зеркала: относительно docs/ru, а не источника (24.09) ─────────
+// До 24.09 зеркало копировало ссылки источника дословно, и они разрешались
+// от каталога ИСТОЧНИКА: сайт их понимал, а на GitHub 37 ссылок из 45 вели
+// в пустоту (`docs/atom-index.md` из docs/ru/ustanovka.md). Теперь зеркало
+// пишет путь от себя самого и ведёт на русское зеркало цели, где оно есть:
+// `cli.md`, `../../README.ru.md#установка`, `../../LICENSE`. Порядок:
+//   1. путь попадает в файл-зеркало docs/ru (по ТОЧНОМУ имени из PEREVODY:
+//      на macOS `skill.md` нашёлся бы как `SKILL.md`, на GitHub — нет)
+//      или в `<имя>.ru.md` раздела (README.ru.md) → раздел сайта того
+//      источника; якорь — через `yakor` источника, русский слаг ловит
+//      `yakorjaRu`;
+//   2. прочий существующий файл репозитория → раздел, если это источник
+//      раздела, иначе GitHub по хешу, как у источника;
+//   3. ничего не нашлось → старое чтение, относительно источника: так
+//      работают зеркала, не переведённые на новый вид, и фикстура на
+//      старых снимках.
+const ZERKALO_KAT = 'docs/ru'
+// имя файла-зеркала внутри docs/ru → его источник (обратная карта PEREVODY)
+function istochnikZerkala(fajlZerkala) {
+  for (const [ist, per] of PEREVODY) if (per.fajl === fajlZerkala) return ist
+  return null
+}
+function perepisatSsylkuZerkala(href, fajlIstochnika, fajlZerkala) {
+  if (!href || /^(https?:|mailto:|tel:|#)/.test(href)) return perepisatSsylku(href, fajlIstochnika)
+  const [put0, yakorRaw] = href.split('#')
+  const vnutri = join(dirname(fajlZerkala), put0).replace(/\\/g, '/')
+  const cel = join(ZERKALO_KAT, vnutri).replace(/\\/g, '/')
+  const vRu = !vnutri.startsWith('..')
+  const ist = vRu
+    ? istochnikZerkala(vnutri)
+    : (m => m && PO_FAJLU.has(m[1] + '.md') ? m[1] + '.md' : null)(cel.match(/^(.*)\.ru\.md$/))
+  if (ist && PO_FAJLU.has(ist)) {
+    return adres('/docs/' + PO_FAJLU.get(ist).klyuch + '/') + yakor(ist, yakorRaw)
+  }
+  if (!vRu && !cel.startsWith('..') && existsSync(join(IST, cel))) {
+    const razdel = PO_FAJLU.get(cel)
+    if (razdel) return adres('/docs/' + razdel.klyuch + '/') + yakor(cel, yakorRaw)
+    return GITHUB + '/blob/' + KOMMIT + '/' + cel + (yakorRaw ? '#' + yakorRaw : '')
+  }
+  return perepisatSsylku(href, fajlIstochnika)
+}
+
 // Правка ссылок внутри блоков (текст остаётся дословным, меняется адрес).
-function ssylkiVBlokah(bloki, fajl) {
+// fajlZerkala — имя перевода внутри docs/ru; есть он — ссылки читаются
+// как ссылки зеркала.
+function ssylkiVBlokah(bloki, fajl, fajlZerkala = null) {
+  const pere = fajlZerkala
+    ? u => perepisatSsylkuZerkala(u, fajl, fajlZerkala)
+    : u => perepisatSsylku(u, fajl)
   const ispr = s => String(s).replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-    (_, t, u) => '[' + t + '](' + perepisatSsylku(u, fajl) + ')')
+    (_, t, u) => '[' + t + '](' + pere(u) + ')')
   return bloki.map(b => {
     if (b.t === 'p') return { ...b, tekst: ispr(b.tekst) }
     if (b.t === 'ul' || b.t === 'ol') return { ...b, punkty: b.punkty.map(ispr) }
@@ -899,7 +946,7 @@ function stranicaRazdela(r) {
       const kody = razbor(bezShapki(enMdSnimkaPerevoda(kuski[i].tekst, f) || enMd))
         .filter(x => x.t === 'code')
       let b = razbor(chistka(f, bezShapki(kuski[i].telo)), kody)
-      b = ssylkiVBlokah(b, f)
+      b = ssylkiVBlokah(b, f, kuski[i].fajl)
       b = vInstr(b)
       for (const x of b) {
         if (x.t === 'h1') {
