@@ -281,6 +281,8 @@ Get it backwards with an opaque foreground and the frame goes solid black, with
 no error and no warning. An opaque layer on index 0 hides index 1 completely.
 This cost a session about an hour, with an accumulating feedback frame wired to
 index 0 and the source to index 1, so the source was never seen.
+`td_trace` from the black output walks up its inputs and marks the node where
+the image went black while an input still carried one.
 
 `swaporder` ("Swaps the order of the input pairs. A operation B is changed to B
 operation A") flips it without rewiring. The `operand` menu documents the
@@ -573,7 +575,9 @@ that does it. It reads the TOP's actual pixel format, not its `format`
 parameter, which usually says `useinput`.
 It is a warning when an Add TOP or a Composite set to `add` sits within four
 operators downstream, and a note otherwise. Anything else that sums, such as a
-GLSL TOP or a Math, is not checked.
+GLSL TOP or a Math, is not checked. `td_trace` from the darkened output finds
+the chain itself: it marks the Level with `negative values start here` and the
+Add it feeds with `dropped here`.
 
 **Fix.** `clamp = True`, `clamplow2 = 0`, `clamphigh2 = 1` on the Level TOP.
 

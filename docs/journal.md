@@ -43,8 +43,9 @@ yesterday at 19:00" is `td-atlas log --method par_set -n 500`, or `batch`, or
 `exec`, read rather than reconstructed. The old value comes from the bridge,
 which reads each parameter in the request that writes it: the constant, the
 expression or the bind expression it held, with its mode. `flags_set` reads
-each flag the same way. A bridge from before that read sends no old value, and
-then the journal records none: the old value is the earlier line that set it.
+each flag the same way. Where no old value comes back, the journal records
+none and does not guess one: the old value is then the earlier line that set
+it.
 A timeline job
 keeps the walk it was sent: the frames, the ones saved, the output template,
 the tiles and the Render TOPs it crops; a profile keeps its frames, its

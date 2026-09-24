@@ -59,7 +59,14 @@ agent at work you care about.
   `td_annotate`, `td_extension_add`, `td_palette_load` and `td_exec` change the
   live network. `td_build` wraps a batch in one `ui.undo` block, so it is a
   single **Ctrl+Z**, and a failed batch rolls itself back. `td_exec` is
-  arbitrary Python and carries no such guarantee.
+  arbitrary Python and carries no such guarantee. `td_timeline_run` pauses
+  the timeline, gives the play mode back at the end, and without `output`
+  leaves it paused on the last frame walked. With `tiles` it crops the Render
+  TOPs named in `render` and puts the crop back to 0..1. It writes files by the
+  `output` template. `td_timeline_profile` pauses the timeline and moves its
+  frame, and its forced cooks run a Script operator's or a file or network
+  out's side effect again. `td_render` with `save_to` writes a PNG to that
+  path, and refuses a file already there unless `overwrite=True`.
 - **Nothing saves your project.** No tool calls `project.save()`. `td_snapshot`
   writes a *component* to `~/.td-atlas/snapshots`. Saving the session would be
   a Save As, and it would leave you working inside `~/.td-atlas`.
@@ -71,8 +78,11 @@ agent at work you care about.
   offline read copies the file into a cache under `~/.td-atlas/cache` first.
   Writing (`td_project_write`, `td_variant_restore`) refuses an output path
   that already exists.
-- **On the host** td-atlas writes only under `~/.td-atlas`. That is the index,
-  the staged bridge, the call journal `calls.jsonl` (capped at 16 MiB),
-  snapshots, variants and the expansion cache. The cache is capped by count and
-  evicted least-recently-used. `td-atlas doctor` says how many expansions it
-  holds and `td-atlas doctor --clear-cache` empties it.
+- **On the host** td-atlas writes on its own only under `~/.td-atlas`. That is
+  the index, the staged bridge, the call journal `calls.jsonl` (capped at 16
+  MiB), snapshots, variants and the expansion cache. The cache is capped by
+  count and evicted least-recently-used. `td-atlas doctor` says how many
+  expansions it holds and `td-atlas doctor --clear-cache` empties it. A path
+  you name is written where you name it: `save_to` of `td_render`, the
+  `output` template of `td_timeline_run`, which TouchDesigner itself writes,
+  and the `output` of `td_project_write` and `td_variant_restore`.

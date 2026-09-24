@@ -16,5 +16,11 @@ Beyond `exec`:
   rolls back and leaves no partial network. A successful one is a single
   **Ctrl+Z** for the artist.
 - **`errors`** lists every node reporting an error or warning.
+- **`timeline_run`** walks the timeline frame by frame inside TouchDesigner and
+  saves a TOP's frames, as a job that `timeline_status` polls and
+  `timeline_cancel` stops. **`timeline_profile`** is the same kind of job,
+  timing what each operator costs per frame.
+- **`trace`** walks up a TOP's inputs and reads each image, so the host can
+  name where the picture was lost.
 
 Requests are authenticated with a token by default.

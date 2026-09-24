@@ -92,7 +92,10 @@ Three more behaviours:
 
 A request runs on TouchDesigner's main thread during a cook, which bounds what a
 handler may do. Frames cannot advance inside one call, so contact sheets and
-health checks are driven from the host in two or more calls.
+health checks are driven from the host in two or more calls. A timeline job is
+the third way round it: the walk runs inside TouchDesigner, one timeline frame
+every few application frames, and the call that starts it returns at once with
+a job id that `td_timeline_status` polls.
 
 ## Which instance, and whether it is there
 

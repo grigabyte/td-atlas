@@ -26,6 +26,12 @@ TouchDesigner uses, so cooking is `allowCooking`, not `cooking`; the full set is
 write back, so a flag a family will not take comes back as a refusal, and so does
 a name that is not one of these.
 
+Two more questions have their own tool. Why is the output black, or darker than
+its parameters say: **`td_trace`** walks up the TOP's inputs and marks the node
+where the image was lost, went below zero or turned NaN. Who spends the frame
+when the frame rate drops: **`td_timeline_profile`** times each operator on real
+timeline frames with the GPU waited for.
+
 ## Order of work
 
 1. **Search the index first.** It is offline and free, with no round trip to
@@ -42,7 +48,10 @@ with the text each refusal came back with. Reach for it when a call refuses and
 you do not know why, or when the artist says something broke while you were
 working. `td_log(summary=True)` says which method has been failing repeatedly,
 which is the signal that the approach is wrong. It outlives the TouchDesigner
-session, so it also answers "what happened yesterday".
+session, so it also answers "what happened yesterday". A call that changed the
+project carries what it changed: `tx = 0.5 (was 0.2)`, each step of a batch, the
+first lines of a td_exec's code. A secret in it, found by pattern, reads
+`[redacted]`.
 
 ## Finding the right operator
 
@@ -150,10 +159,13 @@ person left for you, which no other tool here shows.
 ## Seeing what you made
 
 `td_render("/project1/b1")` returns the image. **Use it**, since inferring
-appearance from parameter values does not work.
+appearance from parameter values does not work. `save_to` writes the PNG to a
+path instead, and a file already there is refused unless `overwrite=True`.
+Right after an edit pass `settle_frames=2` or 3, or the render can be the frame
+from before it.
 
-For a strobe, a feedback trail or any other animation, a single frame is a coin
-toss. Use a contact sheet:
+For a strobe or any other simple animation, a single frame is a coin toss. Use
+a contact sheet:
 
 ```python
 from td_atlas.bridge.client import BridgeClient
@@ -161,6 +173,10 @@ from td_atlas.bridge.filmstrip import contact_sheet
 contact_sheet(BridgeClient.discover(), "/project1/b1", "sheet.png",
               frames=9, interval=0.13, columns=3)
 ```
+
+A contact sheet samples wall-clock time. When a frame depends on the ones
+before it, as with a Feedback TOP, a trail or live audio, use `td_timeline_run`
+instead: it walks the timeline frame by frame and saves the frames you pick.
 
 ## Reading projects from disk
 
@@ -215,6 +231,9 @@ Detail in `references/gotchas.md`, and the short list follows:
 - **Non-Commercial caps resolution at 1280×1280**, silently, with only a
   warning, so asking for 1920×1080 gives 1280×720.
 - `exec` blocks TouchDesigner's main thread, so do not poll during a recording.
+- **A playing timeline cooks live CHOPs between your calls.** The `timeline`
+  line of `td_status` says `playing` or `paused`, and marks with `(!)` a
+  playback range that stops before `end`.
 
 ## Command line
 

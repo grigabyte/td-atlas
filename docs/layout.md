@@ -89,7 +89,11 @@ td-atlas/
 │   ├── bridge/             talking to a running instance
 │   │   ├── client.py           JSON-RPC over HTTP, stdlib only
 │   │   ├── health.py           the silent-failure detector
-│   │   └── filmstrip.py        contact sheets, with a stdlib PNG encoder
+│   │   ├── filmstrip.py        contact sheets, with a stdlib PNG encoder
+│   │   ├── settle.py           waiting for TouchDesigner to draw an edit
+│   │   ├── timeline.py         frame specs and progress lines of a timeline job
+│   │   ├── timeline_status.py  the status line of what the timeline is doing
+│   │   └── trace.py            where a TOP chain's signal was lost
 │   ├── component/          code that runs *inside* TouchDesigner
 │   │   ├── bootstrap.py        builds the bridge network in place
 │   │   ├── handler.py          the RPC handler

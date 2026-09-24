@@ -52,9 +52,11 @@ either from the code they are running:
   logged as before, and the frame polls `settle_frames` makes are not
   logged at all.
 - `td_status` and `td-atlas status` name the timeline's own frame, whether it
-  is playing, its start and end, its playback range and rate, apart from the
-  application clock. The status used to print the application's frame under
-  the word "frame". A playback range narrower than the timeline is marked,
+  is playing, its start and end, its playback range and rate, apart from
+  `absTime.frame` (`abs`), which does not follow the timeline's frame and
+  stands still while the root timeline is paused; waits count `tick`
+  (`op.TDResources.time.frame`). The status used to print `absTime.frame`
+  under the word "frame". A playback range narrower than the timeline is marked,
   since a recording stops at `rangeEnd` without a word.
 - A bridge timeout reads the TouchDesigner process before blaming a script.
   One that sits idle, asleep, minimised or behind a dialog is reported as
