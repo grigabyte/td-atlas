@@ -295,6 +295,17 @@ def test_cancelling_a_timeline_job_records_which_job():
     assert call.change == {"job": "j1"}
 
 
+def test_a_profile_records_the_walk_it_was_sent():
+    """`timeline_profile` pauses the timeline and moves its frame: a change."""
+    client = _Answering(port=9977)
+    client.answer = {"job": "t4", "state": "running", "mode": "profile"}
+    client.call("timeline_profile", path="/project1/cement", start=3000,
+                end=3009, limit=50, settle=2)
+    (call,) = journal.read()
+    assert call.path == "/project1/cement"
+    assert call.change == {"start": 3000, "end": 3009, "limit": 50, "settle": 2}
+
+
 def test_a_call_that_only_reads_records_its_path_and_nothing_else():
     """What stays out: a whole network, a render's bytes, a read's arguments."""
     journal.record(

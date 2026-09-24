@@ -60,13 +60,21 @@ def describe_profile(profile: dict, walked: int, rows: int = PROFILE_ROWS) -> li
     table = profile.get("rows") or []
     if not table:
         return lines
-    frame_sum = sum(
-        row["mean"] for row in table
+    # A pulled operator's cost is already inside the operator that pulled it,
+    # so adding its own row would count it twice.
+    counted = [
+        row for row in table
         if row.get("mean") is not None and row.get("cooked")
-    )
-    lines.append(
-        f"  sum of means of operators that cooked on their own: {frame_sum:.2f} ms"
-    )
+    ]
+    pulled = [row for row in counted if row.get("pulled")]
+    frame_sum = sum(row["mean"] for row in counted if not row.get("pulled"))
+    total = f"  sum of means of operators that cooked on their own: {frame_sum:.2f} ms"
+    if pulled:
+        total += (
+            f" ({len(pulled)} pulled operator(s) left out: their cost is inside "
+            f"the operator that pulled them)"
+        )
+    lines.append(total)
     lines.append("    mean     max  cooked  operator (ms per frame, GPU waited for)")
     for row in table[:rows]:
         frames = row.get("frames") or 0
@@ -93,8 +101,8 @@ def describe_profile(profile: dict, walked: int, rows: int = PROFILE_ROWS) -> li
         lines.append(f"  … {len(table) - rows} cheaper operator(s) not shown")
     if profile.get("truncated"):
         lines.append(
-            f"  stopped at {profile.get('limit')} operators; at least "
-            f"{profile['truncated']} more were not walked"
+            f"  at least {profile['truncated']} more operator(s) were not walked; "
+            f"the note above says which ceiling stopped the walk"
         )
     return lines
 

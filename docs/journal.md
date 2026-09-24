@@ -45,7 +45,8 @@ line that set it: `par_set` returns only what the parameter reads after the
 write, and the journal records no value the bridge did not send. Flags are the
 exception, since `flags_set` reads each one before writing it. A timeline job
 keeps the walk it was sent: the frames, the ones saved, the output template,
-the tiles and the Render TOPs it crops; a cancel keeps which job it stopped.
+the tiles and the Render TOPs it crops; a profile keeps its frames, its
+limit and its settle; a cancel keeps which job it stopped.
 
 Calls that only read keep their path and nothing else, so a whole network
 never lands in the file. Code and DAT text are clipped at 4 KB and other

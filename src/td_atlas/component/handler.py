@@ -3438,7 +3438,12 @@ def _total_cooks(node):
 
 
 def _profile_nodes(target, limit):
-    """The operators to measure, breadth-first, and how many were left unwalked."""
+    """The operators to measure, breadth-first, and how many were left unwalked.
+
+    Two ceilings can stop the walk: `limit` operators found to measure, or
+    `_MAX_WALK_NODES` looked at, which operators of other families (DATs,
+    COMPs) fill first. The third value says which one did.
+    """
     found = []
     if target.family in _PROFILE_FAMILIES:
         found.append(target)
@@ -3452,7 +3457,7 @@ def _profile_nodes(target, limit):
         children = getattr(node, "children", None)
         if children:
             queue.extend(children)
-    return found, len(queue)
+    return found, len(queue), len(found) < limit
 
 
 def _profile_order(nodes):
@@ -3528,7 +3533,7 @@ def _profile_plan(params, env):
             "does not go to a frame outside it"
             % (start, end, int(timeline.start), int(timeline.end))
         )
-    nodes, unvisited = _profile_nodes(target, limit)
+    nodes, unvisited, walk_full = _profile_nodes(target, limit)
     if not nodes:
         raise ValueError(
             "nothing to profile: no %s at or under %s"
@@ -3536,7 +3541,13 @@ def _profile_plan(params, env):
         )
 
     notes = []
-    if unvisited:
+    if unvisited and walk_full:
+        notes.append(
+            "the walk stopped at its ceiling of %d operators looked at, having "
+            "found %d to measure, with %d more left unwalked; profile a "
+            "narrower path" % (_MAX_WALK_NODES, len(nodes), unvisited)
+        )
+    elif unvisited:
         notes.append(
             "stopped at the limit of %d operators, with %d more left unwalked; "
             "raise `limit` or profile a narrower path" % (limit, unvisited)

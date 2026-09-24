@@ -322,6 +322,20 @@ def test_only_tops_chops_sops_and_pops_are_measured_below_nested_comps(env):
     assert set(_rows()) == {"/project1/geo1/box1"}
 
 
+def test_a_walk_stopped_by_its_own_ceiling_says_so_not_the_limit(env, monkeypatch):
+    """Operators of other families fill the walk before `limit` is reached."""
+    monkeypatch.setattr(handler, "_MAX_WALK_NODES", 3)
+    env.add("/project1/lfo1", "CHOP", env.root, cpu=1.0)
+    for index in range(5):
+        env.add(f"/project1/text{index}", "DAT", env.root)
+    env.add("/project1/lfo2", "CHOP", env.root, cpu=1.0)
+    reply = _profile(end=2, limit=50)
+
+    (note,) = [n for n in reply["notes"] if "unwalked" in n]
+    assert "3 operators looked at" in note
+    assert "limit" not in note
+
+
 def test_the_node_ceiling_is_kept_and_said(env):
     for index in range(6):
         env.add(f"/project1/n{index}", "CHOP", env.root, cpu=1.0)
@@ -513,6 +527,18 @@ def test_the_table_reads_costliest_first_and_marks_the_idle(monkeypatch):
     assert "measured 10 of 10 frames" in text
     # The sum counts only what cooked on its own: 74.012 + 0.4.
     assert "74.41" in text
+
+
+def test_an_operator_pulled_into_an_earlier_measurement_is_summed_once():
+    """Its cost is already inside the operator that pulled it."""
+    pulled = dict(DONE, profile=dict(DONE["profile"], rows=[
+        _row("/project1/cement/render1", 12.0, 13.0),
+        _row("/project1/cement/geo_sop", 5.0, 5.0, pulled=5),
+    ]))
+    text = "\n".join(host_timeline.describe(pulled))
+
+    assert "cooked on their own: 12.00 ms" in text
+    assert "1 pulled operator(s) left out" in text
 
 
 def test_describe_of_a_walk_is_unchanged_by_the_profile_branch():
