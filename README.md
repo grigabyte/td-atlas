@@ -22,6 +22,13 @@ English | [Русский](README.ru.md) | [简体中文](README.zh-CN.md)
     <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Platform: macOS; the Windows code paths run in CI, TouchDesigner on Windows is unverified">
     <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="Licence: MIT"></a>
   </p>
+  <p>
+    <a href="https://youtu.be/nxL4EUtdOjI"><img src=".github/video-builds-a-scene.jpg" width="360"
+     alt="An agent builds an audio-reactive scene from an empty project."></a>
+    <a href="https://youtu.be/21Ogcdm5Gk0"><img src=".github/video-inside-a-project.jpg" width="360"
+     alt="An agent works inside a finished project: reads it, plays it, tilts the camera and undoes it."></a>
+  </p>
+  <p><sub>Left: an agent builds an audio-reactive scene from an empty project. Right: it works inside a finished one.</sub></p>
 </div>
 
 td-atlas gives an agent three things. The exact operator and parameter names

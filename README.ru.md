@@ -23,6 +23,13 @@
     <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="Платформа: macOS; код под Windows гоняется в CI, но TouchDesigner под Windows не проверялся">
     <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="Лицензия: MIT"></a>
   </p>
+  <p>
+    <a href="https://youtu.be/nxL4EUtdOjI"><img src=".github/video-builds-a-scene.jpg" width="360"
+     alt="Агент собирает аудиореактивную сцену с пустого проекта."></a>
+    <a href="https://youtu.be/21Ogcdm5Gk0"><img src=".github/video-inside-a-project.jpg" width="360"
+     alt="Агент работает внутри готового проекта: читает его, запускает, наклоняет камеру и откатывает правку."></a>
+  </p>
+  <p><sub>Слева: агент собирает аудиореактивную сцену с пустого проекта. Справа: работает внутри готового.</sub></p>
 </div>
 
 td-atlas даёт агенту три вещи. Точные имена операторов и параметров из

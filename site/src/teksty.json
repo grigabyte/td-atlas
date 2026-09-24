@@ -135,6 +135,34 @@
     "ru": "шесть кадров рендера подряд",
     "en": "six render frames in a row"
   },
+  "kino.kicker": {
+    "ru": "в работе",
+    "en": "watch"
+  },
+  "kino.h2.a": {
+    "ru": "Как это выглядит",
+    "en": "See it working"
+  },
+  "kino.h2.b": {
+    "ru": "на живом проекте",
+    "en": "on a real project"
+  },
+  "kino.v1": {
+    "ru": "Агент собирает аудиореактивную сцену с пустого проекта",
+    "en": "An agent builds an audio-reactive scene from an empty project"
+  },
+  "kino.v2": {
+    "ru": "Агент работает внутри готового проекта: читает его, запускает, наклоняет камеру и откатывает правку",
+    "en": "An agent works inside a finished project: reads it, plays it, tilts the camera and undoes the edit"
+  },
+  "kino.v1.aria": {
+    "ru": "Видео на YouTube: агент собирает сцену с нуля",
+    "en": "Video on YouTube: an agent builds a scene from scratch"
+  },
+  "kino.v2.aria": {
+    "ru": "Видео на YouTube: агент работает внутри готового проекта",
+    "en": "Video on YouTube: an agent works inside a finished project"
+  },
   "s5.kicker": {
     "ru": "попробовать",
     "en": "your turn"

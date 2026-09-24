@@ -15,9 +15,9 @@ const VYKAT = 'expo.out'
 const q = <T extends Element>(s: string) => [...document.querySelectorAll<T>(s)]
 
 // ── появление по прокрутке, одноразовое, триггер 85 % ────────────────────
-const BLOKI = '#s2 .obj, #s3 .obj, #s4 .obj, #s5 .terminal, #s5 .prav'
+const BLOKI = '#s2 .obj, #s3 .obj, #s4 .obj, #kino .obj, #s5 .terminal, #s5 .prav'
 const STROKI = '#s2 .kicker, #s2 h2 span, #s2 p.abz, #s3 .kicker, #s3 h2 span, #s3 .niz p.abz,'
-  + ' #s4 .kicker, #s4 h2 span, #s4 p.abz, #s5 .kicker, #s5 h2 span'
+  + ' #s4 .kicker, #s4 h2 span, #s4 p.abz, #kino .kicker, #kino h2 span, #s5 .kicker, #s5 h2 span'
 const PODPISI = '#s3 .strelka, #s4 .strelka, .nomer'
 
 function poyavlenie() {
@@ -42,9 +42,9 @@ function poyavlenie() {
 // Пишется в CSS-свойство translate, а не в transform: transform на этих же
 // узлах держит появление, и два хозяина одного свойства дрались бы.
 const SLOI: Array<[string, number]> = [
-  ['#s2 .zadnik, #s3 .zadnik, #s4 .zadnik, #s5 .zadnik', 0.2],
+  ['#s2 .zadnik, #s3 .zadnik, #s4 .zadnik, #kino .zadnik, #s5 .zadnik', 0.2],
   ['#s2 .obj, #s3 .obj, #s4 .obj', 0.12],
-  ['#s2 .tekst, #s3 .tekst, #s4 .tekst, #s5 .tekst', 0.02],
+  ['#s2 .tekst, #s3 .tekst, #s4 .tekst, #kino .tekst, #s5 .tekst', 0.02],
   // Терминал s5 лежит ВНУТРИ .tekst, наклоны складываются: 0.02 + 0.10 = 0.12.
   ['#s5 .terminal', 0.1],
 ]

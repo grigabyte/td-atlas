@@ -22,6 +22,13 @@
     <img src="https://img.shields.io/badge/platform-macOS-lightgrey" alt="平台：macOS；Windows 代码路径在 CI 中运行，但 Windows 上的 TouchDesigner 未经验证">
     <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="许可证：MIT"></a>
   </p>
+  <p>
+    <a href="https://youtu.be/nxL4EUtdOjI"><img src=".github/video-builds-a-scene.jpg" width="360"
+     alt="智能体从空工程搭起一个音频反应场景."></a>
+    <a href="https://youtu.be/21Ogcdm5Gk0"><img src=".github/video-inside-a-project.jpg" width="360"
+     alt="智能体在现成的工程里工作：读取、播放、倾斜摄像机，再撤销这次修改."></a>
+  </p>
+  <p><sub>左：智能体从空工程搭起音频反应场景。右：在现成的工程里工作。</sub></p>
 </div>
 
 td-atlas 给智能体三样东西。来自*这台*机器的准确算子名和参数名。
