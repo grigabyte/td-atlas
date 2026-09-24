@@ -18,7 +18,7 @@ from . import journal
 from .atoms import probe as probe_mod
 from .atoms.extract_static import extract
 from .atoms.store import AtomStore
-from .bridge import timeline
+from .bridge import timeline_status
 from .bridge.client import (
     EXPECTED_PROTOCOL_VERSION,
     BridgeClient,
@@ -527,7 +527,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         )
         # The same words as td_status, moved into this command's columns.
         print(
-            timeline.describe(info)
+            timeline_status.describe(info)
             .replace("timeline: ", "timeline      : ", 1)
             .replace("\n  (!)", "\n                (!)")
         )

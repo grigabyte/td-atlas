@@ -81,9 +81,9 @@ def test_ping_survives_a_timeline_field_that_will_not_read(td_globals, monkeypat
 def _describe(info):
     # Imported here so that, before the module existed, each test failed on
     # its own line rather than the whole file failing to collect.
-    from td_atlas.bridge import timeline
+    from td_atlas.bridge import timeline_status
 
-    return timeline.describe(info)
+    return timeline_status.describe(info)
 
 
 def _info(**overrides):

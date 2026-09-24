@@ -21,7 +21,7 @@ from .. import config as cfg
 from .. import journal
 from ..atoms.store import AtomStore
 from ..atoms.validate import validate_params
-from ..bridge import timeline
+from ..bridge import timeline_status
 from ..bridge.client import BridgeClient, BridgeError, BridgeUnavailable
 from ..component.handler import NODE_FLAGS
 from .hints import IndexMissing, failure, from_record, guarded, hint
@@ -407,7 +407,7 @@ def td_status() -> str:
         f"{_warn(client)}{db_note}\nbridge: connected to {info['product']} "
         f"{info['build']}, project '{info['project']}' in "
         f"{info['projectFolder']}, {info['fps']} fps\n"
-        f"{timeline.describe(info)}"
+        f"{timeline_status.describe(info)}"
     )
 
 
