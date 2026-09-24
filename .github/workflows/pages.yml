@@ -44,10 +44,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Nothing at the workflow level: a job names what it needs, so a job added
+# later starts with nothing rather than inheriting the deploy's rights.
+permissions: {}
 
 # A deploy already in flight is not cancelled. Cancelling one leaves the site
 # serving whatever the run before it published — which is exactly the drift
@@ -63,6 +62,15 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    # `deployments: write` is for the last step alone, which removes the
+    # records older runs left behind. A job-level block replaces the
+    # workflow's rather than adding to it, so the three the deploy itself
+    # needs are named here too.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+      deployments: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,3 +109,52 @@ jobs:
 
       - id: deployment
         uses: actions/deploy-pages@v4
+
+      # Every run leaves a `github-pages` record in the repository's
+      # Deployments list, and nothing ever takes one away. Pages serves the
+      # latest deployment and nothing else, so every older record names a site
+      # that is no longer there: a list that only grows, one line per push.
+      #
+      # This run's own record is kept, and it is found by commit, not by
+      # position: the newest `github-pages` record for `GITHUB_SHA`. The
+      # concurrency group above runs deploys one at a time, so no later run
+      # can have made a newer one yet. If none is found, nothing is removed —
+      # deleting the record of the site being served is worse than leaving
+      # the clutter for the next run.
+      #
+      # The API deletes only an inactive record, hence two calls for each.
+      # Only `environment=github-pages` is asked for, so the `pypi` records
+      # are never read, let alone touched. A record that will not go is
+      # clutter left for the next run, not a broken site, so this step cannot
+      # fail the deploy, and it says what it removed and what it could not.
+      - name: Remove older Pages deployment records
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          records="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/deployments?environment=github-pages&per_page=100" \
+            --jq '.[] | "\(.id) \(.sha)"' | sort -k1,1nr)"
+          current="$(printf '%s\n' "$records" \
+            | awk -v sha="$GITHUB_SHA" '$2 == sha { print $1; exit }')"
+          if [ -z "$current" ]; then
+            echo "no github-pages record for $GITHUB_SHA; removing nothing"
+            exit 0
+          fi
+          echo "keeping $current, the record of this run"
+          removed=0
+          failed=0
+          for id in $(printf '%s\n' "$records" \
+              | awk -v keep="$current" 'NF && $1 != keep { print $1 }'); do
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
+                 -f state=inactive >/dev/null \
+               && gh api -X DELETE "repos/$GITHUB_REPOSITORY/deployments/$id" >/dev/null
+            then
+              echo "removed $id"
+              removed=$((removed + 1))
+            else
+              echo "could not remove $id"
+              failed=$((failed + 1))
+            fi
+          done
+          echo "removed $removed older github-pages record(s), $failed left behind"
