@@ -100,6 +100,43 @@ def test_a_clock_that_does_not_move_is_said_out_loud(monkeypatch, tmp_path):
     assert "drew 0 of 5" in reply
 
 
+def test_a_note_beside_the_image_survives_the_trip_to_the_client(monkeypatch):
+    """[str, Image] is the first reply of its kind: text and a picture at once.
+
+    Every other tool answers with one or the other, so nothing had shown that
+    FastMCP turns a list holding both into two content blocks rather than
+    failing on it or stringifying the Image. This goes through a real client
+    session in memory, JSON-RPC serialisation included, with no TouchDesigner.
+    """
+    import base64
+
+    import anyio
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    stalled = FakeClient(step=0)
+    monkeypatch.setattr(server, "bridge", lambda: stalled)
+    monkeypatch.setattr(server, "_warn", lambda _c: "")
+    monkeypatch.setattr(settle, "DEFAULT_BUDGET", 0.05)
+    # The direct call first, so a failure below is about the transport and
+    # not about the reply never having been a list.
+    direct = server.td_render("/project1/out1", settle_frames=5)
+    assert isinstance(direct, list) and len(direct) == 2
+
+    async def ask():
+        async with create_connected_server_and_client_session(server.mcp) as client:
+            return await client.call_tool(
+                "td_render", {"path": "/project1/out1", "settle_frames": 5}
+            )
+
+    result = anyio.run(ask)
+    assert not result.isError, result.content
+    kinds = [block.type for block in result.content]
+    assert kinds == ["text", "image"], kinds
+    assert "drew 0 of 5" in result.content[0].text
+    assert result.content[1].mimeType == "image/png"
+    assert base64.b64decode(result.content[1].data) == PNG
+
+
 def test_the_cli_takes_the_same_settle(monkeypatch, tmp_path, capsys):
     fake = FakeClient()
     monkeypatch.setattr(cli, "_client", lambda args, **kw: fake)
