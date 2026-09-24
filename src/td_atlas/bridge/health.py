@@ -565,15 +565,19 @@ def check(
         health.findings.append(
             Finding("warning", "bypassed",
                     f"{len(bypassed)} operator(s) bypassed{also}", bypassed))
+    # A warning since 2026-09-24. As a note it was the only mention of the
+    # trap once the duplicate under `bypassed` was dropped, and acceptance
+    # found it read past; a gain operator in bypass puts a layer back at
+    # full strength, which is a wrong picture, not a remark.
     if through:
         health.findings.append(
             Finding(
-                "note", "bypass-passes-through",
+                "warning", "bypass-passes-through",
                 f"{len(through)} gain operator(s) bypassed. Bypass hands the "
                 f"input through unchanged — it does not switch the layer off, "
                 f"and a bypassed Level TOP leaves it at full strength. To take "
                 f"a layer out, bring its level to zero (brightness1 0 on a "
-                f"Level TOP did it in the case this note comes from) or "
+                f"Level TOP did it in the case this warning comes from) or "
                 f"disconnect it",
                 through,
             )

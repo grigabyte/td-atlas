@@ -547,7 +547,7 @@ and does the opposite. A bypassed Level TOP hands its input through at full
 strength, so the layer it was dimming comes back. An agent bypassed a glow's
 Level TOP to rule the glow out, and the glow stayed. `td_health` names a
 bypassed `levelTOP`, `mathTOP`, `hsvadjustTOP`, `mathCHOP` or `mathPOP` under
-the note `bypass-passes-through`, once, and not under `bypassed` as well. To take a layer out, bring its level to zero. In that
+the warning `bypass-passes-through`, once, and not under `bypassed` as well. To take a layer out, bring its level to zero. In that
 case `brightness1 = 0` on the Level TOP did it. Disconnecting it works too.
 
 ## A Level TOP in a float format can output negative values

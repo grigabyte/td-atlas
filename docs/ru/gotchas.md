@@ -1,7 +1,7 @@
 ---
 istochnik: plugin/skills/touchdesigner/references/gotchas.md
 kommit: f767122
-hesh: a1aa2708fc06676eb73229218f5ebcf333dd146d6eae7be82f3e1feaa23938c4
+hesh: 1a5a9aa56e675e5c2ec3dbfa0e24f27d69c793b5ff9fe2331f5fb69232ccb40c
 ---
 
 # Ловушки
@@ -548,7 +548,7 @@ Bypass на операторе, чья работа — масштабирова
 и слой, который он приглушал, возвращается. Агент выключил через bypass
 Level TOP свечения, чтобы исключить свечение, а свечение осталось.
 `td_health` называет `levelTOP`, `mathTOP`, `hsvadjustTOP`, `mathCHOP` или
-`mathPOP` в обходе под заметкой `bypass-passes-through`, один раз, и под
+`mathPOP` в обходе под предупреждением `bypass-passes-through`, один раз, и под
 `bypassed` их уже нет. Чтобы убрать
 слой, сведите его уровень к нулю. В том случае это сделал `brightness1 = 0`
 на Level TOP. Отключить провод тоже работает.

@@ -74,7 +74,7 @@ either from the code they are running:
   generator, which keep a render from reproducing, are named with where they
   are; script text and parameter expressions share one time budget, and the
   finding says how much of each it read. A bypassed gain operator is listed
-  once, under its own note, and no longer also among the plain bypassed
+  once, under its own warning, and no longer also among the plain bypassed
   operators.
 - `td_network` marks a TOP whose viewer flag is off, so an empty tile is not
   taken for a broken scene.

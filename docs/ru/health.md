@@ -1,7 +1,7 @@
 ---
 istochnik: docs/health.md
 kommit: f767122
-hesh: e18776c986c8f36dcdd6f1bd5a1ac4fa2484d52175940fb2e5fdb063c1bd2e23
+hesh: 77e1674a1573fcfd094e27f9d916884aac51a48543b764c4832babf81820113b
 ---
 
 # О чём TouchDesigner молчит
@@ -32,7 +32,7 @@ hesh: e18776c986c8f36dcdd6f1bd5a1ac4fa2484d52175940fb2e5fdb063c1bd2e23
   который не держат в `reset`. `cook(force=True)` петлю не продвигает, поэтому
   кадр, сделанный принудительными готовками, несёт устаревший шлейф.
   Проигрывайте таймлайн.
-- `bypass-passes-through` (заметка) называет `levelTOP`, `mathTOP`,
+- `bypass-passes-through` (предупреждение) называет `levelTOP`, `mathTOP`,
   `hsvadjustTOP`, `mathCHOP` или `mathPOP` в обходе. Bypass отдаёт вход
   на полной силе, поэтому слой, который он приглушал, возвращается, а
   не пропадает. Такой оператор назван здесь и второй раз под `bypassed`

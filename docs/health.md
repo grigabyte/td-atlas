@@ -41,7 +41,7 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
 - `feedback-loops` (note) lists every feedback operator not held in `reset`.
   `cook(force=True)` does not advance a loop, so a frame made by forced cooks
   carries a stale trail. Play the timeline instead.
-- `bypass-passes-through` (note) names a bypassed `levelTOP`, `mathTOP`,
+- `bypass-passes-through` (warning) names a bypassed `levelTOP`, `mathTOP`,
   `hsvadjustTOP`, `mathCHOP` or `mathPOP`. Bypass hands the input through at
   full strength, so the layer it was dimming comes back instead of going away.
   Such an operator is named here and not again under `bypassed`.

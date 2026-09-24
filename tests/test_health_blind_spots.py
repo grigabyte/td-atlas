@@ -174,8 +174,11 @@ def test_a_bypassed_level_is_said_to_pass_its_input_through():
     after = [dict(n, cooks=70) for n in nodes]
     result = check(sample(0, nodes), sample(60, after))
 
+    # A warning, not a note: once the duplicate under `bypassed` went, a
+    # note was the only place this trap showed, and acceptance found it
+    # read past (2026-09-24).
     through = finding(result, "bypass-passes-through")
-    assert through is not None and through.severity == "note"
+    assert through is not None and through.severity == "warning"
     assert through.paths == ["/p/glow_lev (levelTOP)"]
     assert "does not switch" in through.message
     # Each bypassed operator is named once: a gain operator under the note
