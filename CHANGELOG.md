@@ -86,6 +86,12 @@ either from the code they are running:
 
 ### Fixed
 
+- **A frame taken right after editing a synced file runs the new code.**
+  TouchDesigner re-reads a file-synced Text DAT on a poll (measured 0.7 s),
+  so an exec or render straight after an edit on disk ran the old code.
+  `td_exec`, `td_render` and `td_timeline_run` reload every synced Text DAT
+  whose file differs from its text first, and say so (`resynced` in the
+  reply).
 - **A traceback that is no longer raised stops reading as live.**
   TouchDesigner keeps a traceback's text after the code is fixed, and
   `td_health` reported it as an error on every check. It now clears each kept

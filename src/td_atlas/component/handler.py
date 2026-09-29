@@ -2375,6 +2375,42 @@ def m_ping(_params):
     return reply
 
 
+def _resync_files():
+    """Reload every synced Text DAT whose file on disk says something else.
+
+    A Text DAT with `syncfile` on picks up an edit to its file on a poll:
+    measured 2026-09-29 on 2025.32460, 0.68-0.71 s after the write in five
+    tries of six. A frame taken inside that window runs the old code, and an
+    agent chased a bug that was not there (report 4, point 8). The other
+    direction is immediate — setting `.text` wrote the file before the next
+    line read it — so a file that differs from its DAT was changed outside
+    TouchDesigner, and reloading it (`loadonstartpulse`, measured to reload
+    text and module at once) only brings forward what the poll would do.
+    The walk over every Text DAT cost 0.19 ms on a six-DAT project.
+    """
+    reloaded = []
+    try:
+        dats = root.findChildren(type=textDAT)
+    except Exception:
+        return reloaded
+    for dat in dats:
+        try:
+            if not dat.par.syncfile.eval():
+                continue
+            path = dat.par.file.eval()
+            if not path:
+                continue
+            with open(path, "rb") as handle:
+                on_disk = handle.read().decode("utf-8", "replace")
+            if on_disk.replace("\r\n", "\n") == dat.text.replace("\r\n", "\n"):
+                continue
+            dat.par.loadonstartpulse.pulse()
+            reloaded.append(dat.path)
+        except Exception:
+            continue
+    return reloaded
+
+
 def m_exec(params):
     """Run arbitrary Python, capturing output and the value of a final expression.
 
@@ -2387,6 +2423,7 @@ def m_exec(params):
     code = params.get("code")
     if not code:
         raise ValueError("exec requires 'code'")
+    resynced = _resync_files()
     scope = dict(globals())
     out, err = io.StringIO(), io.StringIO()
     result = None
@@ -2420,11 +2457,14 @@ def m_exec(params):
                 "result": _jsonable(scope.get("result")),
             })
             raise
-    return {
+    reply = {
         "stdout": out.getvalue(),
         "stderr": err.getvalue(),
         "result": _jsonable(result),
     }
+    if resynced:
+        reply["resynced"] = resynced
+    return reply
 
 
 _PARTIAL_ATTR = "td_atlas_partial"
@@ -2932,6 +2972,14 @@ def m_par_set(params):
 
 def m_render(params):
     """Return a TOP's image so the agent can see what it built."""
+    resynced = _resync_files()
+    reply = _render(params)
+    if resynced:
+        reply["resynced"] = resynced
+    return reply
+
+
+def _render(params):
     target = _resolve(params.get("path"))
     if target.family != "TOP":
         raise TypeError(
@@ -3538,7 +3586,11 @@ def m_timeline_run(params):
     env = _timeline_env()
     state = env.registry()
     _timeline_refuse_second(state)
-    return _timeline_start(_timeline_plan(params, env), env, state)
+    resynced = _resync_files()
+    reply = _timeline_start(_timeline_plan(params, env), env, state)
+    if resynced and isinstance(reply, dict):
+        reply["resynced"] = resynced
+    return reply
 
 
 def _timeline_refuse_second(state):

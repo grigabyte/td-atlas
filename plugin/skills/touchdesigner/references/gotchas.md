@@ -697,6 +697,19 @@ Three of `td_health`'s findings are about the report, not about the project:
   how many scripts when it stopped before reading them all. Scripts are read
   first, under the same budget.
 
+## A file-synced DAT runs the old code for most of a second
+
+A Text DAT with `syncfile` on reads its file on a poll: measured on 2025.32460,
+an edit made on disk reached the DAT 0.68–0.71 s later. A frame taken inside
+that window runs the previous code, and an agent went looking for a bug that
+was not there. `td_exec`, `td_render` and `td_timeline_run` now reload every
+synced Text DAT whose file differs from its text before they act, and say
+`reloaded from disk first` when they did. Outside those calls — a frame saved
+by a script in a DAT of your own — check the text before trusting the frame,
+or pulse the DAT's `loadonstartpulse`, which reloads text and module at once.
+Editing the text inside TouchDesigner writes the file immediately, so the
+reload never overwrites an edit made there.
+
 ## Stale errors
 
 `errors()` keeps its last string until the operator cooks again, so a fixed

@@ -969,7 +969,7 @@ def td_render(
         )
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
-    note = settled.note()
+    note = "\n".join(n for n in (settled.note(), _resynced_note(meta)) if n)
     if target is None:
         if note:
             return [note, Image(data=data, format="png")]
@@ -1057,6 +1057,8 @@ def td_timeline_run(
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
     lines = timeline.describe(job)
+    if _resynced_note(job):
+        lines.insert(0, _resynced_note(job))
     lines.append(
         f"Poll with td_timeline_status(job={job['job']!r}); stop with "
         f"td_timeline_cancel."
@@ -1536,7 +1538,21 @@ def td_exec(code: str) -> str:
     if result.get("result") is not None:
         parts.append(json.dumps(result["result"], indent=2, default=str,
                                 ensure_ascii=False))
+    note = _resynced_note(result)
+    if note:
+        parts.insert(0, note)
     return _warn(client) + ("\n".join(parts) or "(no output)")
+
+
+def _resynced_note(reply: dict) -> str:
+    """One line when the bridge reloaded file-synced DATs before acting."""
+    paths = reply.get("resynced") or []
+    if not paths:
+        return ""
+    return (
+        f"reloaded from disk first ({', '.join(paths)}): the file had changed "
+        f"and TouchDesigner re-reads a synced file only every ~0.7 s"
+    )
 
 
 # -- project file tools -----------------------------------------------------
