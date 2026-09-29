@@ -807,7 +807,53 @@ def td_build(
     for item in result["results"]:
         if isinstance(item, dict) and "path" in item:
             lines.append(f"  {item['path']} ({item.get('type', '')})")
+            lines += [f"    {note}" for note in _step_notes(item)]
     return _warn(client) + "\n".join(lines)
+
+
+def _step_notes(item: dict) -> list[str]:
+    """What a create or a write did besides what was asked, one line each.
+
+    Read off the bridge's reply (handler.py, `_after_create` and
+    `_unresolved_refs`): the operators TouchDesigner added on its own, an OP
+    reference that points at nothing, and a SOP or POP in a Geometry COMP
+    that is not the one rendering.
+    """
+    notes = []
+    leftovers = []
+    for extra in item.get("alsoCreated") or []:
+        if extra.get("inside"):
+            flags = [f for f in ("render", "display") if extra.get(f)]
+            notes.append(
+                f"TouchDesigner also created {extra['path']} "
+                f"({extra.get('type', '')}) inside it"
+                + (f", holding the {' and '.join(flags)} flag(s)" if flags else "")
+            )
+        elif extra.get("used"):
+            notes.append(f"TouchDesigner also created {extra['path']} "
+                         f"({extra.get('type', '')}); this node uses it")
+        else:
+            leftovers.append(extra["path"])
+    if leftovers:
+        notes.append(
+            f"TouchDesigner also created {', '.join(leftovers)}, which this "
+            f"node does not point at — leftovers; op_delete removes them"
+        )
+    for name, value in (item.get("unresolved") or {}).items():
+        notes.append(
+            f"{name} = {value!r} points at nothing (reads back as None). A path "
+            f"in an OP parameter resolves from the network the node sits in: "
+            f"a sibling is written by its name alone, '../' climbs out of that "
+            f"network, and './' looks inside the node itself"
+        )
+    if item.get("render") is False:
+        holders = item.get("renderFlagOn") or []
+        notes.append(
+            "its render flag is off, so the Geometry COMP does not draw it"
+            + (f"; the flag is on {', '.join(holders)}" if holders else "")
+            + " — set it with td_set_flags"
+        )
+    return notes
 
 
 @mcp.tool()
@@ -865,7 +911,8 @@ def td_set_params(
     except (BridgeUnavailable, BridgeError) as exc:
         return failure(exc)
     applied = ", ".join(f"{k}={v!r}" for k, v in result["applied"].items())
-    return f"{_warn(client)}{result['path']}: {applied}"
+    notes = "".join(f"\n  {note}" for note in _step_notes(result))
+    return f"{_warn(client)}{result['path']}: {applied}{notes}"
 
 
 @mcp.tool()

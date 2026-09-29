@@ -355,7 +355,9 @@ that its value is an operator and not just text you typed.
 reference that resolves, from the parent, to nothing is refused with the
 sibling and absolute spellings. Re-measured on 2026-09-24: `material='mat1'`
 beside `mat1` resolves, `'../mat1'` gives `None`, and `'./x'` reaches a child
-of the COMP itself.
+of the COMP itself. Whatever the spelling, after the write each step's answer
+names an OP parameter that reads back `None` (`material = '../wire' points at
+nothing`), so a reference the check could not judge is not silent either.
 
 ## A fresh Geometry COMP already has geometry in it
 
@@ -395,6 +397,21 @@ geometry is the invisible one:
 With the flags off, every measurement of the render is the same number no matter
 what you change upstream. See *Identical numbers are usually a picture that did
 not change* below.
+
+`td_build` says both in its answer: the `torus1` it found inside a new Geometry
+COMP, with its flags, and for a new SOP or POP inside one, that its render flag
+is off and which operator has it.
+
+## Operators that bring DATs with them
+
+Several operators arrive with DATs docked beside them (2025.32460): a GLSL TOP
+with `_pixel`, `_info` and `_compute`, a GLSL MAT with `_pixel`, `_vertex` and
+`_info`, a GLSL POP with `_compute` and `_info`, a Script CHOP or SOP with
+`_callbacks` — even when its `callbacks` parameter names another DAT in the
+same create — and a Ramp TOP with `_keys`. `td_build` names each one after the
+step that made it, and says whether the new node points at it through a
+parameter. One it does not point at is a leftover; remove it with `op_delete`
+in the next batch, or leave it, since it costs nothing.
 
 ## Movie File Out
 

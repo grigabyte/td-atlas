@@ -2596,7 +2596,102 @@ def m_op_create(params):
             pass
         raise
 
-    return _op_summary(created, include_pars=False)
+    summary = _op_summary(created, include_pars=False)
+    summary.update(_after_create(created, parent_comp))
+    unresolved = _unresolved_refs(created, params.get("pars") or {})
+    if unresolved:
+        summary["unresolved"] = unresolved
+    return summary
+
+
+def _referenced_ops(target):
+    """Paths every OP parameter of `target` points at now."""
+    found = set()
+    for par in target.pars():
+        if not getattr(par, "isOP", False):
+            continue
+        try:
+            value = par.eval()
+        except Exception:
+            continue
+        for item in (value if isinstance(value, (list, tuple)) else [value]):
+            path = getattr(item, "path", None)
+            if path:
+                found.add(path)
+    return found
+
+
+def _after_create(created, parent_comp):
+    """What TouchDesigner made besides the node asked for, and its flags.
+
+    Measured 2026-09-29 on 2025.32460: a GLSL TOP arrives with docked
+    `_pixel`, `_info` and `_compute` DATs, a Script CHOP or SOP with a
+    `_callbacks` DAT (even when its `callbacks` parameter is given in the same
+    create, report 4), a Ramp TOP with `_keys`, a GLSL MAT with three DATs,
+    and a Geometry COMP with a `torus1` inside that holds the render and
+    display flags. Agents removed some ten such DATs by hand per session and
+    rendered a torus once (reports 4 and 5). Each is named here, with whether
+    the new node points at it through a parameter; one it does not point at
+    is a leftover.
+    """
+    extra = []
+    try:
+        docked = list(created.docked)
+    except Exception:
+        docked = []
+    try:
+        inside = list(created.children) if created.isCOMP else []
+    except Exception:
+        inside = []
+    used = _referenced_ops(created) if docked else set()
+    for node in docked:
+        extra.append({"path": node.path, "type": node.OPType,
+                      "used": node.path in used})
+    for node in inside:
+        entry = {"path": node.path, "type": node.OPType, "inside": True}
+        for flag in ("render", "display"):
+            value = _attr(node, flag)
+            if isinstance(value, bool):
+                entry[flag] = value
+        extra.append(entry)
+    out = {"alsoCreated": extra} if extra else {}
+    # A SOP or POP made inside a Geometry COMP renders only with the render
+    # flag, and a fresh one has it off while the COMP's own torus1 has it on.
+    if (created.family in ("SOP", "POP")
+            and getattr(parent_comp, "OPType", "") == "geometryCOMP"):
+        flagged = []
+        for sibling in parent_comp.children:
+            if sibling is not created and _attr(sibling, "render") is True:
+                flagged.append(sibling.path)
+        out["render"] = bool(_attr(created, "render"))
+        out["display"] = bool(_attr(created, "display"))
+        if flagged:
+            out["renderFlagOn"] = flagged
+    return out
+
+
+def _unresolved_refs(target, values):
+    """OP parameters just written with a path that points at nothing.
+
+    TouchDesigner takes any text into an OP parameter and reads it back as
+    None when nothing is there, with no error anywhere. Measured 2026-09-29:
+    on a Geometry COMP, `material` 'wire' finds the sibling MAT, while
+    '../wire' and './wire' (no child of that name) give None; a Render TOP's
+    `geometry` behaves the same. Agent report 5 rendered grey for an hour on '../wire'.
+    """
+    missing = {}
+    for name, value in values.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        par = getattr(target.par, name, None)
+        if par is None or not getattr(par, "isOP", False):
+            continue
+        try:
+            if par.eval() in (None, [], ()):
+                missing[name] = value
+        except Exception:
+            missing[name] = value
+    return missing
 
 
 def m_op_delete(params):
@@ -2824,11 +2919,15 @@ def m_par_set(params):
     target = _resolve(params.get("path"))
     # Read before the write, necessarily: afterwards the old value is gone.
     before = _pars_before(target, params["pars"])
-    return {
+    out = {
         "path": target.path,
         "applied": _apply_pars(target, params["pars"]),
         "before": before,
     }
+    unresolved = _unresolved_refs(target, params["pars"])
+    if unresolved:
+        out["unresolved"] = unresolved
+    return out
 
 
 def m_render(params):

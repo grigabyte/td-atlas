@@ -50,6 +50,14 @@ either from the code they are running:
 
 ### Added
 
+- **`td_build` and `td_set_params` say what happened besides the ask.** After
+  each create: the DATs TouchDesigner docked beside the new node (a GLSL
+  TOP's `_pixel`/`_info`/`_compute`, a Script CHOP's `_callbacks`), each
+  marked used or a leftover; a new Geometry COMP's `torus1` with its flags;
+  a new SOP or POP inside one whose render flag is off, and who has it.
+  After each write: an OP parameter that reads back `None`, whatever path
+  was written. `op_create` and `par_set` replies carry `alsoCreated`,
+  `unresolved`, `render`, `display` and `renderFlagOn` for this.
 - **Later blocks of a parameter sequence can be set.** `const1name` on a
   Constant CHOP or `array1name` on a GLSL TOP was refused by the name check,
   and on a fresh operator was no parameter at all; two agents moved that work
