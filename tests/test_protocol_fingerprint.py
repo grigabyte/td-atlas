@@ -123,6 +123,42 @@ timeline_run: end from_start hold output path render save settle start tiles
 timeline_status: job
 trace: depth path
 undo: -""",
+    9: """\
+annotate: <dynamic> alpha color font_size mode name owner parent path position size text title
+annotations: depth path
+batch: ops owner undo_name
+capture: path reset
+claim_scope: owner path ttl
+contact_sheet: columns width
+errors: path
+exec: code
+extension_add: class_name code extension_name index name owner parent path position promote
+flags: path paths
+flags_set: flags owner path
+health_probe: paths
+health_sample: counts_only path
+network: depth pars path
+op_connect: from index owner to
+op_create: connect name owner parent pars position text type
+op_delete: owner path paths
+op_disconnect: index owner path
+op_info: pars path
+op_types: paths
+palette_load: file name owner parent position
+par_set: owner pars path
+ping: -
+redo: -
+release_scope: owner path
+render: format height path width
+save_tox: file path
+scopes: -
+status_note: health
+timeline_cancel: job
+timeline_profile: end limit path settle start
+timeline_run: end from_start hold output path render save settle start tiles
+timeline_status: job
+trace: depth path
+undo: -""",
 }
 
 

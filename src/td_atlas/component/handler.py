@@ -29,10 +29,13 @@ from contextlib import redirect_stderr, redirect_stdout
 # same number, which no reader can tell from a correct answer. It left 7
 # because `timeline_run`, `timeline_status` and `timeline_cancel` joined the
 # table, and `ping`, `exec`'s error, `health_sample`, `network` and `op_info`
-# gained fields a bridge laid down before them does not send.
+# gained fields a bridge laid down before them does not send. It left 8
+# because `health_probe` joined the table and `health_sample` gained
+# `counts_only`, which a bridge laid down before it ignores — and answers with
+# the full, cooking walk the host asked it not to make.
 # `tests/test_protocol_fingerprint.py` reddens when the table moves without
 # this number; the rule is written down in `AGENTS.md`.
-PROTOCOL_VERSION = 8
+PROTOCOL_VERSION = 9
 
 # The shared secret, read from ~/.td-atlas/config.json when the server starts —
 # see _load_token(). It is not baked into this text: a released .tox is one file
@@ -4378,13 +4381,33 @@ def m_health_sample(params):
     # used to disagree about whether the root was one of the operators
     # walked, which made the same number mean two things.
     scanned, unvisited = _bounded_descendants(target, _MAX_WALK_NODES - 1)
+    # Every cook count first, before any read that cooks. Measured 2026-09-29
+    # on 2025.32460: reading a Level TOP's pixelFormatName cooks the Level and
+    # the operator above it, so counts read in the same pass as that showed a
+    # cook the sample itself caused, and a noise nothing pulled read as live.
+    counts = {}
+    for child in scanned:
+        try:
+            counts[child.path] = child.totalCooks
+        except Exception:
+            continue
+    # The first of the host's two samples needs the counts and the frame and
+    # nothing else — and must not cook anything, or the second sample counts
+    # those cooks as the network running.
+    if params.get("counts_only"):
+        return {
+            "frame": absTime.frame,
+            "playing": bool(me.time.play),
+            "nodes": [{"path": path, "cooks": cooks}
+                      for path, cooks in counts.items()],
+        }
     for child in scanned:
         try:
             entry = {
                 "path": child.path,
                 "type": child.OPType,
                 "family": child.family,
-                "cooks": child.totalCooks,
+                "cooks": counts.get(child.path, child.totalCooks),
                 "cookTime": round(child.cookTime, 3),
                 "bypass": bool(child.bypass),
                 "errors": child.errors(recurse=False) or None,
@@ -4501,6 +4524,77 @@ def m_health_sample(params):
         sample["scriptErrorsUnread"] = script_errors_unread[:5]
         sample["scriptErrorsUnreadCount"] = len(script_errors_unread)
     return sample
+
+
+# Operators a cook could make act on the outside world — write a frame, send a
+# message — so the probe below never asks them to cook. The host reports a
+# switched-off one on its own (`output-off`).
+_PROBE_NEVER_COOK = frozenset((
+    "moviefileoutTOP", "audiodeviceoutCHOP", "midioutCHOP", "oscoutCHOP",
+    "dmxoutCHOP", "serialDAT", "touchoutTOP", "ndioutTOP", "videodeviceoutTOP",
+    "oscoutDAT", "tcpipDAT", "udpoutDAT", "websocketDAT",
+))
+
+# What one probe may spend cooking. Chosen, not measured: half a second is
+# thirty frames at 60 fps, a stall an artist notices once and accepts from a
+# check they asked for; the first cook of a Polygonize POP on record took
+# 932 ms, which is why never-cooked operators are left out altogether.
+_PROBE_BUDGET_S = 0.5
+
+
+def m_health_probe(params):
+    """Ask quiet operators to cook, and say which had anything to compute.
+
+    `cook()` without force cooks an operator only when something it depends
+    on changed. Measured 2026-09-29 on 2025.32460, two passes 0.5 s apart
+    over ten unpulled operators: the first pass cooked everything that had
+    not cooked since it was created; the second cooked exactly the three that
+    depend on time (an LFO CHOP, a Noise TOP with `absTime` in `tz`, a Level
+    TOP below it) and none of the static ones. The host calls this twice with
+    a gap and reads the second answer.
+
+    Counts are taken for every operator before any cook and compared after all
+    of them, because cooking an operator cooks what is above it: in walk order
+    an upstream noise would otherwise show no cook of its own.
+
+    Not asked: containers, operators that have never cooked (a first cook can
+    cost most of a second), and the outputs in `_PROBE_NEVER_COOK`. A cook
+    here is the one a viewer would cause, and it advances an operator that
+    keeps state (Speed, Trigger, Count) by the time since its last cook.
+    """
+    targets, never, skipped, missing = [], [], [], []
+    for path in params.get("paths") or []:
+        found = op(path)
+        if found is None:
+            missing.append(path)
+        elif found.family == "COMP" or found.OPType in _PROBE_NEVER_COOK:
+            skipped.append(path)
+        elif found.totalCooks == 0:
+            never.append(path)
+        else:
+            targets.append(found)
+    before = {}
+    for target in targets:
+        before[target.path] = target.totalCooks
+    deadline = time.perf_counter() + _PROBE_BUDGET_S
+    unprobed = []
+    for index, target in enumerate(targets):
+        if time.perf_counter() > deadline:
+            unprobed = [t.path for t in targets[index:]]
+            break
+        try:
+            target.cook()
+        except Exception:
+            continue
+    left = set(unprobed)
+    cooked, quiet = [], []
+    for target in targets:
+        if target.path in left:
+            continue
+        (cooked if target.totalCooks != before[target.path] else quiet).append(
+            target.path)
+    return {"cooked": cooked, "quiet": quiet, "never": never,
+            "skipped": skipped, "missing": missing, "unprobed": unprobed}
 
 
 def _extension_targets(params):
@@ -5651,6 +5745,7 @@ METHODS = {
     "palette_load": m_palette_load,
     "op_types": m_op_types,
     "health_sample": m_health_sample,
+    "health_probe": m_health_probe,
     "extension_add": m_extension_add,
     "annotate": m_annotate,
     "annotations": m_annotations,

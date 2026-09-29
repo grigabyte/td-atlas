@@ -13,16 +13,29 @@ from td_atlas.component import handler
 
 
 class FakeClient:
-    """Replays two prepared health samples, and records what was published."""
+    """Replays two prepared health samples, and records what was published.
 
-    def __init__(self, samples):
+    `probe` answers `health_probe`: by default every quiet operator had
+    nothing to compute; a callable gets the paths; an exception is raised.
+    """
+
+    def __init__(self, samples, probe=None):
         self.samples = list(samples)
         self.published = []
+        self.probe = probe
+        self.probed = []
 
     def call(self, method, **kw):
         if method == "status_note":
             self.published.append(kw.get("health"))
             return {"stored": True}
+        if method == "health_probe":
+            self.probed.append(list(kw["paths"]))
+            if isinstance(self.probe, Exception):
+                raise self.probe
+            if callable(self.probe):
+                return self.probe(kw["paths"])
+            return {"quiet": list(kw["paths"])}
         assert method == "health_sample"
         return self.samples.pop(0)
 
@@ -68,14 +81,42 @@ def kinds(result):
 
 # -- the failure that costs the most time -----------------------------------
 
-def test_reports_a_branch_that_never_cooks():
+def _quiet_pair():
     before = sample(0, [node("/p/a", 100), node("/p/b", 100)])
     after = sample(60, [node("/p/a", 160), node("/p/b", 100)])
-    result = health_mod.check(FakeClient([before, after]))
-    assert "not-cooking" in kinds(result)
-    finding = next(f for f in result.findings if f.kind == "not-cooking")
+    return [before, after]
+
+
+def test_a_quiet_branch_that_changes_is_named_as_not_pulled():
+    client = FakeClient(_quiet_pair(), probe=lambda paths: {"cooked": paths})
+    result = health_mod.check(client)
+    finding = next(f for f in result.findings if f.kind == "not-pulled")
     assert finding.paths == ["/p/b"]
-    assert not result.ok
+    assert finding.severity == "warning"
+    # Asked twice, and only about the quiet one.
+    assert client.probed == [["/p/b"], ["/p/b"]]
+
+
+def test_a_quiet_operator_with_nothing_to_compute_is_a_note_not_an_error():
+    """Reports 3, 4 and 5: a Ramp TOP, a Text DAT, a MAT, each an [ERROR]."""
+    result = health_mod.check(FakeClient(_quiet_pair()))
+    finding = next(f for f in result.findings if f.kind == "static")
+    assert finding.paths == ["/p/b"] and finding.severity == "note"
+    assert result.ok
+
+
+def test_what_the_probe_left_out_is_said_apart():
+    probe = {"never": ["/p/b"], "skipped": [], "unprobed": [], "quiet": []}
+    result = health_mod.check(FakeClient(_quiet_pair(), probe=lambda _: probe))
+    assert "never-cooked" in kinds(result)
+    assert result.ok
+
+
+def test_a_probe_that_fails_leaves_the_question_open_as_a_warning():
+    client = FakeClient(_quiet_pair(), probe=RuntimeError("UnknownMethod"))
+    result = health_mod.check(client)
+    finding = next(f for f in result.findings if f.kind == "not-cooking")
+    assert finding.severity == "warning" and "unknown" in finding.message
 
 
 def test_a_fully_live_network_is_clean():
@@ -550,6 +591,11 @@ def test_a_one_line_warning_keeps_its_text_and_loses_only_the_prefix():
 TIMED = "timed in test_prints_what_each_new_section_costs"
 WITH_SCRIPT_ERRORS = "a second reading of the script-errors payload, timed with it"
 PARSED_FIELD = "predates the gate: a lookup on the already-parsed sample"
+# Measured live 2026-09-29 (2025.32460): one health_probe round trip cost
+# 19-37 ms over 12 quiet operators and 42-63 ms over 21 (a network whose GLSL
+# TOP cooks in 46 ms); two are made, 0.2 s apart (`_PROBE_GAP`), and each is
+# capped at 0.5 s of cooking inside TouchDesigner (`_PROBE_BUDGET_S`).
+PROBED = "two health_probe calls 0.2 s apart: 19-63 ms each, measured live"
 
 SECTION_COSTS = {
     "shader-compile": TIMED,
@@ -562,7 +608,12 @@ SECTION_COSTS = {
     "node-errors": PARSED_FIELD,
     "node-warnings": PARSED_FIELD,
     "output-off": PARSED_FIELD,
-    "not-cooking": PARSED_FIELD,
+    "not-cooking": PROBED,
+    "not-pulled": PROBED,
+    "static": PROBED,
+    "never-cooked": PROBED,
+    "quiet-outputs": PROBED,
+    "not-cooking-unprobed": PROBED,
     "paused": PARSED_FIELD,
     "non-realtime": PARSED_FIELD,
     "expensive": PARSED_FIELD,

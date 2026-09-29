@@ -7,7 +7,7 @@ Every entry here was hit while building a real composition. Each one produced
 no error, no warning, and no visible sign that anything was wrong.
 
 `td_health` prints each finding with a short kind in brackets, such as
-`[WARN ] stalled` or `[ERROR] not-cooking`. Every kind it can print is named
+`[WARN ] stalled` or `[WARN ] not-pulled`. Every kind it can print is named
 below, so search for the kind directly. A test holds that, and a new detector
 cannot arrive without an entry.
 
@@ -16,8 +16,23 @@ cannot arrive without an entry.
 TouchDesigner cooks on demand. An operator is only pulled if a viewer, a render
 chain, an output device or an export needs it. A network you build
 programmatically has no viewer on it, so **it does not run at all**.
-`td_health` calls this `not-cooking`, and reports it when an operator did not
-cook once across the two samples.
+`td_health` calls this `not-pulled`, and reports it when an operator did not
+cook once across the two samples *and* had something new to compute when the
+check asked it to cook — twice, 0.2 s apart. An operator that did not cook
+because nothing it depends on changes (a Ramp TOP with fixed settings, a Text
+DAT, a material) is reported as the note `static`: that is right, not a fault.
+Three agent sessions read the old single `[ERROR]` on such operators as
+breakage. The same probe names `never-cooked` (nothing has asked for it since
+it was created; a first cook can be expensive, so it is not asked),
+`quiet-outputs` (a Movie File Out or another output, never asked to cook
+because a cook could write or send something), and `not-cooking-unprobed`
+(the check's half-second of cooking ran out). `not-cooking` is what is left
+when the probe could not run at all: static and unpulled are then not told
+apart.
+
+The probe cooks what it asks, as a viewer glancing at the node would. An
+operator that keeps state (Speed, Trigger, Count) moves on by the time since
+its last cook; reset those before a recording in any case.
 
 **Symptom.** Renders work (they force a cook), but feedback trails never
 accumulate, animation is frozen between calls, and a Movie File Out writes
@@ -25,7 +40,10 @@ nothing while reporting no error.
 
 **Diagnosis.** `td_health` compares each operator's cook count against the frame
 clock and names the dormant ones. A freshly built `noise → blur` pair reports
-`0/2 operators cooking`.
+`0/2 operators cooking`. Measured 2026-09-29 on the cubes network loaded from
+its `.tox` with recording off: 9 operators `not-pulled` (the whole time-driven
+chain), 9 `static` (labels, shader DATs, the material), the Movie File Out
+under `quiet-outputs`.
 
 **Fix.** Put a `cacheTOP` with `alwayscook` on at the end of the chain, pulling
 whatever must stay live. `nullTOP` has no such parameter. `cacheTOP`,

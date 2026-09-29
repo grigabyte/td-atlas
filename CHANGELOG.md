@@ -18,6 +18,23 @@ either from the code they are running:
 
 ### Changed
 
+- **The bridge speaks protocol 9, and protocol 9 is now also the minimum the
+  host accepts.** Run `td-atlas reload` once in every project that holds the
+  bridge, and restart the MCP server (in practice, the client that launched
+  it). `health_probe` joined the method table and `health_sample` gained
+  `counts_only`.
+- **`td_health` tells a static operator from a branch nothing pulls.** The
+  `[ERROR] not-cooking` finding fired on anything that did not cook: a Ramp
+  TOP with fixed settings, a Text DAT, a material — three agent sessions read
+  it as breakage. Each quiet operator is now asked to cook, twice, 0.2 s
+  apart. One that computes something new both times is `not-pulled`
+  (warning); one that computes nothing is `static` (note). Never-cooked
+  operators, outputs and whatever falls past a half-second budget are not
+  asked and are named as such. The probe cooks what it asks, as a viewer
+  would. The first sample also no longer cooks anything: reading a Level
+  TOP's pixel format cooked it and the operator above it, which then read as
+  running.
+
 - **A refused connection says whether TouchDesigner is running.** With a
   TouchDesigner process up and the port silent, the error (and `doctor`)
   says the open project has not loaded the bridge and quotes the bootstrap

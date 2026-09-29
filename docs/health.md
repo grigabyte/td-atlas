@@ -5,9 +5,12 @@ does not:
 
 ```
 TouchDesigner (TouchDesigner Non-Commercial) — 61/60 fps, 16/51 operators cooking
-[ERROR] 33 operator(s) did not cook once in 91 frames. A branch nothing
-        displays or records is never pulled, so it is not running at all
-         /project1/AV/fb, /project1/AV/out, /project1/AV/rec
+[WARN ] 9 operator(s) change from frame to frame but nothing displays or
+        records them, so they are not running: none cooked in 61 frames, and
+        asked to cook twice, 0.2s apart, each had something new to compute
+        both times. If one should be live, view it, record it, or feed it to
+        a Cache TOP with alwayscook on
+         /project1/cubes/field, /project1/cubes/comp, /project1/cubes/out
 [ERROR] 1 operator(s) had their resolution silently reduced by the licence —
         the output is smaller than asked for
 [ERROR] 1 output operator(s) switched off — these produce nothing and report
@@ -57,6 +60,15 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
   scan early, `nondeterminism-unscanned` (note) says how many operators'
   parameters were checked, and how many scripts when not all were. Scripts
   are read first, under the same budget.
+
+An operator that did not cook is asked to cook, twice, 0.2 s apart: one that
+computes something new both times changes but is pulled by nothing
+(`not-pulled`, warning); one that computes nothing is `static` (note), which
+is normal for fixed settings, a DAT or a material. Operators that never cooked,
+outputs, and those past the half-second cooking budget are not asked, and are
+named as `never-cooked`, `quiet-outputs` and `not-cooking-unprobed`. The
+probe costs 20-63 ms per call (measured over 12 and 21 quiet operators) plus
+the 0.2 s gap, and it cooks what it asks, as a viewer would.
 
 `td_health` also tells a genuinely dead network from a paused timeline or a
 backgrounded window. In those the frame clock is frozen and there is no evidence

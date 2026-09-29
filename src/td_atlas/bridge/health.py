@@ -240,6 +240,92 @@ def _file_cook_time(node: dict, first_frame: float, now: float,
     )
 
 
+# The gap between the two probes. The second one only finds work in an
+# operator whose inputs moved since the first, so at least one frame has to
+# pass; 0.2 s is twelve at 60 fps and still short beside the sampling interval.
+# Chosen, not measured — the measurement behind the probe used 0.5 s.
+_PROBE_GAP = 0.2
+
+
+def _probe(client: BridgeClient, paths: list[str]) -> dict | None:
+    """Two `health_probe` passes a moment apart; the second one's answer.
+
+    None when the probe could not run at all — the report then says it could
+    not tell a static operator from one nothing pulls, instead of guessing.
+    """
+    try:
+        client.call("health_probe", paths=paths)
+        time.sleep(_PROBE_GAP)
+        return client.call("health_probe", paths=paths)
+    except Exception:
+        return None
+
+
+def _file_probe(health: Health, probed: dict, frames: int) -> None:
+    """Turn the second probe's answer into findings, one per kind of quiet."""
+    changing = probed.get("cooked") or []
+    static = probed.get("quiet") or []
+    never = probed.get("never") or []
+    unprobed = probed.get("unprobed") or []
+    outputs = probed.get("skipped") or []
+    if changing:
+        health.findings.append(
+            Finding(
+                "warning", "not-pulled",
+                f"{len(changing)} operator(s) change from frame to frame but "
+                f"nothing displays or records them, so they are not running: "
+                f"none cooked in {frames} frames, and asked to cook twice, "
+                f"{_PROBE_GAP}s apart, each had something new to compute both "
+                f"times. If one should be live, view it, record it, or feed "
+                f"it to a Cache TOP with alwayscook on",
+                changing,
+            )
+        )
+    if unprobed:
+        health.findings.append(
+            Finding(
+                "note", "not-cooking-unprobed",
+                f"{len(unprobed)} operator(s) did not cook in {frames} frames "
+                f"and were not asked to, because the check's cooking budget "
+                f"ran out; whether they are static or pulled by nothing is "
+                f"unknown",
+                unprobed,
+            )
+        )
+    if never:
+        health.findings.append(
+            Finding(
+                "note", "never-cooked",
+                f"{len(never)} operator(s) have not cooked once since they were "
+                f"created — nothing has asked for their output. Not asked to "
+                f"cook here, since a first cook can be expensive",
+                never,
+            )
+        )
+    if outputs:
+        health.findings.append(
+            Finding(
+                "note", "quiet-outputs",
+                f"{len(outputs)} output operator(s) did not cook in {frames} "
+                f"frames. Not asked to, since a cook could write or send "
+                f"something; one that should be running needs a source that "
+                f"is pulled, and one switched off is named under output-off",
+                outputs,
+            )
+        )
+    if static:
+        health.findings.append(
+            Finding(
+                "note", "static",
+                f"{len(static)} operator(s) did not cook because they had "
+                f"nothing new to compute: asked to cook, they did not. Their "
+                f"inputs and parameters are not changing — normal for a "
+                f"generator with fixed settings, a DAT, a material",
+                static,
+            )
+        )
+
+
 def _clock_read_line(read: dict) -> str:
     where = read.get("where") or ""
     if where == "text":
@@ -276,7 +362,7 @@ def check(
     """
     asked = interval
     interval = max(0.0, min(float(interval), _MAX_INTERVAL))
-    first = client.call("health_sample", path=path)
+    first = client.call("health_sample", path=path, counts_only=True)
     time.sleep(interval)
     second = client.call("health_sample", path=path)
 
@@ -498,16 +584,26 @@ def check(
                 inactive,
             )
         )
+    # Three agents in a row (reports 3-5) read this as an error on a Ramp
+    # TOP, a Text DAT, a MAT: things with nothing to recompute, which are
+    # right not to cook. Asking each one to cook — twice, a moment apart —
+    # separates those from a branch that changes but that nothing pulls,
+    # which is the trap the finding was written for (see m_health_probe).
     if dormant:
-        health.findings.append(
-            Finding(
-                "error", "not-cooking",
-                f"{len(dormant)} operator(s) did not cook once in "
-                f"{frames} frames. A branch nothing displays or records is "
-                f"never pulled, so it is not running at all",
-                dormant,
+        probed = _probe(client, dormant)
+        if probed is None:
+            health.findings.append(
+                Finding(
+                    "warning", "not-cooking",
+                    f"{len(dormant)} operator(s) did not cook once in "
+                    f"{frames} frames, and the check could not ask them to "
+                    f"cook, so which are static (normal) and which change but "
+                    f"are pulled by nothing (not running) is unknown",
+                    dormant,
+                )
             )
-        )
+        else:
+            _file_probe(health, probed, frames)
     if paused:
         health.findings.append(
             Finding(

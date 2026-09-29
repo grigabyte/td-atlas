@@ -1,7 +1,7 @@
 ---
 istochnik: docs/troubleshooting.md
 kommit: f767122
-hesh: 3dd5c447036f20d1ea1a8cb2a4846a0f13ff7bd78044efac4c864133031d164e
+hesh: 1ffff349c3354184f5fb464ff5121a3e44012bf8b2e9f6e9afb46d41b42c8c7e
 ---
 
 # Починка
@@ -16,7 +16,7 @@ hesh: 3dd5c447036f20d1ea1a8cb2a4846a0f13ff7bd78044efac4c864133031d164e
 | `doctor` говорит `bridge : absent` | ни один TouchDesigner не зарегистрировал мост, и на порту никто не слушает | откройте проект и вставьте в текстпорт строку bootstrap из `td-atlas install` |
 | живой инструмент отказывает словами *«nothing answered on the bridge port»* | TouchDesigner не запущен либо запущен без моста | `td-atlas doctor`, потом строка bootstrap |
 | *«TouchDesigner is running (pid N), but nothing answers on port P»*, или `doctor` пишет то же как `warn` | проект, открытый в TouchDesigner, не загрузил мост. Сообщение приводит строку bootstrap и говорит, нужен ли сначала `td-atlas install` | вставить приведённую строку в текстпорт |
-| *«The running bridge reports protocol N, below the minimum 8 this client supports»*, а из инструмента MCP та же строка плюс подсказка *«the bridge and this host speak different protocol versions»* | разложенный мост старше (или новее) этой копии репозитория. Самый старый мост, который примут, говорит на протоколе 8; всё, что старше, отвергают прямо на соединении | `td-atlas reload`, единственная команда, которая говорит с мостом, отвергнутым проверкой версии |
+| *«The running bridge reports protocol N, below the minimum 9 this client supports»*, а из инструмента MCP та же строка плюс подсказка *«the bridge and this host speak different protocol versions»* | разложенный мост старше (или новее) этой копии репозитория. Самый старый мост, который примут, говорит на протоколе 9; всё, что старше, отвергают прямо на соединении | `td-atlas reload`, единственная команда, которая говорит с мостом, отвергнутым проверкой версии |
 | вызов возвращается с `UnknownMethod` | то же самое с другой стороны. Мост разложили из старого пакета, поэтому такого метода у него нет | `td-atlas reload`, потом повторите вызов |
 | *«the bridge rejected the token this host sent»* | токен моста и `~/.td-atlas/config.json` расходятся | `td-atlas doctor` их сравнивает; `td-atlas install` раскладывает мост заново под текущий токен |
 | *«something answered on that port but not with a bridge reply»* | порт держит другая программа либо Web Server DAT настроен неверно | `td-atlas doctor`, потом `td-atlas install` |
