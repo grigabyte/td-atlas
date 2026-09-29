@@ -499,6 +499,8 @@ def check(
     bypassed: list[str] = []
     inactive: list[str] = []
     shaders: list[str] = []
+    arrays_long: list[str] = []
+    arrays_short: list[str] = []
 
     # Two innocent conditions freeze the frame clock: the timeline is paused,
     # or TouchDesigner's window is in the background, where it all but stops
@@ -517,6 +519,11 @@ def check(
         failure = _compile_excerpt(node.get("compileResult") or "")
         if failure:
             shaders.append(f"{node['path']} ({failure})")
+        for array in node.get("arrayMismatch") or []:
+            line = (f"{node['path']} ({array['name']}[{array['declared']}] "
+                    f"fed {array['samples']} by {array['chop']})")
+            (arrays_long if array["declared"] > array["samples"]
+             else arrays_short).append(line)
         # A node is expected to keep up with the frame clock; COMPs and other
         # containers legitimately cook rarely, so only leaf operators count.
         if node["family"] == "COMP":
@@ -611,6 +618,29 @@ def check(
                 f"open an Info DAT; the compiler's own line, with the source "
                 f"DAT and the line number, is below",
                 shaders,
+            )
+        )
+
+    if arrays_long:
+        health.findings.append(
+            Finding(
+                "warning", "glsl-array-length",
+                f"{len(arrays_long)} uniform array(s) declared longer than the "
+                f"CHOP feeding them. The elements past the data are undefined — "
+                f"measured, one read NaN and another 1.0 — so the shader draws "
+                f"garbage or black there, and nothing reports it. Declare the "
+                f"length the CHOP sends, or loop only to it",
+                arrays_long,
+            )
+        )
+    if arrays_short:
+        health.findings.append(
+            Finding(
+                "note", "glsl-array-length",
+                f"{len(arrays_short)} uniform array(s) declared shorter than "
+                f"the CHOP feeding them; the samples past the declared length "
+                f"never reach the shader",
+                arrays_short,
             )
         )
 

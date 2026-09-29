@@ -606,6 +606,10 @@ PROBED = "two health_probe calls 0.2 s apart: 19-63 ms each, measured live"
 # Only when a traceback is kept: two script_errors_recheck calls and the same
 # 0.2 s gap. Not timed separately; each reads and clears one text per path.
 RECHECKED = "two script_errors_recheck calls 0.2 s apart, only with tracebacks"
+# Measured live 2026-09-29: _array_mismatches cost 0.008 ms per GLSL operator
+# (100 calls on one GLSL TOP with one uniform array); the host side is a
+# lookup on the parsed sample.
+ARRAYS = "0.008 ms per GLSL operator inside the walk, measured live"
 
 SECTION_COSTS = {
     "shader-compile": TIMED,
@@ -620,6 +624,7 @@ SECTION_COSTS = {
     "output-off": PARSED_FIELD,
     "not-cooking": PROBED,
     "script-errors-stale": RECHECKED,
+    "glsl-array-length": ARRAYS,
     "not-pulled": PROBED,
     "static": PROBED,
     "never-cooked": PROBED,
@@ -748,3 +753,15 @@ def test_without_the_recheck_the_old_error_stands():
     finding = next(f for f in health_mod.check(FakeClient(_scripted_pair())).findings
                    if f.kind == "script-errors")
     assert finding.severity == "error"
+
+
+def test_a_uniform_array_longer_than_its_chop_is_a_warning():
+    """Agent report 4: 460 black frames of 1200 from uSeg[256] fed 192."""
+    long_ = {"name": "uSeg", "declared": 256, "samples": 192, "chop": "/p/sim"}
+    short = {"name": "uDot", "declared": 32, "samples": 64, "chop": "/p/sim"}
+    nodes = [node("/p/g", 100, type="glslTOP", arrayMismatch=[long_, short])]
+    after = [node("/p/g", 160, type="glslTOP", arrayMismatch=[long_, short])]
+    result = health_mod.check(FakeClient([sample(0, nodes), sample(60, after)]))
+    found = {f.severity: f for f in result.findings if f.kind == "glsl-array-length"}
+    assert found["warning"].paths == ["/p/g (uSeg[256] fed 192 by /p/sim)"]
+    assert found["note"].paths == ["/p/g (uDot[32] fed 64 by /p/sim)"]

@@ -1,7 +1,7 @@
 ---
 istochnik: CHANGELOG.md
 kommit: cda2d9b
-hesh: aab02773c8fb02dee205b6af88db91944c55f52d202c4553cef9afa76cfbf90e
+hesh: 8d1020e28d5e7cf5af87bb20e93d0396c741ecdec6dbfec8348d45c79548448c
 ---
 
 # Журнал изменений
@@ -59,6 +59,11 @@ hesh: aab02773c8fb02dee205b6af88db91944c55f52d202c4553cef9afa76cfbf90e
 
 ### Добавлено
 
+- **`td_health` ловит массив uniform длиннее своего CHOP.** Шейдер
+  собирается, никто не предупреждает, а элементы за концом данных не
+  определены (замер: NaN, потом 1.0); `glsl-array-length` называет массив,
+  объявленную длину и число сэмплов. `health_sample` несёт `arrayMismatch`
+  для GLSL-операторов.
 - **Схема несёт то, что параметр делает и чего не говорит его имя.**
   Замерено на 2025.32460 и печатается под параметром в
   `td_operator_schema` и `td-atlas op`: у Ramp TOP `radial` — угол, а

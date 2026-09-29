@@ -12,6 +12,14 @@ import pytest
 from td_atlas.component import handler
 
 
+class Par:
+    def __init__(self, name, value):
+        self.name, self.value = name, value
+
+    def eval(self):
+        return self.value
+
+
 class FakeOp:
     def __init__(self, path, dirty=False, cooks=5, family="TOP",
                  optype="noiseTOP", upstream=None):
@@ -123,3 +131,30 @@ def test_a_traceback_raised_again_is_live(ops, monkeypatch):
     dat.text = "  Error: Traceback\nValueError: live (/p/cb)"
     verdict = handler.m_script_errors_recheck({"step": "read", "state": state})
     assert verdict["verdicts"]["/p/cb"]["verdict"] == "live"
+
+
+def test_array_lengths_are_read_from_the_source_and_the_chop(monkeypatch):
+    class Dat:
+        text = "uniform vec4 uSeg[256];\nuniform float uOk[8];\n"
+
+    class Chop:
+        path, numSamples = "/p/sim", 192
+
+    class Small:
+        path, numSamples = "/p/small", 8
+
+    values = {"pixeldat": Dat(), "array0name": "uSeg", "array0arraytype":
+              "uniformarray", "array0chop": Chop(), "array1name": "uOk",
+              "array1arraytype": "uniformarray", "array1chop": Small()}
+
+    class Glsl:
+        class seq:
+            class array:
+                numBlocks = 2
+
+        class par:
+            pixeldat = Par("pixeldat", values["pixeldat"])
+
+    monkeypatch.setattr(handler, "_par_value", lambda target, name: values.get(name))
+    assert handler._array_mismatches(Glsl()) == [
+        {"name": "uSeg", "declared": 256, "samples": 192, "chop": "/p/sim"}]

@@ -50,6 +50,11 @@ either from the code they are running:
 
 ### Added
 
+- **`td_health` catches a uniform array longer than its CHOP.** The shader
+  compiles, nothing warns, and the elements past the data are undefined
+  (measured: NaN, then 1.0); `glsl-array-length` names the array, its
+  declared length and the sample count. `health_sample` carries
+  `arrayMismatch` for GLSL operators.
 - **The schema carries what a parameter does that its name does not say.**
   Measured on 2025.32460 and printed under the parameter by
   `td_operator_schema` and `td-atlas op`: Ramp TOP `radial` is the angle and

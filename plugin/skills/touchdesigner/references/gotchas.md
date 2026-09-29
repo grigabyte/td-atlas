@@ -145,6 +145,14 @@ The compiler's own output is a property, `compileResult`, on `glslTOP`,
 `td_health` reads it and prints the failing line and source DAT directly, as
 `shader-compile`.
 
+A uniform array declared longer than the CHOP that feeds it compiles cleanly
+and warns of nothing. Measured on 2025.32460: `uniform vec4 uSeg[256]` fed 192
+samples read NaN at `uSeg[192]` and 1.0 at `uSeg[200]`; an agent got 460 black
+frames of 1200 from exactly this after cutting its data short. `td_health`
+compares each uniform array's literal length in the source with its CHOP's
+sample count and reports `glsl-array-length`: a warning when the array is
+longer, a note when it is shorter. A length behind a `#define` is not read.
+
 ## Background throttling
 
 TouchDesigner all but stops rendering when its window is not visible. Cook

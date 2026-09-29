@@ -4246,6 +4246,58 @@ def m_palette_load(params):
 # read below stays silent rather than inventing a result.
 _GLSL_TYPES = ("glslTOP", "glslmultiTOP", "glslMAT", "glslPOP")
 
+# The DATs a GLSL operator's source can sit in: TOP and POP name them one way,
+# the MAT another (read off the operators, 2025.32460).
+_GLSL_SOURCE_PARS = ("predat", "vertexdat", "pixeldat", "computedat",
+                     "vdat", "pdat", "gdat")
+
+
+def _array_mismatches(node):
+    """Uniform arrays whose declared length is not what their CHOP sends.
+
+    Measured 2026-09-29 on 2025.32460: `uniform vec4 uSeg[256]` fed by a CHOP
+    of 192 samples compiles, warns of nothing and errs of nothing, and the
+    elements past the data hold whatever is there — `uSeg[192]` read NaN and
+    `uSeg[200]` 1.0. Agent report 4 got 460 black frames of 1200 that way.
+    Only uniform arrays with a CHOP and a literal length in the source are
+    judged; a length behind a #define is not read.
+    """
+    try:
+        seq = node.seq.array
+    except Exception:
+        return []
+    texts = []
+    for name in _GLSL_SOURCE_PARS:
+        par = getattr(node.par, name, None)
+        if par is None:
+            continue
+        try:
+            dat = par.eval()
+            if dat is not None and getattr(dat, "text", None):
+                texts.append(dat.text)
+        except Exception:
+            continue
+    if not texts:
+        return []
+    source = "\n".join(texts)
+    found = []
+    for index in range(seq.numBlocks):
+        name = _par_value(node, "array%dname" % index)
+        kind = _par_value(node, "array%darraytype" % index)
+        chop = _par_value(node, "array%dchop" % index)
+        if not name or kind != "uniformarray" or chop is None:
+            continue
+        match = re.search(r"\b%s\s*\[\s*(\d+)\s*\]" % re.escape(name), source)
+        samples = _attr(chop, "numSamples")
+        if not match or not isinstance(samples, int):
+            continue
+        declared = int(match.group(1))
+        if declared != samples:
+            found.append({"name": name, "declared": declared,
+                          "samples": samples, "chop": chop.path})
+    return found
+
+
 # Operators that hold the previous frame's data, and the parameter naming what
 # they feed back from (the index: `top` on feedbackTOP, `targetpop` on
 # feedbackPOP; feedbackCHOP has no target parameter). Reported because a
@@ -4609,6 +4661,9 @@ def m_health_sample(params):
                 result = getattr(child, "compileResult", None)
                 if result:
                     entry["compileResult"] = _clip(result)
+                arrays = _array_mismatches(child)
+                if arrays:
+                    entry["arrayMismatch"] = arrays
             if walk_scripts:
                 # Its own try: a read that fails on some operator class must
                 # cost the attribution, not the node — everything already in
