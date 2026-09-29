@@ -1190,7 +1190,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
             if exc.stderr:
                 sys.stderr.write(exc.stderr)
             if exc.result is not None:
-                print(json.dumps(exc.result, indent=2))
+                print(json.dumps(exc.result, indent=2, ensure_ascii=False))
         _say(f"error: {exc}")
         if isinstance(exc, BridgeError) and exc.traceback:
             _say(exc.traceback)
@@ -1200,7 +1200,7 @@ def cmd_exec(args: argparse.Namespace) -> int:
     if result.get("stderr"):
         sys.stderr.write(result["stderr"])
     if result.get("result") is not None:
-        print(json.dumps(result["result"], indent=2))
+        print(json.dumps(result["result"], indent=2, ensure_ascii=False))
     return 0
 
 

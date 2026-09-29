@@ -1447,7 +1447,8 @@ def _exec_failure_head(exc: BridgeError) -> str:
     if exc.result is not None:
         parts.append(
             "result (set before the error):\n"
-            + _indented(json.dumps(exc.result, indent=2, default=str))
+            + _indented(json.dumps(exc.result, indent=2, default=str,
+                                   ensure_ascii=False))
         )
     parts.append(f"{exc.type}: {exc.message}\n{exc.traceback or ''}")
     return "\n\n".join(parts)
@@ -1480,7 +1481,8 @@ def td_exec(code: str) -> str:
     if result.get("stderr"):
         parts.append("stderr: " + result["stderr"].rstrip())
     if result.get("result") is not None:
-        parts.append(json.dumps(result["result"], indent=2, default=str))
+        parts.append(json.dumps(result["result"], indent=2, default=str,
+                                ensure_ascii=False))
     return _warn(client) + ("\n".join(parts) or "(no output)")
 
 

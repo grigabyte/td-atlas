@@ -2391,11 +2391,17 @@ def m_exec(params):
     result = None
     with redirect_stdout(out), redirect_stderr(err):
         try:
+            # Prefer eval so a trailing expression returns its value; fall
+            # back to exec for statements. The exec runs outside the except
+            # clause: run inside it, any error the script raised was chained
+            # to the eval attempt's SyntaxError, and every traceback opened
+            # with a false "SyntaxError: invalid syntax" at line 1 (agent
+            # report 5, point 10).
             try:
-                # Prefer eval so a trailing expression returns its value; fall
-                # back to exec for statements.
                 compiled = compile(code, "<td-atlas>", "eval")
             except SyntaxError:
+                compiled = None
+            if compiled is None:
                 exec(compile(code, "<td-atlas>", "exec"), scope)
                 result = scope.get("result")
             else:

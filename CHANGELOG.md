@@ -57,6 +57,12 @@ either from the code they are running:
 
 ### Fixed
 
+- **A `td_exec` traceback starts at the real error.** The statement run sat
+  inside the handler of the failed eval attempt, so every error was chained
+  to a false "SyntaxError: invalid syntax" at line 1. And a `result` in
+  Cyrillic (or any non-ASCII text) prints as itself in `td_exec` and
+  `td-atlas exec`, not as `\u` escapes.
+
 - **A project whose file name is not ASCII opens and writes back.**
   `toeexpand` and `toecollapse` read their argument's UTF-8 bytes as Latin-1,
   so reading `кубы.tox` failed with "Error opening file: ÐºÑƒÐ±Ñ‹.tox" and a
