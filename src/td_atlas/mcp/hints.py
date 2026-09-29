@@ -556,6 +556,17 @@ def hint(key: str, **values: str) -> str:
     return HINTS[key].fill(**values).render() if values else HINTS[key].render()
 
 
+# TouchDesigner's own subclass for a missing member: `op.par.value0` on an
+# operator without one raised `tdAttributeError` (measured 2026-09-29,
+# 2025.32460), and the most common slip — a misspelt parameter — reached the
+# agent as "no mapped recovery".
+_TYPE_ALIASES = {"tdAttributeError": "AttributeError"}
+
+
+def _mapped(error_type: str) -> str:
+    return _TYPE_ALIASES.get(error_type, error_type)
+
+
 def _reads_none(error_type: str, message: str) -> bool:
     return (error_type == "AttributeError"
             and "'NoneType' object has no attribute" in (message or ""))
@@ -571,10 +582,11 @@ def classify(exc: BaseException) -> Recovery:
         reason = getattr(exc, "reason", "") or "bridge_unreachable"
         return HINTS.get(reason, HINTS["bridge_unreachable"])
     if isinstance(exc, BridgeError):
-        if _reads_none(exc.type, exc.message):
+        error_type = _mapped(exc.type)
+        if _reads_none(error_type, exc.message):
             return HINTS["none_attribute"]
-        if exc.type in MAPPED_BRIDGE_ERRORS:
-            return HINTS[exc.type]
+        if error_type in MAPPED_BRIDGE_ERRORS:
+            return HINTS[error_type]
         return HINTS["unmapped_bridge_error"].fill(type=exc.type)
     if isinstance(exc, IndexMissing):
         return HINTS["index_missing"]
@@ -605,6 +617,7 @@ def from_record(error_type: str = "", reason: str = "",
         return HINTS.get(reason, HINTS["bridge_unreachable"])
     if error_type == "BridgeUnavailable":
         return HINTS["bridge_unreachable"]
+    error_type = _mapped(error_type)
     if _reads_none(error_type, message):
         return HINTS["none_attribute"]
     if error_type in MAPPED_BRIDGE_ERRORS:

@@ -479,3 +479,12 @@ def test_an_attribute_read_on_none_points_at_the_path_not_the_parameter():
                          "message": "'td.ParCollection' object has no attribute 'blurr'"},
                         "exec")
     assert hints.classify(other) is hints.HINTS["AttributeError"]
+
+
+def test_touchdesigners_own_attribute_error_gets_the_parameter_advice():
+    """`op.par.value0` on an operator without one raises tdAttributeError."""
+    exc = BridgeError({"type": "tdAttributeError",
+                       "message": "'td.ParCollection' object has no attribute 'value0'"},
+                      "exec")
+    assert hints.classify(exc) is hints.HINTS["AttributeError"]
+    assert hints.from_record("tdAttributeError") is hints.HINTS["AttributeError"]

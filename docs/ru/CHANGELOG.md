@@ -1,7 +1,7 @@
 ---
 istochnik: CHANGELOG.md
 kommit: cda2d9b
-hesh: 2d48590ff5eaac35a189c640803c0029a4c4af5cf2663659832e944da1cfebf5
+hesh: 43366a9a7378914314163cbc4df6d3f3a67f393f9edba56d5d146e51848a3e31
 ---
 
 # Журнал изменений
@@ -53,7 +53,9 @@ hesh: 2d48590ff5eaac35a189c640803c0029a4c4af5cf2663659832e944da1cfebf5
 - **`AttributeError` на `None` указывает на путь.** `op('/wrong').par`
   получал подсказку про опечатку в имени параметра; теперь —
   `none_attribute`: по этому пути ничего нет, проверьте его через
-  `td_network`.
+  `td_network`. Собственный `tdAttributeError` TouchDesigner (опечатка в
+  имени параметра) теперь получает подсказку про имя параметра вместо «no
+  mapped recovery».
 
 ### Добавлено
 

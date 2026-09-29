@@ -45,6 +45,8 @@ either from the code they are running:
 - **An `AttributeError` on `None` points at the path.** `op('/wrong').par`
   used to get the hint for a misspelt parameter; it now gets
   `none_attribute`: nothing exists at that path, check it with `td_network`.
+  TouchDesigner's own `tdAttributeError` (a misspelt parameter) now gets the
+  parameter-name hint instead of "no mapped recovery".
 
 ### Added
 
