@@ -631,7 +631,7 @@ def test_an_unreachable_bridge_lands_with_the_reason_hints_are_keyed_on():
 
 def test_a_stored_failure_maps_to_the_same_hint_a_live_one_would():
     for reason in ("bridge_timeout", "bridge_asleep", "bridge_unreachable",
-                   "bridge_not_loaded", "bridge_protocol"):
+                   "bridge_not_loaded", "exec_timeout", "bridge_protocol"):
         live = hints.classify(BridgeUnavailable("x", reason=reason))
         assert hints.from_record("BridgeUnavailable", reason) is live
     live = hints.classify(BridgeError({"type": "ScopeHeld", "message": ""}, "m"))
@@ -644,9 +644,10 @@ def test_an_unmapped_stored_failure_gets_the_honest_gap():
 
 
 def test_every_reason_the_journal_can_store_has_a_hint():
-    """The six `BridgeUnavailable.reason` values all resolve to real advice."""
+    """The seven `BridgeUnavailable.reason` values all resolve to real advice."""
     for reason in ("bridge_unreachable", "bridge_not_loaded", "bridge_http",
-                   "bridge_timeout", "bridge_asleep", "bridge_protocol"):
+                   "bridge_timeout", "bridge_asleep", "exec_timeout",
+                   "bridge_protocol"):
         assert reason in hints.HINTS
         assert hints.from_record("BridgeUnavailable", reason).action
 

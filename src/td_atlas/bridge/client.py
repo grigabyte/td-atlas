@@ -436,7 +436,10 @@ class BridgeClient:
             message, reason = self._diagnose_refusal(exc.reason)
             raise BridgeUnavailable(message, reason=reason) from exc
         except TimeoutError as exc:
-            message, reason = self._diagnose_timeout(timeout or self.timeout)
+            if method == "exec":
+                message, reason = self._exec_timeout(timeout or self.timeout)
+            else:
+                message, reason = self._diagnose_timeout(timeout or self.timeout)
             raise BridgeUnavailable(message, reason=reason) from exc
 
         if not payload.get("ok"):
@@ -485,6 +488,25 @@ class BridgeClient:
             f"port {self.port}: the project open in it has not loaded the "
             f"td-atlas bridge. {step}",
             "bridge_not_loaded",
+        )
+
+    def _exec_timeout(self, waited: float) -> tuple[str, str]:
+        """A td_exec that outlived the wait: the script is not stopped.
+
+        Measured 2026-09-29 on 2025.32460: a script sleeping 5 s seven times
+        was given up on at 30 s, and all seven of its files were written
+        afterwards — TouchDesigner runs it to the end whatever the caller
+        does. The process read 0.0% CPU in state S meanwhile, because a
+        script that sleeps or waits on I/O uses none, so the process reading
+        that tells a busy TouchDesigner from an asleep one says nothing about
+        an exec and is not consulted: it had called this one asleep.
+        """
+        return (
+            f"td_exec did not answer within {waited}s. The script is not "
+            f"stopped: TouchDesigner runs it to its end, and what it writes "
+            f"or changes happens; only its output is lost to this call. "
+            f"Wait until td_status answers again, then check its effects.",
+            "exec_timeout",
         )
 
     def _diagnose_timeout(self, waited: float) -> tuple[str, str]:

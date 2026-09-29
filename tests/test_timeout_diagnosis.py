@@ -151,3 +151,15 @@ def test_the_process_is_read_only_on_a_timeout(monkeypatch):
 
 def test_the_asleep_reason_has_its_own_repair():
     assert "front" in hints.from_record("BridgeUnavailable", "bridge_asleep").action
+
+
+def test_an_exec_past_the_wait_is_said_to_be_still_running(monkeypatch):
+    """Measured: a 35 s script finished its files after the call gave up at 30,
+    and the idle process it showed was read as App Nap."""
+    client, asked = _timing_out(monkeypatch, _one(0.0, "S"))
+    with pytest.raises(BridgeUnavailable) as caught:
+        client.call("exec", code="import time; time.sleep(40)")
+    assert caught.value.reason == "exec_timeout"
+    assert "not stopped" in str(caught.value)
+    assert asked == [], "an exec timeout does not read the process"
+    assert "td_status" in hints.classify(caught.value).resume

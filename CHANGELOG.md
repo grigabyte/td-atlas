@@ -96,6 +96,11 @@ either from the code they are running:
 
 ### Fixed
 
+- **A `td_exec` past 30 s is no longer called an asleep TouchDesigner.** A
+  script that sleeps or waits uses no CPU, and the timeout diagnosis read
+  that as App Nap and sent the agent to bring the window forward. The script
+  was running, and it finishes: a 35 s script wrote all its files after the
+  call gave up. The refusal now says so (`exec_timeout`).
 - **A frame taken right after editing a synced file runs the new code.**
   TouchDesigner re-reads a file-synced Text DAT on a poll (measured 0.7 s),
   so an exec or render straight after an edit on disk ran the old code.

@@ -100,6 +100,22 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_status",),
     ),
+    # Split from bridge_timeout and bridge_asleep on 2026-09-29: an exec past
+    # the wait is still running, and a sleeping script reads as an idle
+    # process, which the asleep diagnosis took for App Nap.
+    "exec_timeout": Recovery(
+        cause=(
+            "the script ran longer than the call waits; TouchDesigner keeps "
+            "running it to the end, so its side effects happen and only its "
+            "output is lost"
+        ),
+        action=(
+            "wait until td_status answers, then check what the script was "
+            "meant to write or change; for work over ~30 s, split it into "
+            "calls, or use td_timeline_run / td_record, which run as jobs"
+        ),
+        resume=("td_status",),
+    ),
     "bridge_timeout": Recovery(
         cause=(
             "the bridge took the call but did not answer in time; every "
