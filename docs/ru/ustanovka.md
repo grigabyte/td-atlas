@@ -1,7 +1,7 @@
 ---
 istochnik: README.md
 kommit: cf0fc32
-hesh: f08230651e8fca1b61efe7a4cc6a66632a8f2fa79defdc68bc3e0f9124c010b1
+hesh: ee0d0f4207f03488d3398c556b774a732dfba3d36edbe765a19438701a7d0797
 ---
 
 td-atlas даёт агенту три вещи. Точные имена операторов и параметров из
@@ -148,7 +148,7 @@ TouchDesigner и проект, к которому подключился мос
 | *«Что ты изменил с тех пор, как мы начали?»* | `td_snapshot` до и после, потом `td_project_diff` по этим двум; компоненты ложатся в `~/.td-atlas`, ваш собственный файл никто не трогает |
 | *«Отмени это.»* | `td_undo`, целая пачка `td_build` идёт одним шагом |
 
-46 инструментов в трёх группах. **9 по индексу** работают офлайн, **28 живых**
+47 инструментов в трёх группах. **9 по индексу** работают офлайн, **29 живых**
 действуют в запущенной программе, **9 по файлам проекта** читают и пишут
 `.toe`/`.tox` с диска. Каждый, с аргументами и с тем, зачем он нужен, лежит в
 [`plugin/skills/touchdesigner/references/tools.md`](tools.md),
@@ -165,7 +165,7 @@ TouchDesigner и проект, к которому подключился мос
 | --- | --- |
 | [`plugin/skills/touchdesigner/SKILL.md`](SKILL.md) | агентам, которые *пользуются* коннектором |
 | [`plugin/skills/touchdesigner/references/gotchas.md`](gotchas.md) | каждая ловушка, которая не дала ни одной ошибки |
-| [`plugin/skills/touchdesigner/references/tools.md`](tools.md) | все 46 инструментов MCP |
+| [`plugin/skills/touchdesigner/references/tools.md`](tools.md) | все 47 инструментов MCP |
 | [`AGENTS.md`](AGENTS.md) | агентам, которые *вносят правки* в этот репозиторий |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | как прогнать тесты и линтер перед пул-реквестом |
 | [`CHANGELOG.md`](CHANGELOG.md) | что изменилось в каждой версии, и каждая смена протокола обязательно |

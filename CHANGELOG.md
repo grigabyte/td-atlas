@@ -50,6 +50,16 @@ either from the code they are running:
 
 ### Added
 
+- **`td_record` records a take with its sound in one call.** Three agent
+  sessions did it by hand, about ten calls a take, and lost takes to each
+  step. It resets every operator with a `resetpulse` under the scope, pauses
+  at the first frame, turns realTime off, builds a fresh Movie File Out
+  (ProRes, PCM sound from `audio`) with a keep-alive, starts it a step later,
+  plays, ends when Info CHOP's `active_records` falls to 0, and puts
+  realTime, play mode and the nodes back. It answers with frames written of
+  frames asked and the sound samples; H.264/H.265 on Non-Commercial and an
+  existing file are refused up front. New bridge method `record`, part of
+  the bump above; `td_timeline_status` and `td_timeline_cancel` follow it.
 - **`td_health` catches a uniform array longer than its CHOP.** The shader
   compiles, nothing warns, and the elements past the data are undefined
   (measured: NaN, then 1.0); `glsl-array-length` names the array, its

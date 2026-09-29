@@ -107,6 +107,27 @@ def describe_profile(profile: dict, walked: int, rows: int = PROFILE_ROWS) -> li
     return lines
 
 
+def describe_record(job: dict) -> list[str]:
+    """The take: what was written against what was asked, and the sound."""
+    written, frames = job.get("written") or 0, job.get("frames") or 0
+    line = f"  {written} of {frames} frame(s) written to {job.get('file')} ({job.get('codec')})"
+    if job.get("dropped"):
+        line += f", {job['dropped']} dropped"
+    lines = [line]
+    if job.get("audio"):
+        samples = job.get("audioSamples") or 0
+        lines.append(f"  sound from {job['audio']}: {samples} samples (pcm16)")
+    else:
+        lines.append("  no sound: pass audio=<CHOP path> to record it")
+    if job.get("reset"):
+        lines.append("  reset before the take: " + ", ".join(job["reset"]))
+    if job.get("state") == "done" and written < frames:
+        lines.append(f"  short by {frames - written} frame(s)")
+    if job.get("realTime") is False and job.get("state") == "running":
+        lines.append("  realTime is off for the take and goes back on after")
+    return lines
+
+
 def describe(job: dict) -> list[str]:
     """A job's progress as lines an agent reads at a glance."""
     if not job.get("job"):
@@ -115,6 +136,7 @@ def describe(job: dict) -> list[str]:
     what = {
         "capture": "saving frames of",
         "profile": "profiling everything under",
+        "record": "recording",
     }.get(job.get("mode"), "advancing")
     lines = [f"job {job['job']}: {job['state']} — {what} {job['path']}"]
     where = f"frame {job['frame']} of walk {first}..{last}"
@@ -122,6 +144,8 @@ def describe(job: dict) -> list[str]:
         where = f"pass {job['tile'] + 1} of {job['tiles']} (tile {job['tile']}), " + where
     where += f", timeline {job.get('timeline') or '?'}"
     lines.append("  " + where)
+    if job.get("mode") == "record":
+        lines.extend(describe_record(job))
     if job.get("mode") == "capture":
         saved = f"  saved {job['saved']} of {job['toSave']}"
         if job.get("lastFile"):

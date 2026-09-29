@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -1063,6 +1064,65 @@ def td_timeline_run(
         f"Poll with td_timeline_status(job={job['job']!r}); stop with "
         f"td_timeline_cancel."
     )
+    return _warn(client) + "\n".join(lines)
+
+
+@mcp.tool()
+@guarded
+def td_record(
+    path: str,
+    file: str,
+    seconds: float = 0.0,
+    frames: int = 0,
+    audio: str = "",
+    start: int = 0,
+    codec: str = "prores",
+    reset: bool = True,
+    reset_path: str = "",
+    overwrite: bool = False,
+    hold: bool = False,
+    wait: float = 120.0,
+) -> str:
+    """Record a TOP, with a CHOP's sound, to a .mov in one call.
+
+    Plays the timeline from `start` (default: its first frame) for `seconds`
+    or `frames`, through a fresh Movie File Out that it removes afterwards.
+    Before the take it pulses `resetpulse` on every operator under
+    `reset_path` (default: the TOP's parent) — Trigger, Speed, Count, Lag,
+    Feedback and the rest that keep history — turns realTime off so no frame
+    is dropped, and starts the recorder a step after setting it up. It waits
+    up to `wait` seconds and answers with frames written against frames asked
+    and the sound samples; a longer take keeps running as a timeline job —
+    poll td_timeline_status, stop with td_timeline_cancel.
+
+    `codec` defaults to prores, which recorded on every licence; H.264/H.265
+    is refused on Non-Commercial. `hold` leaves the timeline paused after.
+    For frames saved as images without sound, walk with td_timeline_run.
+    """
+    request: dict[str, Any] = {
+        "path": path, "file": file, "seconds": seconds, "frames": frames,
+        "audio": audio, "codec": codec, "reset": reset,
+        "reset_path": reset_path, "overwrite": overwrite, "hold": hold,
+    }
+    if start:
+        request["start"] = start
+    client = bridge()
+    try:
+        job = client.call("record", **request)
+        deadline = time.monotonic() + max(0.0, min(float(wait), 3600.0))
+        while job.get("state") == "running" and time.monotonic() < deadline:
+            time.sleep(0.5)
+            job = client.call("timeline_status", job=job["job"])
+    except (BridgeUnavailable, BridgeError) as exc:
+        return failure(exc)
+    lines = timeline.describe(job)
+    if _resynced_note(job):
+        lines.insert(0, _resynced_note(job))
+    if job.get("state") == "running":
+        lines.append(
+            f"Still recording; poll td_timeline_status(job={job['job']!r}), "
+            f"stop with td_timeline_cancel."
+        )
     return _warn(client) + "\n".join(lines)
 
 

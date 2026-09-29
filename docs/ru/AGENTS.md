@@ -1,7 +1,7 @@
 ---
 istochnik: AGENTS.md
 kommit: 0a1fec2
-hesh: 80d438d088de556a761480daddb5f19d2adfeb999c0f7aa5ced8162d9dcf391f
+hesh: 8d3d3716fdb5f2676a3f3383614c7edc0576a9b736a771006f80ae57a78728b2
 ---
 
 # Работа над td-atlas
@@ -105,7 +105,7 @@ save`, …), потому что именно на этом уровне инс�
 | `td_docs`, `td_glossary`, `td_example`, `td_expression_help`, `td_python_api`, `td_palette`, `td_search_parameters`, `td_op_info` | поиск по индексу | Человек читает вики, браузер готовых компонентов и справку самого оператора; `search` и `op` покрывают то, в чём терминал и правда лучше. |
 | `td_build`, `td_set_params`, `td_flags`, `td_set_flags`, `td_network`, `td_errors`, `td_annotate`, `td_annotations`, `td_undo`, `td_snapshot`, `td_extension_add`, `td_palette_load`, `td_health`, `td_trace` | живая правка | Человек правит сеть в TouchDesigner, где результат видно. Эти держатся тем, что агент сети не видит. |
 | `td_claim_scope`, `td_release_scope`, `td_scopes` | заявки на область | Договор между агентами о том, чьё поддерево кто трогает. Человек за терминалом стоит на стороне, которую заявки защищают; заявителем он не бывает. |
-| `td_timeline_run`, `td_timeline_status`, `td_timeline_cancel`, `td_timeline_profile` | задания таймлайна | Проход живёт дольше вызова, который его запустил, и других путей мимо 30 с, отпущенных на запрос, у агента нет. Человек пишет последовательность кадров через Movie File Out TOP в самом TouchDesigner, а команда в терминале только ждала бы того же задания. |
+| `td_timeline_run`, `td_timeline_status`, `td_timeline_cancel`, `td_timeline_profile`, `td_record` | задания таймлайна | Проход живёт дольше вызова, который его запустил, и других путей мимо 30 с, отпущенных на запрос, у агента нет. Человек пишет последовательность кадров через Movie File Out TOP в самом TouchDesigner, а команда в терминале только ждала бы того же задания. |
 
 ### Объявленные расхождения аргументов
 

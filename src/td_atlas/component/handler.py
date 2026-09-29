@@ -30,7 +30,7 @@ from contextlib import redirect_stderr, redirect_stdout
 # because `timeline_run`, `timeline_status` and `timeline_cancel` joined the
 # table, and `ping`, `exec`'s error, `health_sample`, `network` and `op_info`
 # gained fields a bridge laid down before them does not send. It left 8
-# because `health_probe` and `script_errors_recheck` joined the table and
+# because `health_probe`, `script_errors_recheck` and `record` joined the table and
 # `health_sample` gained `counts_only`, which a bridge laid down before it
 # ignores — and answers with the full, cooking walk the host asked it not to
 # make.
@@ -3230,6 +3230,23 @@ class _LiveTimelineEnv:
         # Milliseconds on a monotonic clock, for a profile's per-node times.
         return time.perf_counter() * 1000.0
 
+    def realtime(self, value=None):
+        if value is not None:
+            project.realTime = bool(value)
+        return bool(project.realTime)
+
+    def licence(self):
+        try:
+            return str(getattr(licenses, "type", ""))
+        except Exception:
+            return ""
+
+    def create(self, parent, op_type, name):
+        return op(parent).create(op_type, name)
+
+    def exists(self, path):
+        return os.path.exists(path)
+
 
 def _timeline_env():
     return _LiveTimelineEnv()
@@ -3470,6 +3487,9 @@ def _timeline_enter_pass(job, env, timeline):
 
 def _timeline_advance(job, env):
     """One step: save the frame that has cooked, then set the next one."""
+    if job["mode"] == "record":
+        _record_advance(job, env)
+        return
     target = env.op(job["path"])
     if target is None:
         raise LookupError("the TOP %s is gone" % job["path"])
@@ -3530,6 +3550,8 @@ def _timeline_finish(job, env, outcome, exc=None):
     """
     if exc is not None:
         job["error"] = "%s: %s" % (type(exc).__name__, exc)
+    if job["mode"] == "record":
+        _record_teardown(job, env)
     restored = {"play": None, "crop": []}
     if job["passes"] > 1:
         for path in job["render"]:
@@ -3560,6 +3582,10 @@ _TIMELINE_VIEW = (
     "lastFile", "output", "settle", "render", "hold", "error", "errors", "notes",
     "restored",
 )
+_RECORD_VIEW = (
+    "file", "frames", "written", "dropped", "audio", "audioSamples", "codec",
+    "reset", "phase", "realTime",
+)
 
 
 def _timeline_view(job, env):
@@ -3575,6 +3601,9 @@ def _timeline_view(job, env):
     )
     if job["mode"] == "profile":
         view["profile"] = _profile_table(job)
+    if job["mode"] == "record":
+        for key in _RECORD_VIEW:
+            view[key] = job.get(key)
     return view
 
 
@@ -3589,6 +3618,259 @@ def m_timeline_run(params):
     resynced = _resync_files()
     reply = _timeline_start(_timeline_plan(params, env), env, state)
     if resynced and isinstance(reply, dict):
+        reply["resynced"] = resynced
+    return reply
+
+
+# -- recording ----------------------------------------------------------------
+#
+# A take recorded to a movie file with its sound, as a timeline job. Three
+# agent sessions did this by hand (reports 3-5), 7 rounds x 3 takes in one of
+# them, and lost a take to each of these, all measured again 2026-09-29 on
+# 2025.32460 unless said otherwise:
+#
+# - `record` switched 0 -> 1 inside the request that set the node up wrote no
+#   file (report 3); here the record is set a step after the setup, which
+#   recorded;
+# - after `record = 0` a node would not record again (report 3, in gotchas):
+#   every take gets a fresh Movie File Out, removed when the take ends;
+# - with `project.realTime` on, 1196-1199 of 1200 frames were written (report
+#   3), with it off 1199-1200 (report 4); measured here, 120 of 120 and
+#   88200 audio samples = 2.0 s. It is off for the take and put back after;
+# - `limitlength` stops the file but `record` stays on and the timeline plays
+#   on, so the end was watched from a shell by file size; here Info CHOP's
+#   `active_records` falls to 0 when the limit is reached, and that ends the
+#   job;
+# - H.264/H.265 is refused on a Non-Commercial licence on any GPU; ProRes with
+#   PCM audio in a .mov recorded in every session;
+# - operators with history (Trigger, Speed, Count, Lag, Feedback...) had to
+#   be reset by hand before each take, and the list grew from 6 to 11 in one
+#   session. Every operator under the scope that has a `resetpulse` is pulsed.
+
+_RECORD_NAME = "tdatlas_rec"
+_RECORD_POLL = 6
+_RECORD_CODECS = ("prores", "h264", "h265", "hap", "mjpa", "cineform",
+                  "notchlc")
+
+
+def _record_plan(params, env):
+    """Validate a take and lay it out, touching nothing in the project."""
+    target = env.op(params.get("path"))
+    if target is None:
+        raise LookupError("no operator at path '%s'" % params.get("path"))
+    if target.family != "TOP":
+        raise TypeError("a recording needs a TOP, got a %s" % target.family)
+    path = params.get("file") or ""
+    if not path.lower().endswith(".mov"):
+        raise ValueError(
+            "file must be a .mov: ProRes with PCM audio is what recorded on every "
+            "licence; convert afterwards if you need an mp4"
+        )
+    if env.exists(path) and not params.get("overwrite"):
+        raise ValueError(
+            "file %s already exists; pass overwrite to replace it, or name the "
+            "take differently" % path
+        )
+    codec = params.get("codec") or "prores"
+    if codec not in _RECORD_CODECS:
+        raise ValueError("codec is one of %s, got %r" % (", ".join(_RECORD_CODECS), codec))
+    if codec in ("h264", "h265") and "non-commercial" in env.licence().lower():
+        raise ValueError(
+            "%s is refused on a Non-Commercial licence on any GPU (measured on "
+            "macOS: 'GPU Accelerated H.264/H.265 Encoding requires a Commercial "
+            "license'); record prores and convert afterwards" % codec
+        )
+    timeline = env.time_of(target)
+    rate = float(getattr(timeline, "rate", 60.0) or 60.0)
+    frames = int(params.get("frames") or 0)
+    if not frames and params.get("seconds"):
+        frames = int(round(float(params["seconds"]) * rate))
+    if frames < 1:
+        raise ValueError("give frames or seconds, at least one frame")
+    start = int(params.get("start") or timeline.start)
+    last = start + frames - 1
+    end = min(int(timeline.end), int(getattr(timeline, "rangeEnd", timeline.end)))
+    if start < int(timeline.start) or last > end:
+        raise ValueError(
+            "the take %d..%d leaves the timeline's playable range %d..%d; the "
+            "timeline would loop mid-take. Extend its end or record fewer frames"
+            % (start, last, int(timeline.start), end)
+        )
+    audio = params.get("audio") or ""
+    if audio:
+        chop = env.op(audio)
+        if chop is None or chop.family != "CHOP":
+            raise TypeError("audio must be a CHOP, got %r" % audio)
+        audio = chop.path
+    parent = target.path.rsplit("/", 1)[0] or "/"
+    scope = params.get("reset_path") or parent
+    now = env.now()
+    return {
+        "path": target.path, "timeline": getattr(timeline, "path", ""),
+        "mode": "record", "start": start, "end": last, "first": start,
+        "last": last, "save": [], "output": "", "passes": 1, "pass": 0,
+        "frame": None, "settle": 2, "render": [], "saved": 0, "toSave": 0,
+        "lastFile": None, "hold": bool(params.get("hold", False)),
+        "state": "running", "error": None, "errors": [], "notes": [],
+        "restored": None, "wasPlaying": None, "started": now, "stepped": now,
+        "finished": None, "gen": 0, "seq": 0,
+        "file": path, "frames": frames, "written": 0, "dropped": 0,
+        "audio": audio, "audioSamples": 0, "codec": codec, "rate": rate,
+        "parent": parent, "resetScope": scope if params.get("reset", True) else "",
+        "reset": [], "phase": "arm", "nodes": {}, "realTimeWas": None,
+        "realTime": None, "sawActive": False,
+    }
+
+
+def _record_setup(job, env):
+    """The recorder, its keep-alive and its Info CHOP, plus the resets."""
+    parent = job["parent"]
+    for suffix in ("_keep", "_info", ""):
+        old = env.op("%s/%s%s" % (parent.rstrip("/"), _RECORD_NAME, suffix))
+        if old is not None:
+            old.destroy()
+    source = env.op(job["path"])
+    rec = env.create(parent, "moviefileoutTOP", _RECORD_NAME)
+    job["nodes"]["rec"] = rec.path
+    rec.inputConnectors[0].connect(source)
+    rec.par.file = job["file"]
+    rec.par.type = "movie"
+    rec.par.videocodec = job["codec"]
+    rec.par.fps = job["rate"]
+    rec.par.limitlength = True
+    rec.par.lengthunit = "frames"
+    rec.par.length = job["frames"]
+    if job["audio"]:
+        rec.par.audiochop = job["audio"]
+        rec.par.audiocodec = "pcm16"
+    keep = env.create(parent, "cacheTOP", _RECORD_NAME + "_keep")
+    job["nodes"]["keep"] = keep.path
+    keep.inputConnectors[0].connect(rec)
+    keep.par.alwayscook = True
+    info = env.create(parent, "infoCHOP", _RECORD_NAME + "_info")
+    job["nodes"]["info"] = info.path
+    info.par.op = rec.path
+    if job["resetScope"]:
+        scope = env.op(job["resetScope"])
+        mine = set(job["nodes"].values())
+        for node in (scope.findChildren() if scope is not None else []):
+            if node.path in mine:
+                continue
+            par = getattr(node.par, "resetpulse", None) if _has_par(node, "resetpulse") else None
+            if par is not None:
+                try:
+                    par.pulse()
+                    job["reset"].append(node.path)
+                except Exception as exc:
+                    job["errors"].append("reset of %s failed: %s" % (node.path, exc))
+
+
+def _has_par(node, name):
+    # TouchDesigner's ParCollection raises its own tdAttributeError on a
+    # missing name, so getattr's default does not apply.
+    try:
+        return getattr(node.par, name) is not None
+    except Exception:
+        return False
+
+
+def _record_start(job, env, state):
+    gen = int(state.get("gen", 0)) + 1
+    state["gen"] = gen
+    job["gen"] = gen
+    job["job"] = "t%d" % gen
+    state["job"] = job
+    try:
+        timeline = _job_timeline(job, env)
+        job["wasPlaying"] = bool(timeline.play)
+        timeline.play = False
+        timeline.frame = job["first"]
+        job["frame"] = job["first"]
+        job["realTimeWas"] = env.realtime()
+        job["realTime"] = env.realtime(False)
+        _record_setup(job, env)
+        _timeline_schedule(job, env)
+    except Exception as exc:
+        _timeline_finish(job, env, "failed", exc)
+        raise
+    return _timeline_view(job, env)
+
+
+def _record_read(job, env):
+    info = env.op(job["nodes"]["info"])
+    values = {}
+    for name in ("total_frames_written", "total_audio_samples_written",
+                 "total_frames_dropped", "active_records"):
+        chan = info[name] if info is not None else None
+        values[name] = int(round(chan.eval())) if chan is not None else 0
+    job["written"] = values["total_frames_written"]
+    job["audioSamples"] = values["total_audio_samples_written"]
+    job["dropped"] = values["total_frames_dropped"]
+    return values["active_records"]
+
+
+def _record_advance(job, env):
+    timeline = _job_timeline(job, env)
+    if job["phase"] == "arm":
+        # A step after the setup, never in it: set in the same request, the
+        # record did not start (report 3).
+        env.op(job["nodes"]["rec"]).par.record = True
+        timeline.play = True
+        job["phase"] = "recording"
+        job["settle"] = _RECORD_POLL
+        _timeline_schedule(job, env)
+        return
+    active = _record_read(job, env)
+    job["frame"] = int(round(timeline.frame))
+    if active:
+        job["sawActive"] = True
+    if job["written"] >= job["frames"] or (job["sawActive"] and not active):
+        _timeline_finish(job, env, "done")
+        return
+    if not timeline.play:
+        raise RuntimeError(
+            "the timeline was paused during the take at frame %d; %d of %d "
+            "frames were written" % (job["frame"], job["written"], job["frames"])
+        )
+    _timeline_schedule(job, env)
+
+
+def _record_teardown(job, env):
+    """Stop the recorder, put realTime back, and remove the helper nodes."""
+    rec = env.op(job["nodes"].get("rec") or "")
+    if rec is not None:
+        try:
+            rec.par.record = False
+        except Exception as err:
+            job["errors"].append("record not switched off: %s" % err)
+        if job["phase"] == "recording":
+            try:
+                _record_read(job, env)
+            except Exception:
+                pass
+    if job["realTimeWas"] is not None:
+        try:
+            env.realtime(job["realTimeWas"])
+            job["realTime"] = job["realTimeWas"]
+        except Exception as err:
+            job["errors"].append("realTime not put back: %s" % err)
+    for key in ("info", "keep", "rec"):
+        node = env.op(job["nodes"].get(key) or "")
+        if node is not None:
+            try:
+                node.destroy()
+            except Exception as err:
+                job["errors"].append("%s not removed: %s" % (node.path, err))
+
+
+def m_record(params):
+    """Record a TOP (and a CHOP's sound) to a .mov as a timeline job."""
+    env = _timeline_env()
+    state = env.registry()
+    _timeline_refuse_second(state)
+    resynced = _resync_files()
+    reply = _record_start(_record_plan(params, env), env, state)
+    if resynced:
         reply["resynced"] = resynced
     return reply
 
@@ -6111,6 +6393,7 @@ METHODS = {
     "timeline_status": m_timeline_status,
     "timeline_cancel": m_timeline_cancel,
     "timeline_profile": m_timeline_profile,
+    "record": m_record,
     "batch": m_batch,
     "undo": m_undo,
     "redo": m_redo,

@@ -147,6 +147,7 @@ op_types: paths
 palette_load: file name owner parent position
 par_set: owner pars path
 ping: -
+record: audio codec file frames hold overwrite path reset reset_path seconds start
 redo: -
 release_scope: owner path
 render: format height path width

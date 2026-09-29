@@ -433,6 +433,11 @@ maximum pass after the render for thickness.
 
 ## Movie File Out
 
+`td_record` does everything below in one call — a fresh node per take, the
+record switched on a step after setup, realTime off, the resets, the end read
+from Info CHOP's `active_records`, the count of frames written. The list is
+for a recording made by hand.
+
 - It is terminal. Nothing consumes it, so it needs a keep-alive (above).
 - Set `fps` explicitly, since the shipped examples all bind it to
   `me.time.rate`.
