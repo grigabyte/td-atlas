@@ -21,6 +21,7 @@ from .. import config as cfg
 from .. import journal
 from ..atoms.store import AtomStore
 from ..atoms.techniques import matching
+from ..atoms.measured import operator_note, parameter_note
 from ..atoms.validate import (
     op_reference_lookups,
     step_key_problems,
@@ -162,6 +163,9 @@ def _fmt_param(row: dict[str, Any]) -> str:
     line = f"  {row['name']} — {row['label'] or ''} [{' '.join(bits)}]"
     if row.get("summary"):
         line += f"\n      {row['summary'][:300]}"
+    measured = parameter_note(row.get("op_type") or "", row["name"])
+    if measured:
+        line += f"\n      measured: {measured}"
     return line
 
 
@@ -233,6 +237,8 @@ def td_operator_schema(
         )
     if row["snippet_path"]:
         out.append(f"example network: {row['snippet_path']}")
+    if operator_note(op_type):
+        out.append(f"measured: {operator_note(op_type)}")
 
     pars = [
         p

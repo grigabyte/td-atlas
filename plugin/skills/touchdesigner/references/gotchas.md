@@ -413,6 +413,16 @@ step that made it, and says whether the new node points at it through a
 parameter. One it does not point at is a leftover; remove it with `op_delete`
 in the next batch, or leave it, since it costs nothing.
 
+## A Wireframe MAT on macOS draws 1-pixel lines and ignores fog
+
+Measured 2026-09-29 (2025.32460, macOS): `linewidth` and `wirewidth` at 1, 3 and
+6 render the same frame to the pixel, and black linear camera fog that took a
+Phong box from 19040 to 5864 left the same box in a Wireframe MAT unchanged.
+Nothing reports it; a sum of the frame is the only tell. `td_operator_schema`
+prints this under the MAT. An agent spent seven measuring runs on it before
+building its own GLSL MAT (wireframe topology, fade by depth) and a 3×3
+maximum pass after the render for thickness.
+
 ## Movie File Out
 
 - It is terminal. Nothing consumes it, so it needs a keep-alive (above).

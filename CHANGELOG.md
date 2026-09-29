@@ -50,6 +50,13 @@ either from the code they are running:
 
 ### Added
 
+- **The schema carries what a parameter does that its name does not say.**
+  Measured on 2025.32460 and printed under the parameter by
+  `td_operator_schema` and `td-atlas op`: Ramp TOP `radial` is the angle and
+  `circular` the distance from the centre; Level TOP runs its Pre page
+  (brightness1, gamma1, contrast) before its Range page; a Text TOP's
+  position is an offset from the point `alignx`/`aligny` pick; a Wireframe
+  MAT's line width and a camera's fog have no effect on it on macOS.
 - **`td_build` and `td_set_params` say what happened besides the ask.** After
   each create: the DATs TouchDesigner docked beside the new node (a GLSL
   TOP's `_pixel`/`_info`/`_compute`, a Script CHOP's `_callbacks`), each

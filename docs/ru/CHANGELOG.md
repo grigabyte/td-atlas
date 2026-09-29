@@ -1,7 +1,7 @@
 ---
 istochnik: CHANGELOG.md
 kommit: cda2d9b
-hesh: 289273373ed3c9d7c4ae74c1a2c95c8c28b119ba3e29d0962c8269a9b089136f
+hesh: aab02773c8fb02dee205b6af88db91944c55f52d202c4553cef9afa76cfbf90e
 ---
 
 # Журнал изменений
@@ -59,6 +59,13 @@ hesh: 289273373ed3c9d7c4ae74c1a2c95c8c28b119ba3e29d0962c8269a9b089136f
 
 ### Добавлено
 
+- **Схема несёт то, что параметр делает и чего не говорит его имя.**
+  Замерено на 2025.32460 и печатается под параметром в
+  `td_operator_schema` и `td-atlas op`: у Ramp TOP `radial` — угол, а
+  `circular` — расстояние от центра; Level TOP применяет страницу Pre
+  (brightness1, gamma1, contrast) до страницы Range; позиция Text TOP —
+  сдвиг от точки, которую выбирают `alignx`/`aligny`; ширина линий
+  Wireframe MAT и туман камеры на macOS на него не действуют.
 - **`td_build` и `td_set_params` говорят, что случилось сверх заказанного.**
   После каждого создания: DAT, которые TouchDesigner пристыковал к новому
   узлу (`_pixel`/`_info`/`_compute` у GLSL TOP, `_callbacks` у Script CHOP),

@@ -1103,6 +1103,8 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 
 def cmd_op(args: argparse.Namespace) -> int:
+    from .atoms.measured import operator_note, parameter_note
+
     store = AtomStore(args.db or cfg.db_path())
     if not store.exists():
         _say("error: no index. Run 'td-atlas build' first.")
@@ -1124,6 +1126,8 @@ def cmd_op(args: argparse.Namespace) -> int:
         )
     else:
         print("\n(runtime pass not run: no defaults, ranges or menu options)")
+    if operator_note(args.type):
+        print(f"\nmeasured: {operator_note(args.type)}")
 
     pars = store.parameters(args.type)
     if args.page:
@@ -1160,6 +1164,8 @@ def cmd_op(args: argparse.Namespace) -> int:
             governor, _, value = par["appears_when"].partition("=")
             bits.append(f"only-when {governor}>='{value}'")
         print(f"  {par['name']:<20} {par['label'] or '':<26} {' '.join(bits)}")
+        if parameter_note(args.type, par["name"]):
+            print(f"  {'':<20} measured: {parameter_note(args.type, par['name'])}")
 
     if groups and args.groups:
         print("\n[documented parameter groups — set the members, not these]")
