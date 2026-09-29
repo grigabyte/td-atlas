@@ -1450,7 +1450,7 @@ def cmd_log(args: argparse.Namespace) -> int:
 
         last = calls[-1]
         print()
-        print(hints.from_record(last.error, last.reason).render())
+        print(hints.from_record(last.error, last.reason, last.message).render())
     return 0
 
 

@@ -462,3 +462,20 @@ def test_a_bug_in_this_package_is_reported_as_one_rather_than_as_a_ToolError(
     assert "inside td-atlas itself" in text
     assert "none known" in text
     assert "continue with:" not in text
+
+
+def test_an_attribute_read_on_none_points_at_the_path_not_the_parameter():
+    """`op('/wrong/path').par` fails on None; the schema is the wrong place to look."""
+    exc = BridgeError(
+        {"type": "AttributeError",
+         "message": "'NoneType' object has no attribute 'par'"}, "exec")
+    recovery = hints.classify(exc)
+    assert recovery is hints.HINTS["none_attribute"]
+    assert "td_network" in recovery.resume
+    assert hints.from_record("AttributeError", "",
+                             "'NoneType' object has no attribute 'par'") is recovery
+    # A real missing member keeps the parameter-name advice.
+    other = BridgeError({"type": "AttributeError",
+                         "message": "'td.ParCollection' object has no attribute 'blurr'"},
+                        "exec")
+    assert hints.classify(other) is hints.HINTS["AttributeError"]

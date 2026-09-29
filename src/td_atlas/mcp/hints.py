@@ -183,6 +183,23 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_operator_schema",),
     ),
+    # Split from AttributeError on 2026-09-29. `op('/project1/bugs/sim').par`
+    # on a path with nothing at it raises AttributeError on None, and the
+    # parameter-name advice above sent an agent to the schema for a path that
+    # was simply wrong (agent report 4, point 16).
+    "none_attribute": Recovery(
+        cause=(
+            "an attribute was read from None — almost always op(...) or a "
+            "lookup that found nothing at that path, so the operator does not "
+            "exist; the member name is not the problem"
+        ),
+        action=(
+            "check the path in the failing line: paths are case-sensitive, a "
+            "relative path resolves from the operator running the script, and "
+            "TouchDesigner numbers a new node ('blur2') when the name was taken"
+        ),
+        resume=("td_network", "td_op_info"),
+    ),
     "TypeError": Recovery(
         cause="the target is the wrong kind of operator for this call",
         action=(
@@ -539,6 +556,11 @@ def hint(key: str, **values: str) -> str:
     return HINTS[key].fill(**values).render() if values else HINTS[key].render()
 
 
+def _reads_none(error_type: str, message: str) -> bool:
+    return (error_type == "AttributeError"
+            and "'NoneType' object has no attribute" in (message or ""))
+
+
 def classify(exc: BaseException) -> Recovery:
     """The recovery for an observed exception.
 
@@ -549,6 +571,8 @@ def classify(exc: BaseException) -> Recovery:
         reason = getattr(exc, "reason", "") or "bridge_unreachable"
         return HINTS.get(reason, HINTS["bridge_unreachable"])
     if isinstance(exc, BridgeError):
+        if _reads_none(exc.type, exc.message):
+            return HINTS["none_attribute"]
         if exc.type in MAPPED_BRIDGE_ERRORS:
             return HINTS[exc.type]
         return HINTS["unmapped_bridge_error"].fill(type=exc.type)
@@ -567,7 +591,8 @@ def classify(exc: BaseException) -> Recovery:
     return HINTS["unmapped_error"].fill(type=type(exc).__name__)
 
 
-def from_record(error_type: str = "", reason: str = "") -> Recovery:
+def from_record(error_type: str = "", reason: str = "",
+                message: str = "") -> Recovery:
     """The recovery for a failure read back out of the call journal.
 
     `classify` needs a live exception. The journal outlives the process that
@@ -580,6 +605,8 @@ def from_record(error_type: str = "", reason: str = "") -> Recovery:
         return HINTS.get(reason, HINTS["bridge_unreachable"])
     if error_type == "BridgeUnavailable":
         return HINTS["bridge_unreachable"]
+    if _reads_none(error_type, message):
+        return HINTS["none_attribute"]
     if error_type in MAPPED_BRIDGE_ERRORS:
         return HINTS[error_type]
     if error_type:

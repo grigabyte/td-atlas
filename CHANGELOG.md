@@ -25,6 +25,9 @@ either from the code they are running:
   missing or differ from the package. With no process, it says that. The
   MCP hint for the first case is new: `bridge_not_loaded`. On Windows,
   where the process is not read, the message is unchanged.
+- **An `AttributeError` on `None` points at the path.** `op('/wrong').par`
+  used to get the hint for a misspelt parameter; it now gets
+  `none_attribute`: nothing exists at that path, check it with `td_network`.
 
 ### Added
 

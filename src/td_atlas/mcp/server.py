@@ -478,7 +478,7 @@ def td_log(
     text = journal.format_calls(calls)
     if failures and calls:
         last = calls[-1]
-        text += "\n\n" + from_record(last.error, last.reason).render()
+        text += "\n\n" + from_record(last.error, last.reason, last.message).render()
     return text
 
 
