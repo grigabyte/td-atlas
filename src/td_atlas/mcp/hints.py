@@ -84,6 +84,22 @@ HINTS: dict[str, Recovery] = {
         ),
         resume=("td_instances", "td_doctor"),
     ),
+    # Split from bridge_unreachable on 2026-09-29: a TouchDesigner that is
+    # running needs one line in its textport, and sending the agent to
+    # 'td-atlas install' first cost four calls to find that out.
+    "bridge_not_loaded": Recovery(
+        cause=(
+            "TouchDesigner is running, but the project open in it has not "
+            "loaded the td-atlas bridge, so nothing answers on the port"
+        ),
+        action=(
+            "have the artist paste the bootstrap line quoted in the error "
+            "into TouchDesigner's textport (Dialogs → Textport and DATs); run "
+            "'td-atlas install' first only when the error says the staged "
+            "bridge is missing or differs from the package"
+        ),
+        resume=("td_status",),
+    ),
     "bridge_timeout": Recovery(
         cause=(
             "the bridge took the call but did not answer in time; every "

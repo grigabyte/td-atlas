@@ -800,6 +800,37 @@ def _check_index_build(version: str, install: TDInstall | None) -> Check:
     )
 
 
+def _running_without_bridge(port: int) -> Check | None:
+    """TouchDesigner is up and the port is silent: one line in the textport.
+
+    Told apart from "not running" because the repair differs — an agent sent
+    to 'td-atlas install' for a running TouchDesigner with current staged
+    files spent four calls finding that the bootstrap line was all it needed
+    (2026-09-25). Unknown on Windows, where the process is not read.
+    """
+    from .bridge import client as client_mod
+
+    if not client_mod._CAN_INSPECT_PROCESS:
+        return None
+    found = client_mod._touchdesigner_processes()
+    if not found:
+        return None
+    pids = ", ".join(f"pid {pid}" for pid, _, _ in found)
+    stale = client_mod._staged_bridge_problem()
+    line = f"exec(open({str(cfg.bootstrap_path())!r}).read())"
+    return Check(
+        "bridge",
+        WARN,
+        f"TouchDesigner is running ({pids}) but nothing is listening on port "
+        f"{port}: the project open in it has not loaded the bridge"
+        + (f"; {stale}" if stale else "; the staged bridge is current"),
+        ("td-atlas install, then paste the line it prints into the textport"
+         if stale else
+         f"paste into TouchDesigner's textport (Dialogs \u2192 Textport and "
+         f"DATs): {line}"),
+    )
+
+
 def check_bridge(args: argparse.Namespace) -> Check:
     """Registry, port, protocol and token — told apart, not merged.
 
@@ -829,6 +860,9 @@ def check_bridge(args: argparse.Namespace) -> Check:
             or cfg.DEFAULT_PORT
         )
         if cfg.port_listening(port) is False:
+            running = _running_without_bridge(port)
+            if running is not None:
+                return running
             return Check(
                 "bridge",
                 ABSENT,

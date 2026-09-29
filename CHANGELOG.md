@@ -16,6 +16,16 @@ either from the code they are running:
 
 ## [Unreleased]
 
+### Changed
+
+- **A refused connection says whether TouchDesigner is running.** With a
+  TouchDesigner process up and the port silent, the error (and `doctor`)
+  says the open project has not loaded the bridge and quotes the bootstrap
+  line to paste; `td-atlas install` is named only when the staged files are
+  missing or differ from the package. With no process, it says that. The
+  MCP hint for the first case is new: `bridge_not_loaded`. On Windows,
+  where the process is not read, the message is unchanged.
+
 ### Fixed
 
 - **A project whose file name is not ASCII opens and writes back.**

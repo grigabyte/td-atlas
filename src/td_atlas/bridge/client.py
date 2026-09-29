@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .. import journal
@@ -21,6 +22,8 @@ from ..component import handler as _handler
 from ..config import (
     DEFAULT_PORT,
     Instance,
+    bootstrap_path,
+    home,
     load_config,
     load_session,
     read_instances,
@@ -116,6 +119,26 @@ def _touchdesigner_processes(pid: int = 0) -> list[tuple[int, float, str]]:
         except ValueError:
             continue
     return found
+
+
+def _staged_bridge_problem() -> str:
+    """Why the bridge staged in the td-atlas home cannot be loaded as it is.
+
+    Empty when both files are there and byte-equal to the ones this package
+    ships, which is what `td-atlas install` would write — then the bootstrap
+    line alone is the repair.
+    """
+    shipped = Path(_handler.__file__).parent
+    for name in ("bootstrap.py", "handler.py"):
+        staged = home() / name
+        try:
+            if staged.read_bytes() != (shipped / name).read_bytes():
+                return f"{staged} is older or newer than this package's"
+        except FileNotFoundError:
+            return f"{staged} does not exist"
+        except OSError as exc:
+            return f"{staged} could not be read ({exc})"
+    return ""
 
 
 class BridgeError(RuntimeError):
@@ -410,12 +433,8 @@ class BridgeClient:
                     reason="bridge_http",
                 ) from exc
         except urllib.error.URLError as exc:
-            raise BridgeUnavailable(
-                f"Cannot reach TouchDesigner at {self.url} ({exc.reason}). "
-                "Is TouchDesigner running with the td-atlas bridge installed? "
-                "Run 'td-atlas install' for the one-line bootstrap.",
-                reason="bridge_unreachable",
-            ) from exc
+            message, reason = self._diagnose_refusal(exc.reason)
+            raise BridgeUnavailable(message, reason=reason) from exc
         except TimeoutError as exc:
             message, reason = self._diagnose_timeout(timeout or self.timeout)
             raise BridgeUnavailable(message, reason=reason) from exc
@@ -423,6 +442,50 @@ class BridgeClient:
         if not payload.get("ok"):
             raise BridgeError(payload.get("error") or {}, method)
         return payload.get("result")
+
+    def _diagnose_refusal(self, why: object) -> tuple[str, str]:
+        """The refusal's message and reason, after one look at the process list.
+
+        "Is TouchDesigner running with the bridge installed? Run 'td-atlas
+        install'" covered two states with one repair that fits neither well.
+        On 2026-09-25 TouchDesigner was running with a new, empty project and
+        the staged files already matched the package: the missing step was the
+        bootstrap line in the textport, and telling the two apart took an agent
+        four calls and an `lsof`. The process list tells them apart in one
+        `ps`. Only a refused connection is read this way; any other transport
+        failure keeps the old message.
+        """
+        head = f"Cannot reach TouchDesigner at {self.url} ({why})."
+        old = (
+            f"{head} Is TouchDesigner running with the td-atlas bridge "
+            f"installed? Run 'td-atlas install' for the one-line bootstrap."
+        )
+        if not (_CAN_INSPECT_PROCESS and isinstance(why, ConnectionRefusedError)):
+            return old, "bridge_unreachable"
+        found = _touchdesigner_processes()
+        if not found:
+            return (
+                f"{head} No TouchDesigner process is running on this host. "
+                f"Start TouchDesigner, open the project, and paste the "
+                f"bootstrap line 'td-atlas install' prints into its textport.",
+                "bridge_unreachable",
+            )
+        pids = ", ".join(f"pid {pid}" for pid, _, _ in found)
+        stale = _staged_bridge_problem()
+        line = f"exec(open({str(bootstrap_path())!r}).read())"
+        if stale:
+            step = (f"Run 'td-atlas install' first — {stale} — then paste the "
+                    f"line it prints into TouchDesigner's textport.")
+        else:
+            step = (f"Paste this into TouchDesigner's textport (Dialogs → "
+                    f"Textport and DATs): {line}  — the staged bridge is "
+                    f"current, so 'td-atlas install' is not needed.")
+        return (
+            f"{head} TouchDesigner is running ({pids}), but nothing answers on "
+            f"port {self.port}: the project open in it has not loaded the "
+            f"td-atlas bridge. {step}",
+            "bridge_not_loaded",
+        )
 
     def _diagnose_timeout(self, waited: float) -> tuple[str, str]:
         """The timeout's message and reason, after one look at the process.
