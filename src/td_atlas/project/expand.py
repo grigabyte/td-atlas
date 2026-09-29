@@ -15,6 +15,7 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePath
 
@@ -89,6 +90,21 @@ def _tool(install: TDInstall, name: str) -> Path:
 
 def cache_dir() -> Path:
     return home() / "cache"
+
+
+def _tool_name(name: str) -> str:
+    """The file name the two tools are handed: the real one if it is ASCII.
+
+    Measured on macOS, build 2025.32460: `toeexpand "кубы проба.tox"` answers
+    "Error opening file: ÐºÑƒÐ±Ñ‹ Ð¿Ñ€Ð¾Ð±Ð°.tox" — the UTF-8 bytes of its
+    argument read back as Latin-1 — and `LC_ALL=en_US.UTF-8` changes nothing,
+    nor does an absolute path. The copy the tool works on is ours, so it gets
+    a name the tool can open; an ASCII name is kept as it was, which keeps
+    every cache entry made before this.
+    """
+    if name.isascii():
+        return name
+    return "project" + PurePath(name).suffix
 
 
 def _cache_key(source: Path) -> str:
@@ -182,8 +198,9 @@ def expand(
         )
 
     target = cache_dir() / _cache_key(source)
-    expanded = target / f"{source.name}.dir"
-    toc = target / f"{source.name}.toc"
+    working_name = _tool_name(source.name)
+    expanded = target / f"{working_name}.dir"
+    toc = target / f"{working_name}.toc"
 
     if expanded.is_dir() and not refresh:
         # Touched so eviction is by last use and not by first: a project read
@@ -209,7 +226,7 @@ def expand(
     if target.exists():
         shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True, exist_ok=True)
-    working = target / source.name
+    working = target / working_name
     shutil.copyfile(source, working)
 
     result = subprocess.run(
@@ -313,28 +330,45 @@ def collapse(
     stem = expanded_dir.name[: -len(".dir")]
     toc = expanded_dir.parent / f"{stem}.toc"
     template = Path(toc_template) if toc_template else (toc if toc.exists() else None)
-    write_toc(expanded_dir, toc, template)
 
-    # toecollapse writes beside its input and renames anything already there,
-    # so it runs in the cache and the result is copied out.
-    result = subprocess.run(
-        [str(tool), expanded_dir.name],
-        cwd=expanded_dir.parent,
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-    produced = expanded_dir.parent / stem
-    if not produced.exists():
-        detail = (result.stderr or result.stdout or "").strip()
-        raise ExpandError(
-            "toecollapse produced nothing" + (f": {detail}" if detail else "")
+    # toecollapse misreads a non-ASCII argument the same way toeexpand does
+    # (see _tool_name), so such a tree is collapsed from a copy under an ASCII
+    # name. The prefix keeps eviction away from it while it is in use.
+    staging = None
+    if not expanded_dir.name.isascii():
+        cache_dir().mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix=WORK_PREFIX, dir=cache_dir()))
+        stem = _tool_name(stem)
+        copied = staging / f"{stem}.dir"
+        shutil.copytree(expanded_dir, copied)
+        expanded_dir = copied
+        toc = staging / f"{stem}.toc"
+    try:
+        write_toc(expanded_dir, toc, template)
+
+        # toecollapse writes beside its input and renames anything already
+        # there, so it runs in the cache and the result is copied out.
+        result = subprocess.run(
+            [str(tool), expanded_dir.name],
+            cwd=expanded_dir.parent,
+            capture_output=True,
+            text=True,
+            timeout=600,
         )
-    output.parent.mkdir(parents=True, exist_ok=True)
-    # When the expanded directory already sits beside the requested output,
-    # toecollapse has written exactly where the caller wanted it.
-    if produced.resolve() != output.resolve():
-        shutil.copyfile(produced, output)
+        produced = expanded_dir.parent / stem
+        if not produced.exists():
+            detail = (result.stderr or result.stdout or "").strip()
+            raise ExpandError(
+                "toecollapse produced nothing" + (f": {detail}" if detail else "")
+            )
+        output.parent.mkdir(parents=True, exist_ok=True)
+        # When the expanded directory already sits beside the requested
+        # output, toecollapse has written exactly where the caller wanted it.
+        if produced.resolve() != output.resolve():
+            shutil.copyfile(produced, output)
+    finally:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
     return output
 
 

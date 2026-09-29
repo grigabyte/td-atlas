@@ -14,6 +14,16 @@ either from the code they are running:
   `td-atlas reload`.
 - **Anything that changes what the connector may touch in the user's project.**
 
+## [Unreleased]
+
+### Fixed
+
+- **A project whose file name is not ASCII opens and writes back.**
+  `toeexpand` and `toecollapse` read their argument's UTF-8 bytes as Latin-1,
+  so reading `кубы.tox` failed with "Error opening file: ÐºÑƒÐ±Ñ‹.tox" and a
+  pointer to `td-atlas doctor`. Both tools now work on a copy under an ASCII
+  name; the file itself and the name in every answer stay as they were.
+
 ## [0.2.0] - 2026-09-24
 
 Measured against TouchDesigner 2025.32460 on macOS. The Windows code paths run

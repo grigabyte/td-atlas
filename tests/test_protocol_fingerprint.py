@@ -336,15 +336,27 @@ def _prose_versions(text: str) -> list[tuple[int, str]]:
     return found
 
 
-def _current_prose(name: str, stop_after_first: str | None) -> str:
+def _current_prose(name: str, section_mark: str | None) -> str:
+    """The part of a document that speaks for the current protocol.
+
+    For the changelog that is the newest section naming a protocol number at
+    all: an `[Unreleased]` section that fixes a file name says nothing about
+    the protocol, and the release below it still states the one in force.
+    Once a bump lands in `[Unreleased]`, that section is the one held.
+    """
     text = (REPO / name).read_text(encoding="utf-8")
-    if stop_after_first is None:
+    if section_mark is None:
         return text
     lines = text.splitlines()
-    starts = [i for i, line in enumerate(lines) if line.startswith(stop_after_first)]
+    starts = [i for i, line in enumerate(lines) if line.startswith(section_mark)]
     if len(starts) < 2:
         return text
-    return "\n".join(lines[: starts[1]])
+    bounds = list(zip(starts, starts[1:] + [len(lines)]))
+    for begin, end in bounds:
+        section = "\n".join(lines[begin:end])
+        if _prose_versions(section):
+            return section
+    return "\n".join(lines[bounds[0][0]:bounds[0][1]])
 
 
 def test_the_protocol_number_written_in_prose_is_the_constant():
