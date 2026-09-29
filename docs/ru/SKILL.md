@@ -1,7 +1,7 @@
 ---
 istochnik: plugin/skills/touchdesigner/SKILL.md
 kommit: f767122
-hesh: 2b070dc0d4f3bfdd104f57aa64d94941df1cf9cace1be0e99eb971977dfbf1ca
+hesh: 72c20e37a8d1dae265e0dbddb8b0d96bc59459b9112582f43719affc1ce07c5f
 ---
 
 # TouchDesigner через td-atlas
@@ -216,6 +216,8 @@ Save As, и он уводит файл, который у художника о�
   узлы (Movie File Out и любая цепь, которая не кормит ни одно окно
   просмотра) никто не тянет. Поставьте `cacheTOP` с включённым `alwayscook`,
   чтобы цепь осталась живой.
+- **Script CHOP или SOP, читающий время внутри `onCook`, варится раз
+  и застывает.** Повесьте часы на параметр или на вход.
 - **Класс Python, подключённый так, как показывает вики, отваливается
   в полной тишине.** Берите `td_extension_add`: он пишет рабочую форму
   и перечитывает её обратно.

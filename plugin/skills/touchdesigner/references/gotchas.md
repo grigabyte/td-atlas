@@ -48,14 +48,15 @@ read from it is a constant. Calibrating against that measures nothing.
 A recorder must be *inside* what the keep-alive pulls. Wire
 `out → rec → keepalive`, not `out → keepalive` with `rec` hanging off `out`.
 
-## A script that reads the clock inside cook() runs once and freezes
+## A script that reads the clock inside cook() or onCook() runs once and freezes
 
 The previous trap is about a branch nobody pulls. This one is the opposite and
 looks identical on screen: the branch *is* displayed, the render *is* cooking,
 and the picture still never changes.
 
-A Script SOP or Script CHOP whose `cook()` reads `absTime.seconds` has no
-dependency on it. TouchDesigner decides what to re-cook from parameters and
+A Script SOP or Script CHOP whose `cook()` — `onCook` in its callbacks DAT —
+reads `absTime.seconds`, `me.time.frame` or any other clock has no dependency
+on it. TouchDesigner decides what to re-cook from parameters and
 inputs, not from what a function body happens to read, so the node cooks once
 and its output is frozen from then on.
 
@@ -78,6 +79,11 @@ def cook(scriptOp):
 Then set the expression once: `op('…/curve').par.Time.expr = 'absTime.seconds'`.
 For a render that has to reproduce, use `me.time.seconds` there instead. See
 *A frame that reads the application clock does not reproduce*.
+
+A Script CHOP can take the clock on an input instead: wire in a Constant CHOP
+whose value is the expression `me.time.frame`. The input changes every frame,
+so the Script CHOP cooks every frame. An agent session (2025.32460) used this
+for five Script CHOPs driving a GLSL TOP.
 
 ## A render chain is not connected to anything the artist is looking at
 

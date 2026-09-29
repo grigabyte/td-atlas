@@ -222,6 +222,8 @@ Detail in `references/gotchas.md`, and the short list follows:
 - **A branch nothing displays or records never cooks.** Terminal nodes (Movie
   File Out, and any chain not feeding a viewer) are not pulled. Add a `cacheTOP`
   with `alwayscook` on to keep a chain live.
+- **A Script CHOP or SOP that reads the time inside `onCook` cooks once and
+  freezes.** Put the clock on a parameter or on an input.
 - **A Python class attached the way the wiki shows it fails in total silence.**
   Use `td_extension_add`, which uses the form that works and reads it back.
 - **TouchDesigner throttles rendering when its window is in the background.**
