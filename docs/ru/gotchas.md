@@ -1,7 +1,7 @@
 ---
 istochnik: plugin/skills/touchdesigner/references/gotchas.md
 kommit: f767122
-hesh: 159382b56aad302074b1c09932aa251775b6c25d146fc466e23f5a16b649a9f8
+hesh: 8145eaa3bfc999420dc36afdb8598d1765ad0e45cb760e8a3ac483f86e188990
 ---
 
 # Ловушки
@@ -403,8 +403,11 @@ COMP держит свою сеть, поэтому относительный �
   resolutionh 1080` дают `width 1280, height 720`. `td_health` поднимает это
   до ошибки `resolution-clamped`, потому что меняется то, что вы сдаёте. Сама
   лицензия докладывается один раз заметкой `licence`.
-- Экспорт H.264/H.265 в реальном времени с ускорением на GPU Nvidia
-  недоступен.
+- **Movie File Out отказывает в H.264 и H.265, и на macOS тоже.** Текст
+  лицензии говорит «на GPU Nvidia»; на macOS (2025.32460) файл просто не
+  пишется, а `td_errors` называет причину: «GPU Accelerated H.264/H.265
+  Encoding requires a Commercial license». ProRes со звуком PCM в `.mov`
+  пишется; нужен mp4 — перегнать после.
 - Blob Track TOP ограничен 2 блобами.
 - Вывод нельзя использовать в оплачиваемой работе.
 

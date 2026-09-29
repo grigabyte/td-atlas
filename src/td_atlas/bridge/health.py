@@ -440,8 +440,9 @@ def check(
             Finding(
                 "note", "licence",
                 "Non-Commercial licence: resolution is capped at 1280x1280, "
-                "realtime H.264/H.265 export on Nvidia GPUs is unavailable, "
-                "and the result may not be used in paid work",
+                "Movie File Out refuses H.264/H.265 on any GPU, macOS "
+                "included (ProRes with PCM audio records), and the result "
+                "may not be used in paid work",
             )
         )
 

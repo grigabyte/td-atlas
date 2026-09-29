@@ -409,7 +409,11 @@ them and reports `output-off`.
   `width 1280, height 720`. `td_health` raises this to an error,
   `resolution-clamped`, since it changes the deliverable. The licence itself is
   reported once as the note `licence`.
-- Realtime H.264/H.265 export accelerated by an Nvidia GPU is unavailable.
+- **Movie File Out refuses H.264 and H.265, on macOS too.** The licence text
+  says "on Nvidia GPUs"; on macOS (2025.32460) the file is simply not written,
+  and `td_errors` names the cause: "GPU Accelerated H.264/H.265 Encoding
+  requires a Commercial license". ProRes with PCM audio in a `.mov` records;
+  transcode afterwards if you need an mp4.
 - Blob Track TOP is limited to 2 blobs.
 - Output may not be used in paid work.
 

@@ -1,7 +1,7 @@
 ---
 istochnik: docs/health.md
 kommit: f767122
-hesh: 77e1674a1573fcfd094e27f9d916884aac51a48543b764c4832babf81820113b
+hesh: cff039578fac6dda516167832514ee031b4fba60a61fc942abbe4c83baf6ea5a
 ---
 
 # О чём TouchDesigner молчит

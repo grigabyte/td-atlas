@@ -16,9 +16,9 @@ TouchDesigner (TouchDesigner Non-Commercial) — 61/60 fps, 16/51 operators cook
 [WARN ] 1 operator(s) cost more than 8 ms per cook (a whole frame at
         60 fps is 16.7 ms)
          /project1/src_b (430 ms)
-[note ] Non-Commercial licence: resolution is capped at 1280x1280, realtime
-        H.264/H.265 export on Nvidia GPUs is unavailable, and the result may
-        not be used in paid work
+[note ] Non-Commercial licence: resolution is capped at 1280x1280, Movie File
+        Out refuses H.264/H.265 on any GPU, macOS included (ProRes with PCM
+        audio records), and the result may not be used in paid work
 ```
 
 The example is shortened. The real output prints up to six paths under a
