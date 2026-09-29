@@ -1,6 +1,6 @@
 ---
 istochnik: docs/health.md
-kommit: f767122
+kommit: ee46de3
 hesh: d5786c10f98855a1c3eec0348e75425a2f6ae8273c929e42ef40598bba5cc9f9
 ---
 
