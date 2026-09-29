@@ -1092,6 +1092,10 @@ def cmd_search(args: argparse.Namespace) -> int:
     if not rows:
         print("no matches")
         return 0
+    from .atoms.techniques import matching
+
+    for term, technique in matching(args.query):
+        print(f"technique '{term}': {technique.note}")
     for row in rows:
         summary = (row["summary"] or "").split(". ")[0][:100]
         print(f"{row['type']:<28} {row['family']:<5} {row['label']:<22} {summary}")

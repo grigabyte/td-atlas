@@ -1,7 +1,7 @@
 ---
 istochnik: CHANGELOG.md
 kommit: cda2d9b
-hesh: 1b5b99ab3a055f616e99b12c6a04305e244c1139ca66c1ede626cee2eeebd001
+hesh: 15265351d8c1cf946a49fd8da5a7ba41b935ab9717b351c20058e44ec32dfc15
 ---
 
 # Журнал изменений
@@ -33,6 +33,16 @@ hesh: 1b5b99ab3a055f616e99b12c6a04305e244c1139ca66c1ede626cee2eeebd001
   отсутствуют или расходятся с пакетом. Процесса нет — так и сказано.
   Подсказка MCP для первого случая новая: `bridge_not_loaded`. На Windows
   процесс не читается, и сообщение прежнее.
+
+### Добавлено
+
+- **`td_search_operators` и `td-atlas search` знают несколько названий
+  алгоритмов.** «marching cubes», «isosurface», «metaball», «SDF» и
+  «dilate/erode» не встречаются ни на одной странице операторов, поэтому
+  поиск по ним ставил первым Cube Map TOP и не доходил до Polygonize POP.
+  Теперь запрос с таким названием первыми выдаёт операторы, которые это
+  делают, со строкой `technique` о том, как; строка про dilate/erode
+  говорит, что оператора нет и путь — GLSL TOP.
 
 ### Починено
 

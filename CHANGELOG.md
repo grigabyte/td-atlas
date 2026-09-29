@@ -26,6 +26,15 @@ either from the code they are running:
   MCP hint for the first case is new: `bridge_not_loaded`. On Windows,
   where the process is not read, the message is unchanged.
 
+### Added
+
+- **`td_search_operators` and `td-atlas search` know a few algorithm names.**
+  "marching cubes", "isosurface", "metaball", "SDF" and "dilate/erode" appear
+  on no operator page, so a search for them ranked Cube Map TOP first and
+  never reached Polygonize POP. A query naming one now lists the operators
+  that do it first, with a `technique` line saying how; the dilate/erode line
+  says no operator does it and a GLSL TOP is the way.
+
 ### Fixed
 
 - **A project whose file name is not ASCII opens and writes back.**

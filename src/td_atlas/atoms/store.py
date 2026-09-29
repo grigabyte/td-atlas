@@ -21,6 +21,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from .techniques import matching
+
 SCHEMA_VERSION = 1
 
 _SCHEMA = """
@@ -611,6 +613,24 @@ class AtomStore:
                 return []
 
         rows = run(focused, limit)
+        # A technique named in the query puts its operators first: their pages
+        # do not use the technique's name, so ranking alone never finds them
+        # (see atoms/techniques.py).
+        pinned = []
+        for _, technique in matching(query):
+            for op_type in technique.types:
+                row = self.conn.execute(
+                    "SELECT type, family, label, summary FROM ops WHERE type = ?",
+                    (op_type,),
+                ).fetchone()
+                if row is None or any(r["type"] == op_type for r in pinned):
+                    continue
+                if family and row["family"] != family.upper():
+                    continue
+                pinned.append(row)
+        if pinned:
+            kept = {row["type"] for row in pinned}
+            rows = pinned + [row for row in rows if row["type"] not in kept]
         if len(rows) < limit:
             seen = {row["type"] for row in rows}
             for row in run(expression, limit * 2):

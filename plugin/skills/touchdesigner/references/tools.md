@@ -10,7 +10,7 @@ name, every parameter list and that count against the server.
 
 | Tool | Use it for |
 | --- | --- |
-| `td_search_operators(query, family, limit)` | Find an operator by what it does. Plain language. `family` narrows to TOP/CHOP/SOP/DAT/MAT/COMP/POP. |
+| `td_search_operators(query, family, limit)` | Find an operator by what it does. Plain language. `family` narrows to TOP/CHOP/SOP/DAT/MAT/COMP/POP. A few algorithm names no operator page uses (marching cubes, isosurface, metaball, SDF, dilate/erode) put the operators that do the job first, with a `technique` line saying how. |
 | `td_operator_schema(op_type, page, include_hidden)` | Exact parameter names, defaults, menu options, ranges, connector counts, path to a shipped example. Menu options print as `value — Label` where the label says more than the value, which is where costs like "(GPU)" live. |
 | `td_search_parameters(query, limit)` | Which operator has a parameter doing X. How `alwayscook` gets found. |
 | `td_python_api(name, query)` | Members and methods of a class, with inherited ones resolved. |

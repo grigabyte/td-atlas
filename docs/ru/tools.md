@@ -1,7 +1,7 @@
 ---
 istochnik: plugin/skills/touchdesigner/references/tools.md
 kommit: 0a1fec2
-hesh: 7ab570f11acef8747d064e52c2c50cd1ca82e520cfc72a4d7a198f05ee8b6dc2
+hesh: 393f1f07263528a6ad2f2062bbd2747833c0ee64a69fa744a2f82a61592ae9bd
 ---
 
 # Справочник инструментов
@@ -16,7 +16,7 @@ hesh: 7ab570f11acef8747d064e52c2c50cd1ca82e520cfc72a4d7a198f05ee8b6dc2
 
 | Инструмент | Зачем |
 | --- | --- |
-| `td_search_operators(query, family, limit)` | Находит оператор по тому, что он делает. Обычными словами. `family` сужает до TOP/CHOP/SOP/DAT/MAT/COMP/POP. |
+| `td_search_operators(query, family, limit)` | Находит оператор по тому, что он делает. Обычными словами. `family` сужает до TOP/CHOP/SOP/DAT/MAT/COMP/POP. Несколько названий алгоритмов, которых нет ни на одной странице операторов (marching cubes, isosurface, metaball, SDF, dilate/erode), ставят первыми операторы, которые это делают, со строкой `technique` о том, как. |
 | `td_operator_schema(op_type, page, include_hidden)` | Точные имена параметров, значения по умолчанию, пункты меню, границы, счёт входов и выходов, путь к примеру из поставки. Пункты меню печатаются как `value — Label`, и подпись говорит больше значения: цена вроде "(GPU)" стоит там. |
 | `td_search_parameters(query, limit)` | У какого оператора есть параметр, который делает X. Так находят `alwayscook`. |
 | `td_python_api(name, query)` | Поля и методы класса, вместе с теми, что достались от родителей. |

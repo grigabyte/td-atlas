@@ -20,6 +20,7 @@ from mcp.server.fastmcp import FastMCP, Image
 from .. import config as cfg
 from .. import journal
 from ..atoms.store import AtomStore
+from ..atoms.techniques import matching
 from ..atoms.validate import (
     op_reference_lookups,
     step_key_problems,
@@ -182,7 +183,8 @@ def td_search_operators(query: str, family: str = "", limit: int = 15) -> str:
     rows = store().search_ops(query, family=family, limit=limit)
     if not rows:
         return f"No operators match {query!r}.\n{hint('no_match')}"
-    lines = []
+    lines = [f"technique '{term}': {technique.note}"
+             for term, technique in matching(query)]
     for row in rows:
         summary = (row["summary"] or "").split(". ")[0]
         lines.append(f"{row['type']} ({row['family']}) — {row['label']}: {summary}")
