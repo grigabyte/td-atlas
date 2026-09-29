@@ -50,6 +50,13 @@ either from the code they are running:
 
 ### Added
 
+- **Later blocks of a parameter sequence can be set.** `const1name` on a
+  Constant CHOP or `array1name` on a GLSL TOP was refused by the name check,
+  and on a fresh operator was no parameter at all; two agents moved that work
+  into `td_exec`. The check now judges a later block's member as the first
+  block's, the bridge grows the sequence before writing it, and a number on
+  the sequence's own parameter (`"const": 4`) sets the block count —
+  TouchDesigner ignores that write on its own.
 - **`td_search_operators` and `td-atlas search` know a few algorithm names.**
   "marching cubes", "isosurface", "metaball", "SDF" and "dilate/erode" appear
   on no operator page, so a search for them ranked Cube Map TOP first and

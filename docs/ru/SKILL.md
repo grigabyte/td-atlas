@@ -1,7 +1,7 @@
 ---
 istochnik: plugin/skills/touchdesigner/SKILL.md
 kommit: f767122
-hesh: 72c20e37a8d1dae265e0dbddb8b0d96bc59459b9112582f43719affc1ce07c5f
+hesh: d87e70d9b7135b67f9570cf3d64e4f8edaef54fecbf28a907f7d0561a138234f
 ---
 
 # TouchDesigner через td-atlas
@@ -94,6 +94,14 @@ TouchDesigner, поэтому отвечает и на вопрос «что б�
   `value — Label`: в меню `type` у Noise TOP стоит `simplex3d — Simplex 3D (GPU)`
   против простого `sparse — Sparse`, и второй крутится на процессоре примерно
   за 96 мс на готовку при 1280×720. Читайте подписи, одних значений тут мало.
+
+*Последовательность* (каналы Constant CHOP, массивы и uniform у GLSL TOP)
+показана в схеме первым блоком: `const0name`, `array0name`. Следующие блоки
+пишутся так же со следующим номером — `const1name`, `array3type`, — и
+`td_build` сам добавляет нужные блоки. Чтобы задать число блоков прямо,
+дайте число самому параметру последовательности: `"const": 4`. Руками в
+TouchDesigner (`par.const = 4`) это ничего не делает; делает
+`seq.const.numBlocks = 4`.
 
 `td_build` проверяет имена параметров по индексу до того, как что-то уйдёт,
 и сам разбирает тип каждой цели, поэтому ошибка приходит назад строкой

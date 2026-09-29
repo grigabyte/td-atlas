@@ -2691,15 +2691,75 @@ def _read_back(target, name, par):
         ) from exc
 
 
+def _sequences(target):
+    """The operator's parameter sequences, longest name first."""
+    try:
+        found = list(target.seq)
+    except Exception:
+        return []
+    return sorted(found, key=lambda s: len(s.name), reverse=True)
+
+
+def _grow_for(target, name):
+    """Add blocks to a sequence so that `name` (e.g. 'const2name') exists.
+
+    A block member past the last block is simply not there: `const1name` on
+    a fresh Constant CHOP is no parameter at all, and two agents moved this
+    work into td_exec, outside the undo block and the name check (reports 3
+    and 4). Measured on 2025.32460: `seq.const.numBlocks = 3` creates
+    const1*/const2*, and writing the sequence's own parameter (`par.const =
+    5`) changes nothing. Nothing is removed here — only grown to reach N.
+    """
+    for seq in _sequences(target):
+        prefix = seq.name
+        if not name.startswith(prefix):
+            continue
+        match = re.match(r"(\d+)(\w+)$", name[len(prefix):])
+        if not match:
+            continue
+        index = int(match.group(1))
+        member = prefix + "0" + match.group(2)
+        try:
+            known = [p.name for p in seq.blockPars]
+        except Exception:
+            known = []
+        if known and member not in known:
+            continue
+        if seq.numBlocks <= index:
+            seq.numBlocks = index + 1
+        return
+
+
+def _sequence_of(target, par):
+    """The sequence whose own parameter `par` is, or None."""
+    if not getattr(par, "isSequence", False):
+        return None
+    for seq in _sequences(target):
+        if seq.name == par.name:
+            return seq
+    return None
+
+
 def _apply_pars(target, values):
     """Set parameters, accepting constants, expressions and bindings.
 
     A plain value sets constant mode; {'expr': ...} sets expression mode;
-    {'bind': ...} sets a bind expression; {'pulse': true} pulses.
+    {'bind': ...} sets a bind expression; {'pulse': true} pulses. A block
+    member past the sequence's last block grows the sequence first, and a
+    plain number on the sequence's own parameter ('const': 3) sets how many
+    blocks it has — the write TouchDesigner itself ignores.
     """
     applied = {}
     for name, value in values.items():
         par = getattr(target.par, name, None)
+        if par is None:
+            _grow_for(target, name)
+            par = getattr(target.par, name, None)
+        seq = _sequence_of(target, par) if par is not None else None
+        if seq is not None and not isinstance(value, dict):
+            seq.numBlocks = int(value)
+            applied[name] = seq.numBlocks
+            continue
         if par is None:
             raise AttributeError(
                 "%s (%s) has no parameter '%s'" % (target.path, target.OPType, name)

@@ -280,6 +280,29 @@ def _menu_position(row: dict, value: Any) -> int | None:
     return None
 
 
+def _block_member(name: str, settable: dict) -> dict | None:
+    """The block-0 row standing for `name` when it is a later block's member.
+
+    The index records a sequence's first block only ('const0name'); the
+    blocks after it exist once the sequence has that many, and the bridge
+    grows it to fit before writing (handler.py, `_grow_for`). So
+    'const3value' is judged as 'const0value' is. Longest sequence name first,
+    so one sequence named as the start of another cannot claim its members.
+    """
+    sequences = sorted(
+        (r["name"] for r in settable.values() if r.get("is_sequence")),
+        key=len, reverse=True,
+    )
+    for prefix in sequences:
+        if not name.startswith(prefix):
+            continue
+        match = re.fullmatch(r"(\d+)(\w+)", name[len(prefix):])
+        if not match:
+            continue
+        return settable.get(f"{prefix}0{match.group(2)}")
+    return None
+
+
 def _presence_problem(
     name: str, row: dict, values: dict, settable: dict, fresh: bool
 ) -> Problem | None:
@@ -373,6 +396,20 @@ def validate_params(
     for name, value in values.items():
         result.checked += 1
         row = settable.get(name)
+        if row is None:
+            row = _block_member(name, settable)
+        if row is not None and row.get("is_sequence"):
+            # The sequence's own parameter: the bridge takes a number here as
+            # the block count (TouchDesigner itself ignores the write).
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                result.problems.append(
+                    Problem(
+                        name,
+                        f"is a parameter sequence; its value is how many "
+                        f"blocks it has, a whole number, not {value!r}",
+                    )
+                )
+            continue
         if row is None:
             # A group heading is the most common near-miss: the agent read the
             # docs, which document 't', not 'tx'/'ty'/'tz'.

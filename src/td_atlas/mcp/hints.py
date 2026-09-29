@@ -315,7 +315,9 @@ HINTS: dict[str, Recovery] = {
         ),
         action=(
             "use the exact names from the operator's schema; the suggestions "
-            "above come from the index and are safe to trust"
+            "above are the closest names the index knows, not a full list. A "
+            "later block of a sequence is written with its number "
+            "('const1name' beside the schema's 'const0name') and is accepted"
         ),
         resume=("td_operator_schema",),
     ),

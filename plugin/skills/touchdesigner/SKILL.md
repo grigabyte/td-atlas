@@ -89,6 +89,13 @@ values. Two traps:
   second one runs on the CPU at ~96 ms per cook at 1280×720. Read the labels,
   not just the values.
 
+A *sequence* (a Constant CHOP's channels, a GLSL TOP's arrays and uniforms)
+shows its first block in the schema: `const0name`, `array0name`. Later blocks
+are written the same way with the next number — `const1name`, `array3type` —
+and `td_build` adds the blocks they need. To set the count outright, give the
+sequence's own parameter a number: `"const": 4`. Setting it by hand in
+TouchDesigner (`par.const = 4`) does nothing; `seq.const.numBlocks = 4` does.
+
 `td_build` validates parameter names against the index before sending anything,
 resolving each target's type itself, so a mistake comes back as
 `t: is a parameter group, not a settable parameter (try: tx, ty, tz)`. The check
