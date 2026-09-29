@@ -1,7 +1,7 @@
 ---
 istochnik: CHANGELOG.md
 kommit: cda2d9b
-hesh: 869fa06c5e63f55b36823a431dc978713d2f5551de91538ab5bc1d540e511728
+hesh: de3f8f8915d761340e6da23ea8ab5fb3ae73813237536c57df80d1da1444ad83
 ---
 
 # Журнал изменений
@@ -22,7 +22,10 @@ hesh: 869fa06c5e63f55b36823a431dc978713d2f5551de91538ab5bc1d540e511728
 - **Всё, что меняет список того, к чему коннектор может притронуться в проекте
   пользователя.**
 
-## [Unreleased]
+## [0.3.0] - 2026-09-29
+
+Замерено на TouchDesigner 2025.32460 под macOS. Ветки кода для Windows
+прогоняет CI; TouchDesigner под Windows не проверен. См. `docs/compatibility.md`.
 
 ### Изменено
 

@@ -14,7 +14,10 @@ either from the code they are running:
   `td-atlas reload`.
 - **Anything that changes what the connector may touch in the user's project.**
 
-## [Unreleased]
+## [0.3.0] - 2026-09-29
+
+Measured against TouchDesigner 2025.32460 on macOS. The Windows code paths run
+in CI; TouchDesigner on Windows is unverified. See `docs/compatibility.md`.
 
 ### Changed
 
