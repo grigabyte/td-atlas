@@ -30,9 +30,10 @@ from contextlib import redirect_stderr, redirect_stdout
 # because `timeline_run`, `timeline_status` and `timeline_cancel` joined the
 # table, and `ping`, `exec`'s error, `health_sample`, `network` and `op_info`
 # gained fields a bridge laid down before them does not send. It left 8
-# because `health_probe` joined the table and `health_sample` gained
-# `counts_only`, which a bridge laid down before it ignores — and answers with
-# the full, cooking walk the host asked it not to make.
+# because `health_probe` and `script_errors_recheck` joined the table and
+# `health_sample` gained `counts_only`, which a bridge laid down before it
+# ignores — and answers with the full, cooking walk the host asked it not to
+# make.
 # `tests/test_protocol_fingerprint.py` reddens when the table moves without
 # this number; the rule is written down in `AGENTS.md`.
 PROTOCOL_VERSION = 9
@@ -4603,6 +4604,106 @@ def m_health_probe(params):
             "skipped": skipped, "missing": missing, "unprobed": unprobed}
 
 
+# The parameter through which a Script operator (and most operators with
+# callbacks) names the DAT it runs.
+_CALLBACK_USER_PAR = "callbacks"
+
+
+def _callback_users(target):
+    """Operators beside `target` that run its text as their callbacks."""
+    users = []
+    parent = _attr(target, "parent")
+    try:
+        siblings = parent().children if callable(parent) else []
+    except Exception:
+        siblings = []
+    for sibling in siblings:
+        par = getattr(sibling.par, _CALLBACK_USER_PAR, None)
+        if par is None:
+            continue
+        try:
+            if par.eval() == target:
+                users.append(sibling)
+        except Exception:
+            continue
+    return users
+
+
+def m_script_errors_recheck(params):
+    """Clear a kept traceback, then say whether it came back.
+
+    TouchDesigner keeps a script error's text until something clears it.
+    Measured 2026-09-29 on 2025.32460: a Script CHOP whose onCook failed on a
+    missing operator went on cooking every frame and producing its channel
+    once the operator existed, and scriptErrors(recurse=True) still returned
+    the old traceback, on the callbacks DAT, seconds later — agent report 4,
+    point 18, where two health checks reported it as live. A traceback that
+    is still being raised came back within 0.2 s of being cleared.
+
+    Step `clear` saves each path's text, clears it, and records the cook
+    count of every operator that runs the text as callbacks (or of the
+    operator itself when it is not a DAT). Step `read`, a moment later: text
+    back — live; not back while a user cooked — stale, left cleared; not back
+    and nothing cooked — unknown, and the saved text is put back, since
+    nothing showed it was wrong.
+    """
+    step = params.get("step")
+    if step == "clear":
+        state = {}
+        for path in params.get("paths") or []:
+            target = op(path)
+            if target is None:
+                continue
+            try:
+                text = target.scriptErrors()
+            except Exception:
+                continue
+            if not text:
+                continue
+            users = _callback_users(target)
+            if target.family != "DAT":
+                users.append(target)
+            state[path] = {
+                "text": text,
+                "users": {u.path: u.totalCooks for u in users},
+            }
+            target.clearScriptErrors()
+        return {"state": state}
+    if step == "read":
+        verdicts = {}
+        for path, saved in (params.get("state") or {}).items():
+            target = op(path)
+            if target is None:
+                continue
+            now = target.scriptErrors()
+            if now:
+                verdicts[path] = {"verdict": "live", "text": _clip(now)}
+                continue
+            cooked = 0
+            for user, before in (saved.get("users") or {}).items():
+                found = op(user)
+                if found is not None:
+                    cooked += max(0, found.totalCooks - before)
+            if cooked:
+                verdicts[path] = {"verdict": "stale", "cooks": cooked,
+                                  "text": _clip(saved["text"])}
+                continue
+            # addScriptError prepends its own "Error: " and appends the path
+            # in brackets, measured: putting the text back verbatim doubled
+            # both. One of each is dropped, so repeated checks leave the text
+            # as they found it.
+            text = saved["text"].strip()
+            if text.startswith("Error: "):
+                text = text[len("Error: "):]
+            suffix = " (%s)" % path
+            if text.endswith(suffix):
+                text = text[: -len(suffix)]
+            target.addScriptError(text)
+            verdicts[path] = {"verdict": "unknown", "text": _clip(saved["text"])}
+        return {"verdicts": verdicts}
+    raise ValueError("script_errors_recheck needs step 'clear' or 'read'")
+
+
 def _extension_targets(params):
     """The paths an extension build writes to, for the scope guard.
 
@@ -5752,6 +5853,7 @@ METHODS = {
     "op_types": m_op_types,
     "health_sample": m_health_sample,
     "health_probe": m_health_probe,
+    "script_errors_recheck": m_script_errors_recheck,
     "extension_add": m_extension_add,
     "annotate": m_annotate,
     "annotations": m_annotations,

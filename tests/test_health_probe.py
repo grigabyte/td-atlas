@@ -68,3 +68,58 @@ def test_the_budget_leaves_the_rest_unprobed(ops, monkeypatch):
     ops.update({"/p/a": FakeOp("/p/a", dirty=True)})
     answer = handler.m_health_probe({"paths": ["/p/a"]})
     assert answer["unprobed"] == ["/p/a"] and answer["cooked"] == []
+
+
+class ScriptOp(FakeOp):
+    def __init__(self, path, text="", family="DAT", **kw):
+        super().__init__(path, family=family, **kw)
+        self.text = text
+        self.added = []
+
+    def scriptErrors(self):
+        return self.text
+
+    def clearScriptErrors(self):
+        self.text = ""
+
+    def addScriptError(self, msg):
+        self.added.append(msg)
+        self.text = "  Error: %s (%s)" % (msg, self.path)
+
+
+def _recheck(ops, monkeypatch, dat, users=()):
+    ops[dat.path] = dat
+    for user in users:
+        ops[user.path] = user
+    monkeypatch.setattr(handler, "_callback_users", lambda target: list(users))
+    state = handler.m_script_errors_recheck(
+        {"step": "clear", "paths": [dat.path]})["state"]
+    return state
+
+
+def test_a_kept_traceback_whose_user_cooked_without_it_is_stale(ops, monkeypatch):
+    dat = ScriptOp("/p/cb", "  Error: Traceback\nAttributeError: x (/p/cb)")
+    user = FakeOp("/p/sc", optype="scriptCHOP")
+    state = _recheck(ops, monkeypatch, dat, [user])
+    assert dat.text == ""
+    user.totalCooks += 12
+    verdict = handler.m_script_errors_recheck({"step": "read", "state": state})
+    assert verdict["verdicts"]["/p/cb"]["verdict"] == "stale"
+    assert dat.text == ""
+
+
+def test_an_unconfirmed_traceback_is_put_back_as_it_was(ops, monkeypatch):
+    original = "  Error: Traceback\nKeyError: old (/p/cb)"
+    dat = ScriptOp("/p/cb", original)
+    state = _recheck(ops, monkeypatch, dat)
+    verdict = handler.m_script_errors_recheck({"step": "read", "state": state})
+    assert verdict["verdicts"]["/p/cb"]["verdict"] == "unknown"
+    assert dat.text == original
+
+
+def test_a_traceback_raised_again_is_live(ops, monkeypatch):
+    dat = ScriptOp("/p/cb", "  Error: Traceback\nValueError: live (/p/cb)")
+    state = _recheck(ops, monkeypatch, dat)
+    dat.text = "  Error: Traceback\nValueError: live (/p/cb)"
+    verdict = handler.m_script_errors_recheck({"step": "read", "state": state})
+    assert verdict["verdicts"]["/p/cb"]["verdict"] == "live"

@@ -326,6 +326,71 @@ def _file_probe(health: Health, probed: dict, frames: int) -> None:
         )
 
 
+def _recheck_scripts(client: BridgeClient, scripted: dict) -> dict | None:
+    """Clear each kept traceback, wait, and read which came back.
+
+    TouchDesigner keeps a traceback's text after the code stops raising; two
+    checks reported a fixed Script CHOP's traceback as live (agent report 4,
+    point 18). See m_script_errors_recheck for the measurement. None when the
+    bridge could not do it, and the finding then stays as it was.
+    """
+    try:
+        state = client.call("script_errors_recheck", step="clear",
+                            paths=sorted(scripted))["state"]
+        time.sleep(_PROBE_GAP)
+        return client.call("script_errors_recheck", step="read",
+                           state=state)["verdicts"]
+    except Exception:
+        return None
+
+
+def _file_scripts(health: Health, scripted: dict, verdicts: dict) -> None:
+    live, stale, unknown = [], [], []
+    for node_path, message in sorted(scripted.items()):
+        verdict = (verdicts.get(node_path) or {}).get("verdict", "live")
+        line = f"{node_path} ({_script_excerpt(message)})"
+        if verdict == "stale":
+            cooks = verdicts[node_path].get("cooks", 0)
+            stale.append(f"{line}, not raised again across {cooks} cook(s)")
+        elif verdict == "unknown":
+            unknown.append(line)
+        else:
+            live.append(line)
+    if live:
+        health.findings.append(
+            Finding(
+                "error", "script-errors",
+                f"{len(live)} operator(s) are raising a traceback in a script "
+                f"or a callback: cleared by this check, it came back within "
+                f"{_PROBE_GAP}s. The code stops where it throws, and "
+                f"TouchDesigner keeps script errors apart from the error list, "
+                f"so nothing else reports them",
+                live,
+            )
+        )
+    if unknown:
+        health.findings.append(
+            Finding(
+                "warning", "script-errors",
+                f"{len(unknown)} operator(s) raised a traceback at some point. "
+                f"TouchDesigner keeps the text until it is cleared, and nothing "
+                f"that runs this code cooked during the check, so whether it "
+                f"still raises is unknown; the text was left in place",
+                unknown,
+            )
+        )
+    if stale:
+        health.findings.append(
+            Finding(
+                "note", "script-errors-stale",
+                f"{len(stale)} traceback(s) were left over from earlier: this "
+                f"check cleared each one and the code that raised it ran again "
+                f"without raising, so it has been fixed since. Cleared for good",
+                stale,
+            )
+        )
+
+
 def _clock_read_line(read: dict) -> str:
     where = read.get("where") or ""
     if where == "text":
@@ -554,7 +619,10 @@ def check(
     # unreported one.
     scripted = second.get("scriptErrors") or {}
     raw = second.get("scriptErrorsRaw") or ""
-    if scripted:
+    verdicts = _recheck_scripts(client, scripted) if scripted else None
+    if scripted and verdicts is not None:
+        _file_scripts(health, scripted, verdicts)
+    elif scripted:
         health.findings.append(
             Finding(
                 "error", "script-errors",

@@ -674,3 +674,12 @@ TouchDesigner in a different place entirely and appear in no operator's error
 list. `td_health` reads them separately and reports `script-errors`. When that
 read is the thing that fails, it says `script-errors-unread`. Whether anything
 raised is then unknown, and unknown is not clean.
+
+A traceback's text outlives the fault. Measured on 2025.32460: a Script CHOP
+whose `onCook` failed on a missing operator went on cooking every frame and
+producing its channel once the operator existed, and the old traceback stayed
+on its callbacks DAT until cleared. So `td_health` clears each kept traceback
+and looks again 0.2 s later. Back: it is being raised now, `script-errors` as
+an error. Not back while the operator running that code cooked: it was fixed,
+and `script-errors-stale` (note) says so and leaves it cleared. Not back and
+nothing cooked: `script-errors` as a warning, and the text is put back.

@@ -152,6 +152,7 @@ release_scope: owner path
 render: format height path width
 save_tox: file path
 scopes: -
+script_errors_recheck: paths state step
 status_note: health
 timeline_cancel: job
 timeline_profile: end limit path settle start

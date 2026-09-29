@@ -19,16 +19,23 @@ class FakeClient:
     nothing to compute; a callable gets the paths; an exception is raised.
     """
 
-    def __init__(self, samples, probe=None):
+    def __init__(self, samples, probe=None, verdicts=None):
         self.samples = list(samples)
         self.published = []
         self.probe = probe
         self.probed = []
+        self.verdicts = verdicts
 
     def call(self, method, **kw):
         if method == "status_note":
             self.published.append(kw.get("health"))
             return {"stored": True}
+        if method == "script_errors_recheck":
+            if self.verdicts is None:
+                raise RuntimeError("UnknownMethod")
+            if kw["step"] == "clear":
+                return {"state": {p: {} for p in kw["paths"]}}
+            return {"verdicts": self.verdicts}
         if method == "health_probe":
             self.probed.append(list(kw["paths"]))
             if isinstance(self.probe, Exception):
@@ -596,6 +603,9 @@ PARSED_FIELD = "predates the gate: a lookup on the already-parsed sample"
 # TOP cooks in 46 ms); two are made, 0.2 s apart (`_PROBE_GAP`), and each is
 # capped at 0.5 s of cooking inside TouchDesigner (`_PROBE_BUDGET_S`).
 PROBED = "two health_probe calls 0.2 s apart: 19-63 ms each, measured live"
+# Only when a traceback is kept: two script_errors_recheck calls and the same
+# 0.2 s gap. Not timed separately; each reads and clears one text per path.
+RECHECKED = "two script_errors_recheck calls 0.2 s apart, only with tracebacks"
 
 SECTION_COSTS = {
     "shader-compile": TIMED,
@@ -609,6 +619,7 @@ SECTION_COSTS = {
     "node-warnings": PARSED_FIELD,
     "output-off": PARSED_FIELD,
     "not-cooking": PROBED,
+    "script-errors-stale": RECHECKED,
     "not-pulled": PROBED,
     "static": PROBED,
     "never-cooked": PROBED,
@@ -696,3 +707,44 @@ def test_the_sections_marked_timed_are_the_ones_the_timing_test_asserts_on():
                 f"test_prints_what_each_new_section_costs does not mention "
                 f"it. Either time it there or record what it really costs."
             )
+
+
+# -- a kept traceback, rechecked ---------------------------------------------
+
+def _scripted_pair():
+    trace = "Traceback (most recent call last):\nAttributeError: boom"
+    nodes = [node("/p/cb", 100, family="DAT", type="textDAT")]
+    after = [node("/p/cb", 160, family="DAT", type="textDAT")]
+    return [sample(0, nodes, scriptErrors={"/p/cb": trace}),
+            sample(60, after, scriptErrors={"/p/cb": trace})]
+
+
+def test_a_traceback_that_comes_back_stays_an_error():
+    client = FakeClient(_scripted_pair(), verdicts={"/p/cb": {"verdict": "live"}})
+    finding = next(f for f in health_mod.check(client).findings
+                   if f.kind == "script-errors")
+    assert finding.severity == "error" and "came back" in finding.message
+
+
+def test_a_traceback_the_code_no_longer_raises_is_a_note():
+    """Agent report 4, point 18: a fixed Script CHOP's traceback read as live."""
+    client = FakeClient(_scripted_pair(),
+                        verdicts={"/p/cb": {"verdict": "stale", "cooks": 15}})
+    result = health_mod.check(client)
+    assert "script-errors" not in kinds(result)
+    stale = next(f for f in result.findings if f.kind == "script-errors-stale")
+    assert "15 cook(s)" in stale.paths[0]
+    assert result.ok
+
+
+def test_a_traceback_nothing_reran_is_a_warning_not_a_verdict():
+    client = FakeClient(_scripted_pair(), verdicts={"/p/cb": {"verdict": "unknown"}})
+    finding = next(f for f in health_mod.check(client).findings
+                   if f.kind == "script-errors")
+    assert finding.severity == "warning" and "unknown" in finding.message
+
+
+def test_without_the_recheck_the_old_error_stands():
+    finding = next(f for f in health_mod.check(FakeClient(_scripted_pair())).findings
+                   if f.kind == "script-errors")
+    assert finding.severity == "error"

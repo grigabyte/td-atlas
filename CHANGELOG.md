@@ -21,8 +21,8 @@ either from the code they are running:
 - **The bridge speaks protocol 9, and protocol 9 is now also the minimum the
   host accepts.** Run `td-atlas reload` once in every project that holds the
   bridge, and restart the MCP server (in practice, the client that launched
-  it). `health_probe` joined the method table and `health_sample` gained
-  `counts_only`.
+  it). `health_probe` and `script_errors_recheck` joined the method table
+  and `health_sample` gained `counts_only`.
 - **`td_health` tells a static operator from a branch nothing pulls.** The
   `[ERROR] not-cooking` finding fired on anything that did not cook: a Ramp
   TOP with fixed settings, a Text DAT, a material — three agent sessions read
@@ -57,6 +57,13 @@ either from the code they are running:
 
 ### Fixed
 
+- **A traceback that is no longer raised stops reading as live.**
+  TouchDesigner keeps a traceback's text after the code is fixed, and
+  `td_health` reported it as an error on every check. It now clears each kept
+  traceback and looks again 0.2 s later: back — `script-errors` (error);
+  not back while its operator cooked — `script-errors-stale` (note), left
+  cleared; not back and nothing cooked — `script-errors` (warning), text put
+  back. New bridge method `script_errors_recheck`, part of the bump above.
 - **A `td_exec` traceback starts at the real error.** The statement run sat
   inside the handler of the failed eval attempt, so every error was chained
   to a false "SyntaxError: invalid syntax" at line 1. And a `result` in
