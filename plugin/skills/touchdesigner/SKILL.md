@@ -43,6 +43,13 @@ timeline frames with the GPU waited for.
 4. **Look at the result** with `td_render`, and at motion with a contact sheet.
 5. **Run `td_health`.**
 
+Working from a reference video or image, measure the reference before you
+choose how to build it — the motion from consecutive frames (a dozen, a few
+apart; frames a second apart do not show motion), the shape from a few numbers
+you can take from your own output the same way. In three agent sessions the
+model chosen from memory cost more rounds than anything this index lacked, and
+what turned each one was a number taken from the reference.
+
 **`td_log(failures=True)`** is your own trail, every bridge call this host made,
 with the text each refusal came back with. Reach for it when a call refuses and
 you do not know why, or when the artist says something broke while you were

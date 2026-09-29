@@ -21,6 +21,13 @@ OPERATOR_NOTES: dict[str, str] = {
         "0.0 — the brightness halves 0.8 to 0.4 first, and 0.4 is below the "
         "input floor. brightness1 runs before gamma1 and contrast too."
     ),
+    "polygonizePOP": (
+        "Measured on a 48-cube 3D texture from a GLSL TOP, threshold 0.5: a "
+        "straight rod along the grid thinner than 1.5 cells across meshed to "
+        "nothing (radius 0.6 cell: 0 points; 0.75 cell: 392), a rod across "
+        "the grid stayed continuous down to 1 cell. An agent's thin, "
+        "flattened ends broke into beads; that was not re-measured here."
+    ),
     "wireframeMAT": (
         "On macOS (2025.32460) neither line width setting changes the render: "
         "linewidth and wirewidth at 1, 3 and 6 gave the same frame to the "
