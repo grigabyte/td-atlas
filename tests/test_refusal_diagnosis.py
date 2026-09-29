@@ -61,7 +61,9 @@ def test_a_running_touchdesigner_with_current_files_gets_the_textport_line(
 
     assert exc.reason == "bridge_not_loaded"
     assert "TouchDesigner is running (pid 812)" in str(exc)
-    assert f"exec(open('{home / 'bootstrap.py'}').read())" in str(exc)
+    # The line is Python: the path goes in as repr, so on Windows its
+    # backslashes are doubled (caught by CI's Windows leg, 2026-09-29).
+    assert f"exec(open({str(home / 'bootstrap.py')!r}).read())" in str(exc)
     assert "not needed" in str(exc)
     assert "textport" in hints.classify(exc).action
 
