@@ -50,6 +50,11 @@ either from the code they are running:
 
 ### Added
 
+- **`td_health` names the operators that carry state between frames.**
+  Every operator with a reset pulse (Trigger, Speed, Count, Lag, Feedback,
+  Trail...) is listed in the note `history`: a frame reached by setting the
+  timeline's frame is not the frame playback gives, and a take needs them
+  reset. `health_sample` carries `history` per operator.
 - **`td_record` records a take with its sound in one call.** Three agent
   sessions did it by hand, about ten calls a take, and lost takes to each
   step. It resets every operator with a `resetpulse` under the scope, pauses

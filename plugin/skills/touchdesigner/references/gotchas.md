@@ -293,6 +293,14 @@ find.
 The behaviour was observed on a Feedback TOP. The CHOP and the POP keep state
 between frames the same way and are listed too, but were not tested.
 
+The wider class is every operator with a reset pulse — Trigger, Speed, Count,
+Lag, Filter, Trail, Audio Oscillator, Feedback, Cache — and `td_health` names
+them in the note `history`. Setting `root.time.frame = N` does not re-run them
+from the start: in one agent session six "different" frames showed one surface,
+because a Speed CHOP's phase stayed where the last played frame left it. A
+repeatable take starts from a reset; `td_record` pulses `resetpulse` on every
+one of them under its scope.
+
 **Fix.** To get a correct frame out of a network with a loop, play the timeline
 and capture from it rather than forcing cooks.
 

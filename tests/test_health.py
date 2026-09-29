@@ -610,6 +610,8 @@ RECHECKED = "two script_errors_recheck calls 0.2 s apart, only with tracebacks"
 # (100 calls on one GLSL TOP with one uniform array); the host side is a
 # lookup on the parsed sample.
 ARRAYS = "0.008 ms per GLSL operator inside the walk, measured live"
+# Measured live 2026-09-29: `par["resetpulse"]` over 15 operators, 0.005 ms.
+HISTORY = "one par lookup per operator inside the walk: 0.005 ms over 15, measured live"
 
 SECTION_COSTS = {
     "shader-compile": TIMED,
@@ -625,6 +627,7 @@ SECTION_COSTS = {
     "not-cooking": PROBED,
     "script-errors-stale": RECHECKED,
     "glsl-array-length": ARRAYS,
+    "history": HISTORY,
     "not-pulled": PROBED,
     "static": PROBED,
     "never-cooked": PROBED,
@@ -765,3 +768,14 @@ def test_a_uniform_array_longer_than_its_chop_is_a_warning():
     found = {f.severity: f for f in result.findings if f.kind == "glsl-array-length"}
     assert found["warning"].paths == ["/p/g (uSeg[256] fed 192 by /p/sim)"]
     assert found["note"].paths == ["/p/g (uDot[32] fed 64 by /p/sim)"]
+
+
+def test_operators_with_history_are_named_as_a_note():
+    """Report 3, point 4: Trigger, Speed and Count were never named."""
+    nodes = [node("/p/speed", 100, type="speedCHOP", family="CHOP", history=True),
+             node("/p/blur", 100)]
+    after = [node("/p/speed", 160, type="speedCHOP", family="CHOP", history=True),
+             node("/p/blur", 160)]
+    result = health_mod.check(FakeClient([sample(0, nodes), sample(60, after)]))
+    finding = next(f for f in result.findings if f.kind == "history")
+    assert finding.paths == ["/p/speed (speedCHOP)"] and finding.severity == "note"

@@ -499,6 +499,7 @@ def check(
     bypassed: list[str] = []
     inactive: list[str] = []
     shaders: list[str] = []
+    history: list[str] = []
     arrays_long: list[str] = []
     arrays_short: list[str] = []
 
@@ -519,6 +520,8 @@ def check(
         failure = _compile_excerpt(node.get("compileResult") or "")
         if failure:
             shaders.append(f"{node['path']} ({failure})")
+        if node.get("history"):
+            history.append(f"{node['path']} ({node['type']})")
         for array in node.get("arrayMismatch") or []:
             line = (f"{node['path']} ({array['name']}[{array['declared']}] "
                     f"fed {array['samples']} by {array['chop']})")
@@ -621,6 +624,22 @@ def check(
             )
         )
 
+    # Agent report 3 (point 4): six frames set by `root.time.frame = N`
+    # showed one surface, because a Speed CHOP's phase stayed where the last
+    # played frame left it; and the list of what to reset before a take was
+    # kept by hand and grew from 6 to 11.
+    if history:
+        health.findings.append(
+            Finding(
+                "note", "history",
+                f"{len(history)} operator(s) carry state from one frame to the "
+                f"next (each has a reset pulse). A frame reached by setting the "
+                f"timeline's frame or by forcing cooks is not the frame playback "
+                f"gives, and a take is only repeatable after resetting them — "
+                f"td_record does that itself",
+                history,
+            )
+        )
     if arrays_long:
         health.findings.append(
             Finding(

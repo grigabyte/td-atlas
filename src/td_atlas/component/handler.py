@@ -4977,6 +4977,16 @@ def m_health_sample(params):
                     entry[key] = value
             if child.OPType in _FEEDBACK_TARGETS:
                 entry["feedback"] = _feedback_state(child)
+            # An operator with a reset pulse carries something from one frame
+            # to the next (Trigger, Speed, Count, Lag, Feedback, Trail...):
+            # the parameter is the class, read off the operators rather than
+            # listed by hand. `par[name]` answers None for a missing name,
+            # 0.005 ms over 15 operators (measured 2026-09-29).
+            try:
+                if child.par["resetpulse"] is not None:
+                    entry["history"] = True
+            except Exception:
+                pass
             if child.OPType == "levelTOP":
                 risk = _negative_float_risk(child)
                 if risk:
