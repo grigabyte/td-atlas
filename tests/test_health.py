@@ -25,16 +25,22 @@ class FakeClient:
         self.probe = probe
         self.probed = []
         self.verdicts = verdicts
+        self.steps = []
 
     def call(self, method, **kw):
         if method == "status_note":
             self.published.append(kw.get("health"))
             return {"stored": True}
         if method == "script_errors_recheck":
+            self.steps.append(kw["step"])
             if self.verdicts is None:
                 raise RuntimeError("UnknownMethod")
             if kw["step"] == "clear":
                 return {"state": {p: {} for p in kw["paths"]}}
+            if isinstance(self.verdicts, Exception) and kw["step"] == "read":
+                raise self.verdicts
+            if kw["step"] == "restore":
+                return {"restored": list(kw["state"])}
             return {"verdicts": self.verdicts}
         if method == "health_probe":
             self.probed.append(list(kw["paths"]))
@@ -779,3 +785,12 @@ def test_operators_with_history_are_named_as_a_note():
     result = health_mod.check(FakeClient([sample(0, nodes), sample(60, after)]))
     finding = next(f for f in result.findings if f.kind == "history")
     assert finding.paths == ["/p/speed (speedCHOP)"] and finding.severity == "note"
+
+
+def test_a_read_that_fails_after_the_clear_puts_the_texts_back():
+    """Critic, 2026-09-29: the texts stayed cleared when `read` raised."""
+    client = FakeClient(_scripted_pair(), verdicts=RuntimeError("timeout"))
+    finding = next(f for f in health_mod.check(client).findings
+                   if f.kind == "script-errors")
+    assert client.steps == ["clear", "read", "restore"]
+    assert finding.severity == "error"

@@ -274,9 +274,9 @@ def _file_probe(health: Health, probed: dict, frames: int) -> None:
                 "warning", "not-pulled",
                 f"{len(changing)} operator(s) change from frame to frame but "
                 f"nothing displays or records them, so they are not running: "
-                f"none cooked in {frames} frames, and asked to cook twice, "
-                f"{_PROBE_GAP}s apart, each had something new to compute both "
-                f"times. If one should be live, view it, record it, or feed "
+                f"none cooked in {frames} frames, and asked to cook again "
+                f"{_PROBE_GAP}s after a first ask, each had something new to "
+                f"compute. If one should be live, view it, record it, or feed "
                 f"it to a Cache TOP with alwayscook on",
                 changing,
             )
@@ -337,10 +337,19 @@ def _recheck_scripts(client: BridgeClient, scripted: dict) -> dict | None:
     try:
         state = client.call("script_errors_recheck", step="clear",
                             paths=sorted(scripted))["state"]
+    except Exception:
+        return None
+    try:
         time.sleep(_PROBE_GAP)
         return client.call("script_errors_recheck", step="read",
                            state=state)["verdicts"]
     except Exception:
+        # The texts were cleared a moment ago; they go back before the report
+        # says anything, or a failed read would have erased them.
+        try:
+            client.call("script_errors_recheck", step="restore", state=state)
+        except Exception:
+            pass
         return None
 
 

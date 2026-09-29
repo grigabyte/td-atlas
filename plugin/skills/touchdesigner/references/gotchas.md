@@ -741,6 +741,8 @@ whose `onCook` failed on a missing operator went on cooking every frame and
 producing its channel once the operator existed, and the old traceback stayed
 on its callbacks DAT until cleared. So `td_health` clears each kept traceback
 and looks again 0.2 s later. Back: it is being raised now, `script-errors` as
-an error. Not back while the operator running that code cooked: it was fixed,
-and `script-errors-stale` (note) says so and leaves it cleared. Not back and
-nothing cooked: `script-errors` as a warning, and the text is put back.
+an error. Not back while the operator running that code cooked, and raised in
+`onCook` (the one callback a cook reruns): it was fixed, and
+`script-errors-stale` (note) says so and leaves it cleared. Anything else:
+`script-errors` as a warning, and the text is put back — also when the second
+read fails.

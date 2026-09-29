@@ -947,6 +947,9 @@ def td_render(
     rendering. A render right after td_set_params or td_build can return the
     frame from before the edit; 2–3 frames is enough for a parameter change.
     The answer says so if TouchDesigner stopped drawing during the wait.
+
+    Before rendering, a Text DAT synced to a file that changed on disk is
+    reloaded (TouchDesigner would within ~0.7 s), and the answer names it.
     """
     # Deliberately unannotated: this returns an Image on success and an error
     # string otherwise, and a union of the two cannot be expressed in the
@@ -1006,7 +1009,8 @@ def td_timeline_run(
     before them: live audio analysis, Feedback TOPs, trails, anything with
     history. It returns at once with a job id; poll td_timeline_status, stop
     with td_timeline_cancel. No request holds TouchDesigner for more than one
-    step, so the 30 s limit on a call does not apply to the walk.
+    step, so the 30 s limit on a call does not apply to the walk. A Text DAT
+    synced to a file that changed on disk is reloaded before the walk.
 
     `frames` is the walk, e.g. "1..994". `save` picks the frames to write,
     e.g. "92..217,459..541" (default: every frame walked), into `output`, a
@@ -1097,6 +1101,11 @@ def td_record(
 
     `codec` defaults to prores, which recorded on every licence; H.264/H.265
     is refused on Non-Commercial. `hold` leaves the timeline paused after.
+    The helper nodes are named `tdatlas_rec`, `tdatlas_rec_keep` and
+    `tdatlas_rec_info` in the TOP's parent; ones left by an earlier take are
+    replaced. A recorder that has not started 3 s after being switched on,
+    or stops writing for 5 s, ends the take with everything put back. A Text
+    DAT synced to a file that changed on disk is reloaded first.
     For frames saved as images without sound, walk with td_timeline_run.
     """
     request: dict[str, Any] = {
@@ -1227,7 +1236,9 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
     catches:
 
     - operators that never cook, because a branch nothing displays or records
-      is never pulled and therefore is not running at all
+      is never pulled and therefore is not running at all — told apart from
+      operators with nothing to recompute (a note) by asking each quiet one
+      to cook twice, 0.2 s apart
     - output operators switched off (audio device, movie recorder, MIDI, OSC)
       which produce nothing and report nothing
     - GLSL operators whose shader failed to compile, quoting the compiler's own
@@ -1252,6 +1263,14 @@ def td_health(path: str = "/project1", interval: float = 1.0) -> str:
       what it adds to
     - reads of the application clock (absTime) or an unseeded random
       generator, which keep a render from reproducing between runs
+    - uniform arrays declared longer than the CHOP feeding them, and the
+      operators that carry state from frame to frame (a reset pulse)
+
+    It changes two things in the project, and says so in its findings: the
+    quiet operators it asks to cook do cook, as they would for a viewer, so
+    a Speed, Trigger or Count among them moves on; and each kept traceback is
+    cleared and read again 0.2 s later — one that does not come back while
+    the code that raised it has run is left cleared, any other goes back.
 
     `interval` is the gap between the two samples, in seconds, and is capped:
     this process sleeps through it and answers nothing else meanwhile.
@@ -1581,7 +1600,11 @@ def td_exec(code: str) -> str:
 
     A script that raises still returns what it printed before the error, and
     `result` if it had been set, so a mistyped name on the last line does not
-    cost the measurements above it.
+    cost the measurements above it. A script past the call's 30 s is not
+    stopped: it runs to its end, and only its output is lost.
+
+    Before running, a Text DAT synced to a file that changed on disk is
+    reloaded (TouchDesigner would within ~0.7 s), and the answer names it.
     """
     client = bridge()
     try:

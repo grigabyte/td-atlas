@@ -75,3 +75,20 @@ def test_a_missing_file_is_skipped_not_raised(tmp_path, monkeypatch):
 def test_the_host_says_it_in_one_line():
     assert _resynced_note({}) == ""
     assert "/p/sim" in _resynced_note({"resynced": ["/p/sim"]})
+
+
+def test_a_byte_order_mark_is_not_a_difference(tmp_path, monkeypatch):
+    file = tmp_path / "sim.py"
+    file.write_bytes(b"\xef\xbb\xbfx = 1\n")
+    _root(monkeypatch, [Dat("/p/sim", "x = 1\n", file)])
+    assert handler._resync_files() == []
+
+
+def test_a_file_that_is_not_utf8_is_left_alone(tmp_path, monkeypatch):
+    """It could never compare equal, and would be reloaded on every call."""
+    file = tmp_path / "sim.py"
+    file.write_bytes(b"x = '\xe9'\n")
+    dat = Dat("/p/sim", "x = 'e'\n", file)
+    _root(monkeypatch, [dat])
+    assert handler._resync_files() == []
+    assert dat.par.loadonstartpulse.pulsed == 0

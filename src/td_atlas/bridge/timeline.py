@@ -110,7 +110,10 @@ def describe_profile(profile: dict, walked: int, rows: int = PROFILE_ROWS) -> li
 def describe_record(job: dict) -> list[str]:
     """The take: what was written against what was asked, and the sound."""
     written, frames = job.get("written") or 0, job.get("frames") or 0
-    line = f"  {written} of {frames} frame(s) written to {job.get('file')} ({job.get('codec')})"
+    line = f"  {written} of {frames} frame(s) written to {job.get('file')} ({job.get('codec')}"
+    if job.get("fileBytes"):
+        line += f", {job['fileBytes'] / 1e6:.1f} MB on disk"
+    line += ")"
     if job.get("dropped"):
         line += f", {job['dropped']} dropped"
     lines = [line]

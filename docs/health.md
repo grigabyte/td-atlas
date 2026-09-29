@@ -7,8 +7,8 @@ does not:
 TouchDesigner (TouchDesigner Non-Commercial) — 61/60 fps, 16/51 operators cooking
 [WARN ] 9 operator(s) change from frame to frame but nothing displays or
         records them, so they are not running: none cooked in 61 frames, and
-        asked to cook twice, 0.2s apart, each had something new to compute
-        both times. If one should be live, view it, record it, or feed it to
+        asked to cook again 0.2s after a first ask, each had something new
+        to compute. If one should be live, view it, record it, or feed it to
         a Cache TOP with alwayscook on
          /project1/cubes/field, /project1/cubes/comp, /project1/cubes/out
 [ERROR] 1 operator(s) had their resolution silently reduced by the licence —
@@ -62,13 +62,26 @@ and each gets a section in `plugin/skills/touchdesigner/references/gotchas.md`:
   are read first, under the same budget.
 
 An operator that did not cook is asked to cook, twice, 0.2 s apart: one that
-computes something new both times changes but is pulled by nothing
+computes something new at the second ask changes but is pulled by nothing
 (`not-pulled`, warning); one that computes nothing is `static` (note), which
 is normal for fixed settings, a DAT or a material. Operators that never cooked,
 outputs, and those past the half-second cooking budget are not asked, and are
 named as `never-cooked`, `quiet-outputs` and `not-cooking-unprobed`. The
 probe costs 20-63 ms per call (measured over 12 and 21 quiet operators) plus
 the 0.2 s gap, and it cooks what it asks, as a viewer would.
+
+Three more kinds came with the same release:
+
+- `script-errors-stale` (note). TouchDesigner keeps a traceback's text after
+  the code is fixed, so each kept one is cleared and read again 0.2 s later.
+  Back — `script-errors`, an error. Not back while the operator that runs it
+  cooked, and the traceback came from `onCook` — stale, left cleared. Anything
+  else — `script-errors` as a warning, and the text is put back.
+- `glsl-array-length` (warning when longer, note when shorter) compares a
+  uniform array's literal length in the shader with its CHOP's sample count.
+  Past the data the elements are undefined: NaN at one, 1.0 at another.
+- `history` (note) lists every operator with a reset pulse — Trigger, Speed,
+  Count, Lag, Feedback, Trail — whose state a timeline jump does not rebuild.
 
 `td_health` also tells a genuinely dead network from a paused timeline or a
 backgrounded window. In those the frame clock is frozen and there is no evidence

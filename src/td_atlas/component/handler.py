@@ -2401,7 +2401,15 @@ def _resync_files():
             if not path:
                 continue
             with open(path, "rb") as handle:
-                on_disk = handle.read().decode("utf-8", "replace")
+                raw = handle.read()
+            try:
+                # utf-8-sig drops a byte-order mark, which the DAT's text
+                # does not carry; a file that is not UTF-8 is not judged,
+                # since it could never compare equal and would be reloaded
+                # on every call (critic, 2026-09-29).
+                on_disk = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                continue
             if on_disk.replace("\r\n", "\n") == dat.text.replace("\r\n", "\n"):
                 continue
             dat.par.loadonstartpulse.pulse()
@@ -3247,6 +3255,12 @@ class _LiveTimelineEnv:
     def exists(self, path):
         return os.path.exists(path)
 
+    def size(self, path):
+        try:
+            return os.path.getsize(path)
+        except OSError:
+            return None
+
 
 def _timeline_env():
     return _LiveTimelineEnv()
@@ -3584,7 +3598,7 @@ _TIMELINE_VIEW = (
 )
 _RECORD_VIEW = (
     "file", "frames", "written", "dropped", "audio", "audioSamples", "codec",
-    "reset", "phase", "realTime",
+    "reset", "phase", "realTime", "fileBytes",
 )
 
 
@@ -3649,6 +3663,12 @@ def m_timeline_run(params):
 
 _RECORD_NAME = "tdatlas_rec"
 _RECORD_POLL = 6
+# A recorder that has not gone active this long after `record` was set is not
+# going to: a folder it cannot write, a codec the machine cannot encode. In
+# the live takes it was active at the first poll, 6 application frames in.
+# Chosen, not measured: generous against a slow first frame, short against a
+# timeline left looping with realTime off.
+_RECORD_START_S = 3.0
 _RECORD_CODECS = ("prores", "h264", "h265", "hap", "mjpa", "cineform",
                   "notchlc")
 
@@ -3665,6 +3685,11 @@ def _record_plan(params, env):
         raise ValueError(
             "file must be a .mov: ProRes with PCM audio is what recorded on every "
             "licence; convert afterwards if you need an mp4"
+        )
+    folder = path.rsplit("/", 1)[0] if "/" in path else ""
+    if folder and not env.exists(folder):
+        raise ValueError(
+            "the folder %s does not exist; the recorder would never start" % folder
         )
     if env.exists(path) and not params.get("overwrite"):
         raise ValueError(
@@ -3690,11 +3715,12 @@ def _record_plan(params, env):
     start = int(params.get("start") or timeline.start)
     last = start + frames - 1
     end = min(int(timeline.end), int(getattr(timeline, "rangeEnd", timeline.end)))
-    if start < int(timeline.start) or last > end:
+    begin = max(int(timeline.start), int(getattr(timeline, "rangeStart", timeline.start)))
+    if start < begin or last > end:
         raise ValueError(
             "the take %d..%d leaves the timeline's playable range %d..%d; the "
             "timeline would loop mid-take. Extend its end or record fewer frames"
-            % (start, last, int(timeline.start), end)
+            % (start, last, begin, end)
         )
     audio = params.get("audio") or ""
     if audio:
@@ -3718,7 +3744,8 @@ def _record_plan(params, env):
         "audio": audio, "audioSamples": 0, "codec": codec, "rate": rate,
         "parent": parent, "resetScope": scope if params.get("reset", True) else "",
         "reset": [], "phase": "arm", "nodes": {}, "realTimeWas": None,
-        "realTime": None, "sawActive": False,
+        "realTime": None, "sawActive": False, "armed": None,
+        "progressed": None, "lastWritten": 0, "fileBytes": None,
     }
 
 
@@ -3817,6 +3844,7 @@ def _record_advance(job, env):
         env.op(job["nodes"]["rec"]).par.record = True
         timeline.play = True
         job["phase"] = "recording"
+        job["armed"] = job["progressed"] = env.now()
         job["settle"] = _RECORD_POLL
         _timeline_schedule(job, env)
         return
@@ -3825,8 +3853,33 @@ def _record_advance(job, env):
     if active:
         job["sawActive"] = True
     if job["written"] >= job["frames"] or (job["sawActive"] and not active):
+        # The counts are not the file. Measured 2026-09-29: a take into
+        # /System (not writable) reported 120 of 120 frames written through
+        # Info CHOP, and no file was there.
+        job["fileBytes"] = env.size(job["file"])
+        if not job["fileBytes"]:
+            raise RuntimeError(
+                "TouchDesigner reported %d of %d frames written, but %s is %s; "
+                "check that the folder is writable"
+                % (job["written"], job["frames"], job["file"],
+                   "empty" if job["fileBytes"] == 0 else "not there")
+            )
         _timeline_finish(job, env, "done")
         return
+    now = env.now()
+    if job["written"] != job["lastWritten"]:
+        job["lastWritten"], job["progressed"] = job["written"], now
+    if not job["sawActive"] and now - job["armed"] > _RECORD_START_S:
+        raise RuntimeError(
+            "the recorder did not start within %.0f s of being switched on — "
+            "check that %s can be written and that the codec %s encodes on "
+            "this machine" % (_RECORD_START_S, job["file"], job["codec"])
+        )
+    if now - job["progressed"] > _TIMELINE_STALL:
+        raise RuntimeError(
+            "no frame written for %.0f s; %d of %d written. The take was "
+            "stopped and everything put back" % (_TIMELINE_STALL, job["written"], job["frames"])
+        )
     if not timeline.play:
         raise RuntimeError(
             "the timeline was paused during the take at frame %d; %d of %d "
@@ -5187,6 +5240,23 @@ def _callback_users(target):
     return users
 
 
+def _bare_script_error(text, path):
+    """A kept traceback as addScriptError wants it back.
+
+    addScriptError prepends its own "Error: " and appends the path in
+    brackets, measured: putting the text back verbatim doubled both. One of
+    each is dropped, so repeated checks leave the text as they found it. A
+    text holding several errors comes back as one message.
+    """
+    text = text.strip()
+    if text.startswith("Error: "):
+        text = text[len("Error: "):]
+    suffix = " (%s)" % path
+    if text.endswith(suffix):
+        text = text[: -len(suffix)]
+    return text
+
+
 def m_script_errors_recheck(params):
     """Clear a kept traceback, then say whether it came back.
 
@@ -5242,24 +5312,30 @@ def m_script_errors_recheck(params):
                 found = op(user)
                 if found is not None:
                     cooked += max(0, found.totalCooks - before)
-            if cooked:
+            # A cook reruns onCook and nothing else: a traceback from
+            # onPulse or onSetupParameters is not retried by the cooks
+            # counted here, so only one raised in onCook — or kept on a
+            # non-DAT operator itself — can be judged fixed by them.
+            reruns = "onCook" in saved["text"] or target.family != "DAT"
+            if cooked and reruns:
                 verdicts[path] = {"verdict": "stale", "cooks": cooked,
                                   "text": _clip(saved["text"])}
                 continue
-            # addScriptError prepends its own "Error: " and appends the path
-            # in brackets, measured: putting the text back verbatim doubled
-            # both. One of each is dropped, so repeated checks leave the text
-            # as they found it.
-            text = saved["text"].strip()
-            if text.startswith("Error: "):
-                text = text[len("Error: "):]
-            suffix = " (%s)" % path
-            if text.endswith(suffix):
-                text = text[: -len(suffix)]
-            target.addScriptError(text)
+            target.addScriptError(_bare_script_error(saved["text"], path))
             verdicts[path] = {"verdict": "unknown", "text": _clip(saved["text"])}
         return {"verdicts": verdicts}
-    raise ValueError("script_errors_recheck needs step 'clear' or 'read'")
+    if step == "restore":
+        # The host's way back when `read` could not run: every saved text
+        # goes back as it was, whatever happened since.
+        restored = []
+        for path, saved in (params.get("state") or {}).items():
+            target = op(path)
+            if target is None or target.scriptErrors():
+                continue
+            target.addScriptError(_bare_script_error(saved["text"], path))
+            restored.append(path)
+        return {"restored": restored}
+    raise ValueError("script_errors_recheck needs step 'clear', 'read' or 'restore'")
 
 
 def _extension_targets(params):

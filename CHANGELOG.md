@@ -21,13 +21,13 @@ either from the code they are running:
 - **The bridge speaks protocol 9, and protocol 9 is now also the minimum the
   host accepts.** Run `td-atlas reload` once in every project that holds the
   bridge, and restart the MCP server (in practice, the client that launched
-  it). `health_probe` and `script_errors_recheck` joined the method table
-  and `health_sample` gained `counts_only`.
+  it). `health_probe`, `script_errors_recheck` and `record` joined the
+  method table and `health_sample` gained `counts_only`.
 - **`td_health` tells a static operator from a branch nothing pulls.** The
   `[ERROR] not-cooking` finding fired on anything that did not cook: a Ramp
   TOP with fixed settings, a Text DAT, a material — three agent sessions read
   it as breakage. Each quiet operator is now asked to cook, twice, 0.2 s
-  apart. One that computes something new both times is `not-pulled`
+  apart. One that computes something new at the second ask is `not-pulled`
   (warning); one that computes nothing is `static` (note). Never-cooked
   operators, outputs and whatever falls past a half-second budget are not
   asked and are named as such. The probe cooks what it asks, as a viewer
@@ -83,8 +83,9 @@ either from the code they are running:
   marked used or a leftover; a new Geometry COMP's `torus1` with its flags;
   a new SOP or POP inside one whose render flag is off, and who has it.
   After each write: an OP parameter that reads back `None`, whatever path
-  was written. `op_create` and `par_set` replies carry `alsoCreated`,
-  `unresolved`, `render`, `display` and `renderFlagOn` for this.
+  was written. `op_create` replies carry `alsoCreated`, `unresolved`,
+  `render`, `display` and `renderFlagOn` for this; `par_set` replies carry
+  `unresolved`.
 - **Later blocks of a parameter sequence can be set.** `const1name` on a
   Constant CHOP or `array1name` on a GLSL TOP was refused by the name check,
   and on a fresh operator was no parameter at all; two agents moved that work
@@ -109,7 +110,7 @@ either from the code they are running:
 - **A frame taken right after editing a synced file runs the new code.**
   TouchDesigner re-reads a file-synced Text DAT on a poll (measured 0.7 s),
   so an exec or render straight after an edit on disk ran the old code.
-  `td_exec`, `td_render` and `td_timeline_run` reload every synced Text DAT
+  `td_exec`, `td_render`, `td_timeline_run` and `td_record` reload every synced Text DAT
   whose file differs from its text first, and say so (`resynced` in the
   reply).
 - **A traceback that is no longer raised stops reading as live.**

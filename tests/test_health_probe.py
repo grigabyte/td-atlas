@@ -106,7 +106,8 @@ def _recheck(ops, monkeypatch, dat, users=()):
 
 
 def test_a_kept_traceback_whose_user_cooked_without_it_is_stale(ops, monkeypatch):
-    dat = ScriptOp("/p/cb", "  Error: Traceback\nAttributeError: x (/p/cb)")
+    dat = ScriptOp("/p/cb", '  Error: Traceback\n  File "/p/cb", line 3, in onCook\n'
+                            "AttributeError: x (/p/cb)")
     user = FakeOp("/p/sc", optype="scriptCHOP")
     state = _recheck(ops, monkeypatch, dat, [user])
     assert dat.text == ""
@@ -158,3 +159,27 @@ def test_array_lengths_are_read_from_the_source_and_the_chop(monkeypatch):
     monkeypatch.setattr(handler, "_par_value", lambda target, name: values.get(name))
     assert handler._array_mismatches(Glsl()) == [
         {"name": "uSeg", "declared": 256, "samples": 192, "chop": "/p/sim"}]
+
+
+def test_a_traceback_cooks_do_not_rerun_is_not_called_fixed(ops, monkeypatch):
+    """Critic, 2026-09-29: an onPulse error with its CHOP cooking every frame
+    was judged fixed and cleared for good."""
+    original = ('  Error: Traceback\n  File "/p/cb", line 9, in onPulse\n'
+                "KeyError: x (/p/cb)")
+    dat = ScriptOp("/p/cb", original)
+    user = FakeOp("/p/sc", optype="scriptCHOP")
+    state = _recheck(ops, monkeypatch, dat, [user])
+    user.totalCooks += 30
+    verdict = handler.m_script_errors_recheck({"step": "read", "state": state})
+    assert verdict["verdicts"]["/p/cb"]["verdict"] == "unknown"
+    assert dat.text == original
+
+
+def test_restore_puts_every_cleared_text_back(ops, monkeypatch):
+    original = "  Error: Traceback\nKeyError: old (/p/cb)"
+    dat = ScriptOp("/p/cb", original)
+    state = _recheck(ops, monkeypatch, dat)
+    assert dat.text == ""
+    assert handler.m_script_errors_recheck(
+        {"step": "restore", "state": state})["restored"] == ["/p/cb"]
+    assert dat.text == original

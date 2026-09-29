@@ -85,7 +85,9 @@ class Env:
         self.queue, self.state, self.destroyed = [], {}, []
         self.rt = True
         self.lic = licence
-        self.files = set()
+        self.files = {"/tmp"}
+        self.sizes = {"/tmp/take.mov": 2_000_000}
+        self.clock = 0.0
         self.info = {"total_frames_written": 0, "total_audio_samples_written": 0,
                      "total_frames_dropped": 0, "active_records": 0}
         self.ops = {}
@@ -117,7 +119,7 @@ class Env:
         return self.state
 
     def now(self):
-        return 0.0
+        return self.clock
 
     def realtime(self, value=None):
         if value is not None:
@@ -134,6 +136,9 @@ class Env:
 
     def exists(self, path):
         return path in self.files
+
+    def size(self, path):
+        return self.sizes.get(path)
 
     def pump(self):
         fn, gen, seq = self.queue.pop(0)
@@ -225,3 +230,45 @@ def test_an_existing_file_needs_overwrite(env):
 
 def test_seconds_become_frames_at_the_timeline_rate(env):
     assert _start(env, frames=0, seconds=2)["frames"] == 120
+
+
+def test_a_recorder_that_never_starts_ends_the_take_and_puts_everything_back(env):
+    """Critic, 2026-09-29: an unwritable file left the timeline looping with
+    realTime off and the helper nodes in place, with no limit."""
+    _start(env)
+    env.pump()
+    env.clock = 5.0
+    env.pump()
+    job = env.state["job"]
+    assert job["state"] == "failed" and "did not start" in job["error"]
+    assert env.rt is True and "/p/tdatlas_rec" not in env.ops
+
+
+def test_a_take_that_stops_writing_is_ended(env):
+    _start(env)
+    env.pump()
+    env.info.update(total_frames_written=10, active_records=1)
+    env.clock = 1.0
+    env.pump()
+    env.clock = 10.0
+    env.pump()
+    assert env.state["job"]["state"] == "failed"
+    assert "no frame written" in env.state["job"]["error"]
+
+
+def test_a_missing_folder_is_refused_before_anything_moves(env):
+    with pytest.raises(ValueError, match="does not exist"):
+        _start(env, file="/nowhere/take.mov")
+    assert env.rt is True
+
+
+def test_counts_without_a_file_fail_the_take(env):
+    """Measured: a take into an unwritable folder reported 120 of 120."""
+    env.sizes.clear()
+    _start(env)
+    env.pump()
+    env.info.update(total_frames_written=120, active_records=0)
+    env.pump()
+    job = env.state["job"]
+    assert job["state"] == "failed" and "not there" in job["error"]
+    assert env.rt is True
